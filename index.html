@@ -4,14 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Rook - Game Scoring Screen</title>
+  
   <!-- Set the theme color to white -->
-  <meta name="theme-color" content="#f7fafc">
+  <meta name="theme-color" content="#ffffff">
+  
+  <!-- iOS specific status bar style -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
   <!-- Link to Web App Manifest -->
   <link rel="manifest" href="manifest.json">
+  
   <!-- Fallback icon -->
   <link rel="icon" href="icons/icon-192x192.png">
+  
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Your existing styles -->
   <style>
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-10px); }
@@ -48,13 +57,41 @@
       -ms-overflow-style: none;  /* IE and Edge */
       scrollbar-width: none;  /* Firefox */
     }
+    
+    /* Save Indicator Styling */
+    #saveIndicator {
+      position: fixed;
+      bottom: 1rem; /* Adjusted for smaller size */
+      right: 1rem;
+      background-color: rgba(16, 185, 129, 0.7); /* Tailwind's green-500 with increased transparency */
+      color: white;
+      padding: 0.5rem 1rem; /* Reduced padding for smaller size */
+      border-radius: 0.375rem; /* Smaller border radius */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      opacity: 0;
+      transition: opacity 0.3s ease-in-out; /* Faster transition */
+      pointer-events: none;
+      z-index: 1000;
+      font-size: 0.875rem; /* Smaller font size */
+    }
+
+    #saveIndicator.show {
+      opacity: 1;
+    }
   </style>
 </head>
-<body class="bg-gray-100 text-gray-800 min-h-screen">
- <div class="absolute top-0 right-0 m-4 p-2 text-gray-800 font-medium text-xs bg-white bg-opacity-70 rounded-full shadow px-3 py-1">
-    <p>Version 1.03</p>
+<body class="bg-white text-gray-800 min-h-screen">
+  <!-- Version Indicator Moved to Top Right and Updated to Version 1.04 -->
+  <div class="absolute top-0 right-0 m-4 p-2 text-gray-800 font-medium text-xs bg-white bg-opacity-70 rounded-full shadow px-3 py-1">
+    <p>Version 1.04</p>
   </div>
+  
   <div id="app" class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6"></div>
+
+  <!-- Save Indicator -->
+  <div id="saveIndicator" class="hidden">
+    Saved
+  </div>
 
   <!-- Saved Games Modal -->
   <div
@@ -155,6 +192,9 @@
     let ephemeralCustomBid = '';
     let ephemeralPoints = '';
 
+    // Key to store the active game state in localStorage
+    const ACTIVE_GAME_KEY = 'activeGameState';
+
     /********************************************************
      * Utility Functions
      ********************************************************/
@@ -194,9 +234,59 @@
       return '';
     }
 
+    /**
+     * Saves the current game state to localStorage.
+     */
+    function saveCurrentGameState() {
+      if (!state.gameOver) {
+        localStorage.setItem(ACTIVE_GAME_KEY, JSON.stringify(state));
+        showSaveIndicator();
+      } else {
+        localStorage.removeItem(ACTIVE_GAME_KEY);
+      }
+    }
+
+    /**
+     * Loads the saved game state from localStorage, if any.
+     */
+    function loadCurrentGameState() {
+      const savedState = localStorage.getItem(ACTIVE_GAME_KEY);
+      if (savedState) {
+        try {
+          const parsedState = JSON.parse(savedState);
+          state = { ...state, ...parsedState };
+          renderApp();
+        } catch (error) {
+          console.error('Failed to parse saved game state:', error);
+          localStorage.removeItem(ACTIVE_GAME_KEY); // Remove corrupted data
+        }
+      }
+    }
+
+    /**
+     * Shows the "Saved" indicator briefly.
+     */
+    function showSaveIndicator() {
+      const indicator = document.getElementById('saveIndicator');
+      if (indicator) {
+        indicator.classList.remove('hidden');
+        indicator.classList.add('show');
+        setTimeout(() => {
+          indicator.classList.remove('show');
+          indicator.classList.add('hidden');
+        }, 1000); // Show for 1 second
+      }
+    }
+
+    /**
+     * Updates the application state.
+     * Note: This function no longer auto-saves. Saving is handled separately.
+     * @param {Object} updates - The state updates.
+     */
     function updateState(updates) {
       state = { ...state, ...updates };
       renderApp();
+      // Auto-save is removed to control when to save
     }
 
     /********************************************************
@@ -300,127 +390,130 @@
     }
 
     function handleFormSubmit(e) {
-  e.preventDefault();
+      e.preventDefault();
 
-  const { biddingTeam, bidAmount, rounds, enterBidderPoints } = state;
-  const pointsInput = document.getElementById('pointsInput');
-  
-  if (!pointsInput) {
-    updateState({ error: 'Points input field not found.' });
-    return;
-  }
+      const { biddingTeam, bidAmount, rounds, enterBidderPoints } = state;
+      const pointsInput = document.getElementById('pointsInput');
+      
+      if (!pointsInput) {
+        updateState({ error: 'Points input field not found.' });
+        return;
+      }
 
-  const points = pointsInput.value;
+      const points = pointsInput.value;
 
-  if (!biddingTeam || !bidAmount) {
-    updateState({ error: 'Please select both team and bid.' });
-    return;
-  }
+      if (!biddingTeam || !bidAmount) {
+        updateState({ error: 'Please select both team and bid.' });
+        return;
+      }
 
-  const bidError = validateBid(bidAmount);
-  const pointsError = validatePoints(points);
+      const bidError = validateBid(bidAmount);
+      const pointsError = validatePoints(points);
 
-  if (bidError || pointsError) {
-    updateState({ error: bidError || pointsError });
-    return;
-  }
+      if (bidError || pointsError) {
+        updateState({ error: bidError || pointsError });
+        return;
+      }
 
-  const bid = Number(bidAmount);
-  const pointsValue = Number(points);
+      const bid = Number(bidAmount);
+      const pointsValue = Number(points);
 
-  const bidderPoints = enterBidderPoints
-    ? pointsValue
-    : pointsValue === 360
-      ? 360
-      : 180 - pointsValue;
+      const bidderPoints = enterBidderPoints
+        ? pointsValue
+        : pointsValue === 360
+          ? 360
+          : 180 - pointsValue;
 
-  const nonBidderPoints = pointsValue === 360 ? 0 : 180 - bidderPoints;
+      const nonBidderPoints = pointsValue === 360 ? 0 : 180 - bidderPoints;
 
-  const usPoints = biddingTeam === 'us'
-    ? (bidderPoints < bid ? -bid : bidderPoints)
-    : nonBidderPoints;
+      const usPoints = biddingTeam === 'us'
+        ? (bidderPoints < bid ? -bid : bidderPoints)
+        : nonBidderPoints;
 
-  const DemPoints = biddingTeam === 'Dem'
-    ? (bidderPoints < bid ? -bid : bidderPoints)
-    : nonBidderPoints;
+      const DemPoints = biddingTeam === 'Dem'
+        ? (bidderPoints < bid ? -bid : bidderPoints)
+        : nonBidderPoints;
 
-  const prevTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, Dem: 0 };
-  const newRunningTotals = {
-    us: prevTotals.us + usPoints,
-    Dem: prevTotals.Dem + DemPoints
-  };
+      const prevTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, Dem: 0 };
+      const newRunningTotals = {
+        us: prevTotals.us + usPoints,
+        Dem: prevTotals.Dem + DemPoints
+      };
 
-  const newRounds = [
-    ...rounds,
-    {
-      biddingTeam,
-      bidAmount: bid,
-      usPoints,
-      DemPoints,
-      runningTotals: newRunningTotals,
+      const newRounds = [
+        ...rounds,
+        {
+          biddingTeam,
+          bidAmount: bid,
+          usPoints,
+          DemPoints,
+          runningTotals: newRunningTotals,
+        }
+      ];
+
+      const wonOnBid = biddingTeam === 'us'
+        ? usPoints >= bid && usPoints > 0
+        : DemPoints >= bid && DemPoints > 0;
+
+      const setOtherTeam = biddingTeam === 'us' ? DemPoints < 0 : usPoints < 0;
+
+      const pointSpread = Math.abs(newRunningTotals.us - newRunningTotals.Dem);
+      const spreadWinner = newRunningTotals.us > newRunningTotals.Dem ? 'us' : 'Dem';
+      const spreadCondition = pointSpread >= 1000;
+
+      // **New Variables for Additional Win Condition**
+      const otherTeam = biddingTeam === 'us' ? 'Dem' : 'us';
+      const otherTeamTotal = newRunningTotals[otherTeam];
+      const biddingTeamFailedBid = biddingTeam === 'us' ? usPoints < 0 : DemPoints < 0;
+
+      let gameEnded = false;
+      let finalWinner = null;
+      let endReason = '';
+
+      // **Updated Win Conditions**
+      if (
+        ((biddingTeam === 'us' && newRunningTotals.us >= 500) ||
+         (biddingTeam === 'Dem' && newRunningTotals.Dem >= 500)) &&
+        (wonOnBid || setOtherTeam)
+      ) {
+        gameEnded = true;
+        finalWinner = biddingTeam;
+        endReason = 'reached 500 points';
+      } 
+      // **New Win Condition: Bidding Team Failed Bid and Other Team >= 500**
+      else if (biddingTeamFailedBid && otherTeamTotal >= 500) {
+        gameEnded = true;
+        finalWinner = otherTeam;
+        endReason = `${otherTeam} reached 500 points after ${biddingTeam === 'us' ? 'our team' : 'Dem team'} failed their bid`;
+      }
+      else if (spreadCondition) {
+        gameEnded = true;
+        finalWinner = spreadWinner;
+        endReason = 'a 1000-point spread';
+      }
+
+      ephemeralCustomBid = '';
+      ephemeralPoints = '';
+
+      if (gameEnded) {
+        alert(`Game Over! ${finalWinner === 'us' ? 'Our Team' : 'Dem Team'} wins by ${endReason}.`);
+      }
+
+      updateState({
+        rounds: newRounds,
+        gameOver: gameEnded,
+        winner: finalWinner,
+        biddingTeam: '',
+        bidAmount: '',
+        showCustomBid: false,
+        customBidValue: '',
+        enterBidderPoints: false,
+        error: ''
+      });
+
+      // Save the state after adding a new round
+      saveCurrentGameState();
     }
-  ];
-
-  const wonOnBid = biddingTeam === 'us'
-    ? usPoints >= bid && usPoints > 0
-    : DemPoints >= bid && DemPoints > 0;
-
-  const setOtherTeam = biddingTeam === 'us' ? DemPoints < 0 : usPoints < 0;
-
-  const pointSpread = Math.abs(newRunningTotals.us - newRunningTotals.Dem);
-  const spreadWinner = newRunningTotals.us > newRunningTotals.Dem ? 'us' : 'Dem';
-  const spreadCondition = pointSpread >= 1000;
-
-  // **New Variables for Additional Win Condition**
-  const otherTeam = biddingTeam === 'us' ? 'Dem' : 'us';
-  const otherTeamTotal = newRunningTotals[otherTeam];
-  const biddingTeamFailedBid = biddingTeam === 'us' ? usPoints < 0 : DemPoints < 0;
-
-  let gameEnded = false;
-  let finalWinner = null;
-  let endReason = '';
-
-  // **Updated Win Conditions**
-  if (
-    ((biddingTeam === 'us' && newRunningTotals.us >= 500) ||
-     (biddingTeam === 'Dem' && newRunningTotals.Dem >= 500)) &&
-    (wonOnBid || setOtherTeam)
-  ) {
-    gameEnded = true;
-    finalWinner = biddingTeam;
-    endReason = 'reached 500 points';
-  } 
-  // **New Win Condition: Bidding Team Failed Bid and Other Team >= 500**
-  else if (biddingTeamFailedBid && otherTeamTotal >= 500) {
-    gameEnded = true;
-    finalWinner = otherTeam;
-    endReason = `${otherTeam} reached 500 points after ${biddingTeam === 'us' ? 'our team' : 'Dem team'} failed their bid`;
-  }
-  else if (spreadCondition) {
-    gameEnded = true;
-    finalWinner = spreadWinner;
-    endReason = 'a 1000-point spread';
-  }
-
-  ephemeralCustomBid = '';
-  ephemeralPoints = '';
-
-  if (gameEnded) {
-    alert(`Game Over! ${finalWinner === 'us' ? 'Our Team' : 'Dem Team'} wins by ${endReason}.`);
-  }
-
-  updateState({
-    rounds: newRounds,
-    gameOver: gameEnded,
-    winner: finalWinner,
-    biddingTeam: '',
-    bidAmount: '',
-    showCustomBid: false,
-    customBidValue: '',
-    enterBidderPoints: false,
-    error: ''
-  });
-}
 
 
     function handleUndo() {
@@ -442,6 +535,9 @@
         lastBidAmount: newLastBidAmount,
         lastBidTeam: newLastBidTeam
       });
+
+      // Save the state after undoing a round
+      saveCurrentGameState();
     }
 
     function handleNewGame() {
@@ -474,6 +570,48 @@
           alert("Game saved successfully.");
         }
       }
+      
+      // Clear the active game state
+      localStorage.removeItem(ACTIVE_GAME_KEY);
+      
+      ephemeralCustomBid = '';
+      ephemeralPoints = '';
+      updateState({ ...DEFAULT_STATE });
+    }
+
+    function handleManualSaveGame() {
+      if (!state.rounds.length) {
+        alert("No game in progress to save.");
+        return;
+      }
+      const player1 = prompt("Enter the name for Us:");
+      if (!player1) {
+        alert("Player 1 name is required to save the game.");
+        return;
+      }
+      const player2 = prompt("Enter the name for Dem:");
+      if (!player2) {
+        alert("Player 2 name is required to save the game.");
+        return;
+      }
+      const finalScore = state.rounds.length
+        ? state.rounds[state.rounds.length - 1].runningTotals
+        : { us: 0, Dem: 0 };
+      const savedGames = getLocalStorage('savedGames');
+      savedGames.push({
+        player1: player1.trim(),
+        player2: player2.trim(),
+        rounds: state.rounds,
+        finalScore,
+        timestamp: new Date().toISOString()
+      });
+      setLocalStorage('savedGames', savedGames);
+      alert("Game saved successfully.");
+      
+      // Clear the active game state
+      localStorage.removeItem(ACTIVE_GAME_KEY);
+      
+      // Reset the game
       ephemeralCustomBid = '';
       ephemeralPoints = '';
       updateState({ ...DEFAULT_STATE });
@@ -607,6 +745,10 @@
       });
       setLocalStorage('freezerGames', freezerGames);
       alert("Current game with complete history has been frozen successfully.");
+      
+      // Clear the active game state
+      localStorage.removeItem(ACTIVE_GAME_KEY);
+      
       ephemeralCustomBid = '';
       ephemeralPoints = '';
       updateState({ ...DEFAULT_STATE });
@@ -637,6 +779,9 @@
       setLocalStorage('freezerGames', freezerGames);
       alert(`Freezer game "${freezerGame.name}" loaded successfully.`);
       closeSavedGamesModal();
+      
+      // Save the state after loading a freezer game
+      saveCurrentGameState();
     }
 
     /********************************************************
@@ -644,14 +789,14 @@
      ********************************************************/
     function renderTeamCard(team, total, colorClass) {
       const isSelected = state.biddingTeam === team;
-      const bgColor = isSelected ? `${colorClass}-200` : `${colorClass}-100`;
-      const hoverBgColor = isSelected ? `${colorClass}-300` : `${colorClass}-200`;
+      const bgColor = isSelected ? `${colorClass}-400` : `${colorClass}-100`;
+      const hoverBgColor = isSelected ? `${colorClass}-400` : `${colorClass}-200`;
       const predefinedTextColor = isSelected ? `${colorClass}-900` : `${colorClass}-700`;
 
       return `
         <div
           class="bg-${bgColor} cursor-pointer hover:bg-${hoverBgColor} transition-colors
-                 rounded-lg shadow-md p-4 flex flex-col items-center space-y-2 border ${isSelected ? `border-${colorClass}-600` : 'border-gray-300'} flex-1 min-w-0"
+                 rounded-lg shadow-md p-4 flex flex-col items-center space-y-2 flex-1 min-w-0"
           onclick="handleTeamClick('${team}')"
           tabindex="0"
           role="button"
@@ -955,6 +1100,17 @@
             >
               Freeze Game
             </button>
+            <!-- Removed the Save Game button -->
+            <!--
+            <button
+              onclick="handleManualSaveGame()"
+              class="bg-purple-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg shadow
+                     hover:bg-purple-700 focus:outline-none focus:ring-2
+                     focus:ring-purple-500 transition text-sm sm:text-base"
+            >
+              Save Game
+            </button>
+            -->
           </div>
         </div>
 
@@ -989,13 +1145,16 @@
     });
 
     /********************************************************
-     * Event Listeners for Modal Close Button
+     * Event Listeners for Modal Close Button and Initialization
      ********************************************************/
     document.addEventListener('DOMContentLoaded', () => {
       const closeBtn = document.getElementById('closeSavedGamesModalBtn');
       if (closeBtn) {
         closeBtn.addEventListener('click', closeSavedGamesModal);
       }
+
+      // Load the saved game state
+      loadCurrentGameState();
 
       // Register Service Worker
       if ('serviceWorker' in navigator) {
