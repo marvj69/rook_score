@@ -789,8 +789,8 @@
      ********************************************************/
     function renderTeamCard(team, total, colorClass) {
       const isSelected = state.biddingTeam === team;
-      const bgColor = isSelected ? `${colorClass}-400` : `${colorClass}-100`;
-      const hoverBgColor = isSelected ? `${colorClass}-400` : `${colorClass}-200`;
+      const bgColor = isSelected ? `${colorClass}-900` : `${colorClass}-500`;
+      const hoverBgColor = isSelected ? `${colorClass}-900` : `${colorClass}-500`;
       const predefinedTextColor = isSelected ? `${colorClass}-900` : `${colorClass}-700`;
 
       return `
@@ -803,10 +803,10 @@
           aria-pressed="${isSelected}"
           aria-label="Select ${team === 'us' ? 'Our Team' : 'Dem Team'}"
         >
-          <h2 class="text-xl font-semibold text-${predefinedTextColor} capitalize">
+          <h2 class="text-xl font-semibold text-white capitalize">
             ${team === 'us' ? 'Us' : 'Dem'}
           </h2>
-          <p class="text-3xl font-bold text-${predefinedTextColor}">${total}</p>
+          <p class="text-3xl font-bold text-white text-outline">${total}</p>
         </div>
       `;
     }
