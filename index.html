@@ -78,12 +78,108 @@
     #saveIndicator.show {
       opacity: 1;
     }
+
+    /* Hamburger Menu Styles */
+    /* Hamburger Menu Styles */
+/* Hamburger Menu Styles */
+.hamburger-menu {
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+  transition: opacity 0.3s ease; /* Smooth fade-out effect */
+}
+
+/* Hide the hamburger menu when the nav is open */
+nav.show ~ .hamburger-menu {
+  opacity: 0;
+  pointer-events: none; /* Disable clicks on the hidden hamburger menu */
+}
+
+.bar {
+  width: 30px;
+  height: 4px;
+  background-color: #333;
+  margin: 5px 0;
+}
+
+nav {
+  position: fixed;
+  top: 0;
+  left: -300px; /* Start off-screen */
+  width: 250px; /* Width of the slide-out menu */
+  height: 100%;
+  background-color: white; /* White background */
+  z-index: 999;
+  transition: left 0.3s ease;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1); /* Add shadow for depth */
+}
+
+nav.show {
+  left: 0; /* Slide in */
+}
+
+nav ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  margin-top: 60px; /* Space for the close button */
+}
+
+nav ul li {
+  margin: 0; /* Remove default margin */
+  border-bottom: 1px solid #e0e0e0; /* Horizontal line between options */
+}
+
+nav ul li:last-child {
+  border-bottom: none; /* Remove border for the last item */
+}
+
+nav ul li a {
+  color: #333; /* Dark text for better contrast */
+  text-decoration: none;
+  font-size: 20px;
+  padding: 15px 20px; /* Increase padding for better touch targets */
+  display: block;
+  transition: background-color 0.3s ease; /* Smooth hover effect */
+}
+
+nav ul li a:hover {
+  background-color: #f5f5f5; /* Light gray background on hover */
+}
+
+.close-menu {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: #333; /* Dark color for the close button */
+  font-size: 30px;
+  cursor: pointer;
+}
   </style>
 </head>
 <body class="bg-white text-gray-800 min-h-screen">
-  <!-- Version Indicator Moved to Top Right and Updated to Version 1.04 -->
+  <!-- Hamburger Menu -->
+  <div class="hamburger-menu" onclick="toggleMenu()">
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+  </div>
+  <nav id="menu">
+    <div class="close-menu" onclick="toggleMenu()">×</div>
+    <ul>
+      <li><a href="#" onclick="openSavedGamesModal(); toggleMenu()">View Saved Games</a></li>
+      <li><a href="#" onclick="handleNewGame(); toggleMenu()">New Game</a></li>
+      <li><a href="#" onclick="handleFreezerGame(); toggleMenu()">Freeze Game</a></li>
+    </ul>
+  </nav>
+
+  <!-- Version Indicator Moved to Top Right and Updated to Version 1.1 -->
   <div class="absolute top-0 right-0 m-4 p-2 text-gray-800 font-medium text-xs bg-white bg-opacity-70 rounded-full shadow px-3 py-1">
-    <p>Version 1.04</p>
+    <p>Version 1.1</p>
   </div>
   
   <div id="app" class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6"></div>
@@ -514,7 +610,6 @@
       // Save the state after adding a new round
       saveCurrentGameState();
     }
-
 
     function handleUndo() {
       if (!state.rounds.length) return;
@@ -1083,35 +1178,6 @@
             <h1 class="text-4xl sm:text-5xl font-extrabold text-gray-800">Rook!</h1>
           </div>
           <p class="text-md sm:text-lg text-gray-600">Tap a team to start a bid!</p>
-          <div class="flex justify-center space-x-4 mt-4">
-            <button
-              onclick="openSavedGamesModal()"
-              class="bg-green-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg shadow
-                     hover:bg-green-700 focus:outline-none focus:ring-2
-                     focus:ring-green-500 transition text-sm sm:text-base"
-            >
-              View Saved Games
-            </button>
-            <button
-              onclick="handleFreezerGame()"
-              class="bg-yellow-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg shadow
-                     hover:bg-yellow-700 focus:outline-none focus:ring-2
-                     focus:ring-yellow-500 transition text-sm sm:text-base"
-            >
-              Freeze Game
-            </button>
-            <!-- Removed the Save Game button -->
-            <!--
-            <button
-              onclick="handleManualSaveGame()"
-              class="bg-purple-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg shadow
-                     hover:bg-purple-700 focus:outline-none focus:ring-2
-                     focus:ring-purple-500 transition text-sm sm:text-base"
-            >
-              Save Game
-            </button>
-            -->
-          </div>
         </div>
 
         <!-- Teams and Round -->
@@ -1167,6 +1233,33 @@
         });
       }
     });
+
+   // Function to toggle the menu visibility
+function toggleMenu() {
+  const menu = document.getElementById("menu");
+  menu.classList.toggle("show");
+}
+
+// Function to close the menu
+function closeMenu() {
+  const menu = document.getElementById("menu");
+  menu.classList.remove("show");
+}
+
+// Event listener to close the menu when clicking outside of it
+document.addEventListener("click", function (event) {
+  const menu = document.getElementById("menu");
+  const hamburgerMenu = document.querySelector(".hamburger-menu");
+
+  // Check if the click is outside the menu and not on the hamburger icon
+  if (
+    !menu.contains(event.target) &&
+    !hamburgerMenu.contains(event.target) &&
+    menu.classList.contains("show")
+  ) {
+    closeMenu();
+  }
+});
 
     // Initial render
     renderApp();
