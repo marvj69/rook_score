@@ -5,8 +5,8 @@ const urlsToCache = [
   '/manifest.json',
   '/service-worker.js',
   '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png'
-  // Add other assets like CSS, JS files, images, etc., if any
+  '/icons/icon-512x512.png',
+  'https://cdn.tailwindcss.com'  // Added Tailwind CDN URL for offline caching
 ];
 
 // Install Event: Caches the specified resources
