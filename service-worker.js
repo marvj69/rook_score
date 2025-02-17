@@ -1,73 +1,54 @@
-const CACHE_NAME = 'rook-cache-v1';
+const CACHE_NAME = "rook-cache-v2";
+const OFFLINE_URL = "index.html"; // Use relative path
+
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/service-worker.js',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  'https://cdn.tailwindcss.com'  // Added Tailwind CDN URL for offline caching
+  "./", // Root path
+  "./index.html",
+  "./manifest.json",
+  "./icons/icon-192x192.png",
+  "./icons/icon-512x512.png",
+  "./service-worker.js"
 ];
 
-// Install Event: Caches the specified resources
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
-      .catch((error) => {
-        console.error('Failed to cache during install:', error);
-      })
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(urlsToCache);
+    })
   );
 });
 
-// Fetch Event: Serves cached content when offline
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - return the cached response
-        if (response) {
-          return response;
-        }
-        // Clone the request as it's a stream and can be consumed only once
-        const fetchRequest = event.request.clone();
-        return fetch(fetchRequest)
-          .then((networkResponse) => {
-            // Check for a valid response
-            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-              return networkResponse;
-            }
-            // Clone the response as it's a stream and can be consumed only once
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              });
-            return networkResponse;
-          });
+self.addEventListener("fetch", (event) => {
+  // Handle navigation requests
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      caches.match("./index.html").then((cachedResponse) => {
+        return cachedResponse || fetch(event.request).catch(() => {
+          return caches.match(OFFLINE_URL);
+        });
       })
-      .catch(() => {
-        // Fallback content if both cache and network are unavailable
-        return caches.match('/index.html');
+    );
+  } else {
+    // Handle other assets
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        return cachedResponse || fetch(event.request);
       })
-  );
+    );
+  }
 });
 
-// Activate Event: Cleans up old caches
-self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((cacheNames) => Promise.all(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
         cacheNames.map((cacheName) => {
-          if (!cacheWhitelist.includes(cacheName)) {
-            console.log('Deleting old cache:', cacheName);
+          if (cacheName !== CACHE_NAME) {
             return caches.delete(cacheName);
           }
         })
-      ))
+      );
+    })
   );
 });
