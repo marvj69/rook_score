@@ -850,7 +850,7 @@
     /**
  * The overall version of your migrations
  */
-const CURRENT_MIGRATION_VERSION = 2;
+const CURRENT_MIGRATION_VERSION = 3;
 const MIGRATION_VERSION_KEY = "rookMigrationVersion";
 
 /**
@@ -912,10 +912,6 @@ function setLocalStorage(key, value) {
     ) {
       round.bidAmount = round.bid;
       delete round.bid;
-    }
-    // Normalize biddingTeam if it exists.
-    if (typeof round.biddingTeam === "string") {
-      round.biddingTeam = round.biddingTeam.toLowerCase();
     }
     // If biddingTeam is missing, infer it from the points.
     if (!round.biddingTeam) {
@@ -1030,7 +1026,7 @@ function setLocalStorage(key, value) {
     });
     setLocalStorage("freezerGames", freezerGames);
   }
-
+  recalcTeamsStats();
   // Mark migration as complete
   localStorage.setItem(MIGRATION_VERSION_KEY, String(CURRENT_MIGRATION_VERSION));
 }
