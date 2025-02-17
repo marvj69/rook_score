@@ -850,7 +850,7 @@
     /**
  * The overall version of your migrations
  */
-const CURRENT_MIGRATION_VERSION = 1;
+const CURRENT_MIGRATION_VERSION = 2;
 const MIGRATION_VERSION_KEY = "rookMigrationVersion";
 
 /**
@@ -896,30 +896,40 @@ function setLocalStorage(key, value) {
         delete game.finalScore.Dem;
       }
 
-      // Migrate each round in the game
       if (Array.isArray(game.rounds)) {
-        game.rounds.forEach((round) => {
-          if (typeof round.DemPoints !== "undefined") {
-            round.demPoints = round.DemPoints;
-            delete round.DemPoints;
-          }
-          if (round.runningTotals && typeof round.runningTotals.Dem !== "undefined") {
-            round.runningTotals.dem = round.runningTotals.Dem;
-            delete round.runningTotals.Dem;
-          }
-          if (
-            typeof round.bid !== "undefined" &&
-            (typeof round.bidAmount === "undefined" || round.bidAmount === null)
-          ) {
-            round.bidAmount = round.bid;
-            delete round.bid;
-          }
-          // Normalize biddingTeam to lowercase if it exists
-          if (typeof round.biddingTeam === "string") {
-            round.biddingTeam = round.biddingTeam.toLowerCase();
-          }
-        });
+  game.rounds.forEach((round) => {
+    if (typeof round.DemPoints !== "undefined") {
+      round.demPoints = round.DemPoints;
+      delete round.DemPoints;
+    }
+    if (round.runningTotals && typeof round.runningTotals.Dem !== "undefined") {
+      round.runningTotals.dem = round.runningTotals.Dem;
+      delete round.runningTotals.Dem;
+    }
+    if (
+      typeof round.bid !== "undefined" &&
+      (typeof round.bidAmount === "undefined" || round.bidAmount === null)
+    ) {
+      round.bidAmount = round.bid;
+      delete round.bid;
+    }
+    // Normalize biddingTeam if it exists.
+    if (typeof round.biddingTeam === "string") {
+      round.biddingTeam = round.biddingTeam.toLowerCase();
+    }
+    // If biddingTeam is missing, infer it from the points.
+    if (!round.biddingTeam) {
+      if (typeof round.usPoints === "number" && round.usPoints < 0) {
+        round.biddingTeam = "us";
+      } else if (typeof round.demPoints === "number" && round.demPoints < 0) {
+        round.biddingTeam = "dem";
+      } else {
+        // Fallback: if both teams have positive points, assume the team with the lower score was bidding.
+        round.biddingTeam = round.usPoints <= round.demPoints ? "us" : "dem";
       }
+    }
+  });
+}
 
       // Normalize the "winner" field so it is either "us" or "dem"
       if (typeof game.winner === "string") {
