@@ -914,6 +914,10 @@ function setLocalStorage(key, value) {
             round.bidAmount = round.bid;
             delete round.bid;
           }
+          // Normalize biddingTeam to lowercase if it exists
+          if (typeof round.biddingTeam === "string") {
+            round.biddingTeam = round.biddingTeam.toLowerCase();
+          }
         });
       }
 
