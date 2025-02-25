@@ -386,6 +386,9 @@ input[type="color"]:focus {
         margin: 1rem auto;
         max-height: calc(100vh - 2rem);
       }
+      .modal-open .hamburger-menu {
+        display: none;
+      }
     </style>
   </head>
   <body
@@ -480,7 +483,7 @@ input[type="color"]:focus {
       style="cursor: pointer"
       onclick="showVersionNum()"
     >
-      <p>version 1.3.1</p>
+      <p>version 1.3.2</p>
     </div>
 
     <!-- Main App Container -->
@@ -490,60 +493,61 @@ input[type="color"]:focus {
     <div id="saveIndicator" class="hidden">Saved</div>
 
     <!-- Saved Games Modal -->
-    <div
-      id="savedGamesModal"
-      style="z-index: 9999;"
-      class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="savedGamesTitle"
+<div
+id="savedGamesModal"
+style="z-index: 9999;"
+class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 modal"
+role="dialog"
+aria-modal="true"
+aria-labelledby="savedGamesTitle"
+>
+<div
+  class="bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-y-auto dark:bg-gray-800 z-50"
+  style="max-height: 85vh;"
+>
+  <div class="flex justify-between items-center p-5 border-b border-gray-200 dark:border-gray-700">
+    <h3
+      id="savedGamesTitle"
+      class="text-2xl font-semibold text-gray-800 dark:text-white"
     >
-      <div
-        class="bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-y-auto max-h-full dark:bg-gray-800"
+      Saved Games
+    </h3>
+    <button
+      id="closeSavedGamesModalBtn"
+      class="text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white dark:hover:text-gray-300"
+      aria-label="Close Saved Games Modal"
+      type="button"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="h-6 w-6 pointer-events-none"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
       >
-        <div
-          class="flex justify-between items-center p-5 border-b border-gray-200 dark:border-gray-700"
-        >
-          <h3
-            id="savedGamesTitle"
-            class="text-2xl font-semibold text-gray-800 dark:text-white"
-          >
-            Saved Games
-          </h3>
-          <button
-            id="closeSavedGamesModalBtn"
-            class="text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white dark:hover:text-gray-300"
-            aria-label="Close Saved Games Modal"
-            type="button"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-6 w-6 pointer-events-none"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div class="p-5 space-y-6">
-          <div class="rounded-xl shadow-sm p-4 bg-gray-50 dark:bg-gray-700">
-            <h4 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-              Completed Games
-            </h4>
-            <div id="savedGamesList" class="space-y-4"></div>
-          </div>
-          <div class="rounded-xl shadow-sm p-4 bg-gray-50 dark:bg-gray-700">
-            <h4 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-              Freezer Games
-            </h4>
-            <div id="freezerGamesList" class="space-y-4"></div>
-          </div>
-        </div>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+  <div class="p-5 space-y-6">
+    <div class="rounded-xl shadow-sm p-4 bg-gray-50 dark:bg-gray-700">
+      <h4 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
+        Completed Games
+      </h4>
+      <div id="savedGamesList" class="flex flex-col-reverse space-y-4 space-y-reverse">
       </div>
     </div>
+    <div class="rounded-xl shadow-sm p-4 bg-gray-50 dark:bg-gray-700">
+      <h4 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">
+        Freezer Games
+      </h4>
+      <div id="freezerGamesList" class="flex flex-col-reverse space-y-4 space-y-reverse">
+      </div>
+    </div>
+  </div>
+</div>
+</div>
 
     <!-- Confirmation Modal -->
     <div
@@ -637,9 +641,10 @@ input[type="color"]:focus {
       aria-labelledby="aboutModalTitle"
       style="-webkit-overflow-scrolling: touch;"
     >
-      <div
-        class="relative mx-auto my-8 w-full max-w-4xl bg-white rounded-xl shadow-lg dark:bg-gray-800 overflow-hidden max-h-screen overflow-y-auto"
-      >
+    <div
+    class="relative mx-auto my-8 w-full max-w-4xl bg-white rounded-xl shadow-lg dark:bg-gray-800 overflow-hidden overflow-y-auto z-50"
+    style="max-height: 69vh;"
+  >
         <div class="p-6">
           <h2
             id="aboutModalTitle"
@@ -654,10 +659,11 @@ input[type="color"]:focus {
             dark mode, and change the theme from the menu.
           </p>
           <p class="text-gray-700 dark:text-white mb-4">
-            <strong>What's New in 1.3.1:</strong>
+            <strong>What's New in 1.3.2:</strong>
             <p>
-              version 1.3.1 introduces a better way to handle team names and statistics.
+              version 1.3.2 introduces a better way to handle team names and statistics.
             </p>
+            - Sandbagger. Are you a sandbagger? Check the team stats to find out.<br />
             - Select teams: Team statistics save per team once team names are entered.<br />
             - Automatic Team Stats: Newly created team names are stored locally, along with more stats.<br />
             - Expanded Statistics Section: Click the dropdown for more stats.<br />
@@ -680,7 +686,7 @@ input[type="color"]:focus {
     <!-- Statistics Modal -->
     <div
       id="statisticsModal"
-      class="fixed inset-0 bg-black bg-opacity-50 hidden overflow-y-auto p-4 z-50 modal"
+      class="fixed inset-0 bg-black bg-opacity-50 hidden overflow-y-auto p-4 z-50 modal flex items-center justify-center"
       role="dialog"
       aria-modal="true"
       aria-labelledby="statisticsModalTitle"
@@ -920,7 +926,7 @@ function setLocalStorage(key, value) {
       }
 
       if (Array.isArray(game.rounds)) {
-  game.rounds.forEach((round) => {
+      game.rounds.forEach((round) => {
     if (typeof round.DemPoints !== "undefined") {
       round.demPoints = round.DemPoints;
       delete round.DemPoints;
@@ -1062,10 +1068,12 @@ function setLocalStorage(key, value) {
 
       function openThemeModal() {
         document.getElementById("themeModal").classList.remove("hidden");
+        document.body.classList.add("modal-open");
       }
 
       function closeThemeModal() {
         document.getElementById("themeModal").classList.add("hidden");
+        document.body.classList.remove("modal-open");
       }
 
       function applyTheme(themeClass) {
@@ -1440,9 +1448,11 @@ function deleteGame(storageKey, index, descriptor) {
 
       function closeSavedGamesModal() {
         document.getElementById("savedGamesModal").classList.add("hidden");
+        document.body.classList.remove("modal-open");
       }
 
       function openConfirmationModal(message, yesCb, noCb) {
+        document.body.classList.add("modal-open");
         const modal = document.getElementById("confirmationModal");
         const msgEl = document.getElementById("confirmationModalMessage");
         const yesBtn = document.getElementById("confirmModalButton");
@@ -1471,11 +1481,13 @@ function deleteGame(storageKey, index, descriptor) {
 
       function closeConfirmationModal() {
         document.getElementById("confirmationModal").classList.add("hidden");
+        document.body.classList.remove("modal-open");
         confirmationCallback = null;
         noCallback = null;
       }
 
       function openSavedGamesModal() {
+        document.body.classList.add("modal-open");
         renderSavedGames();
         renderFreezerGames();
         document.getElementById("savedGamesModal").classList.remove("hidden");
@@ -1485,10 +1497,12 @@ function deleteGame(storageKey, index, descriptor) {
       function openTeamSelectionModal() {
         populateTeamSelects();
         document.getElementById("teamSelectionModal").classList.remove("hidden");
+        document.body.classList.add("modal-open");
       }
 
       function closeTeamSelectionModal() {
         document.getElementById("teamSelectionModal").classList.add("hidden");
+        document.body.classList.remove("modal-open");
       }
 
       // Populate the selects with existing teams or option to add new
@@ -1951,119 +1965,62 @@ function deleteGame(storageKey, index, descriptor) {
         openTeamSelectionModal();
       }
 
-      function handleManualSaveGame() {
-        if (!state.usTeamName || !state.demTeamName) {
-          pendingGameAction = "save";
-          openTeamSelectionModal();
-          return;
-        }
-        if (!state.rounds.length) return;
-
-        // If game is over and we have a winner, finalize the time
-        if (state.gameOver && state.winner) {
-          let finalAccumulated = state.accumulatedTime;
-          if (state.startTime !== null) {
-            finalAccumulated += Date.now() - state.startTime;
-          }
-          updateTeamsStatsOnGameEnd(state.winner);
-
-          // Grab final score
-          const lastRound = state.rounds[state.rounds.length - 1];
-          const finalScore =
-            lastRound && lastRound.runningTotals
-              ? lastRound.runningTotals
-              : { us: 0, dem: 0 };
-
-          // Save to "savedGames"
-          const savedGames = getLocalStorage("savedGames");
-          savedGames.push({
-            player1: state.usTeamName || "Us",
-            player2: state.demTeamName || "Dem",
-            rounds: state.rounds,
-            finalScore,
-            winner: state.winner,
-            victoryMethod: state.victoryMethod,
-            timestamp: new Date().toISOString(),
-            playerStats: {
-              player1: {
-                totalPoints: finalScore.us,
-                bids: [],
-                wins: state.winner === "us" ? 1 : 0,
-              },
-              player2: {
-                totalPoints: finalScore.dem,
-                bids: [],
-                wins: state.winner === "dem" ? 1 : 0,
-              },
-            },
-            usTeamName: state.usTeamName || "Us",
-            demTeamName: state.demTeamName || "Dem",
-            // Add the final duration in ms
-            durationMs: finalAccumulated,
-          });
-          setLocalStorage("savedGames", savedGames);
-          showSaveIndicator();
-
-          // Clear active game
-          localStorage.removeItem(ACTIVE_GAME_KEY);
-          ephemeralCustomBid = "";
-          ephemeralPoints = "";
-          updateState({ ...DEFAULT_STATE });
-          confettiTriggered = false;
-        } else {
-          // If the game isn't over but user forcibly saves,
-          // we still record it as a 'completed' game with no winner.
-          let finalAccumulated = state.accumulatedTime;
-          if (state.startTime !== null) {
-            finalAccumulated += Date.now() - state.startTime;
-          }
-
-          const lastRound = state.rounds[state.rounds.length - 1] || {};
-          const finalScore = lastRound.runningTotals || { us: 0, dem: 0 };
-          const savedGames = getLocalStorage("savedGames");
-          savedGames.push({
-            player1: state.usTeamName || "Us",
-            player2: state.demTeamName || "Dem",
-            rounds: state.rounds,
-            finalScore,
-            winner: state.winner,
-            victoryMethod: state.victoryMethod,
-            timestamp: new Date().toISOString(),
-            playerStats: {
-              player1: {
-                totalPoints: finalScore.us,
-                bids: [],
-                wins: state.winner === "us" ? 1 : 0,
-              },
-              player2: {
-                totalPoints: finalScore.dem,
-                bids: [],
-                wins: state.winner === "dem" ? 1 : 0,
-              },
-            },
-            usTeamName: state.usTeamName || "Us",
-            demTeamName: state.demTeamName || "Dem",
-            durationMs: finalAccumulated,
-          });
-          setLocalStorage("savedGames", savedGames);
-          showSaveIndicator();
-
-          localStorage.removeItem(ACTIVE_GAME_KEY);
-          ephemeralCustomBid = "";
-          ephemeralPoints = "";
-          updateState({ ...DEFAULT_STATE });
-          confettiTriggered = false;
-        }
-      }
-
-      function handleFreezerGame() {
-  if (!state.rounds.length) {
-    alert("No game in progress to freeze.");
+function handleManualSaveGame() {
+  if (!state.usTeamName || !state.demTeamName) {
+    pendingGameAction = "save";
+    openTeamSelectionModal();
     return;
   }
-  // Always prompt for team names before freezing the game.
-  pendingGameAction = "freeze";
-  openTeamSelectionModal();
+  if (!state.rounds.length) return;
+
+  // 1) Finalize accumulated game time
+  let finalAccumulated = state.accumulatedTime;
+  if (state.startTime !== null) {
+    finalAccumulated += Date.now() - state.startTime;
+  }
+  
+  // 2) Calculate final score from the last round’s running totals
+  const lastRound = state.rounds[state.rounds.length - 1] || {};
+  const finalScore = lastRound.runningTotals || { us: 0, dem: 0 };
+
+  // 3) Construct the game object
+  const gameObj = {
+    player1: state.usTeamName || "Us",
+    player2: state.demTeamName || "Dem",
+    rounds: state.rounds,
+    finalScore: finalScore,
+    winner: state.winner,
+    victoryMethod: state.victoryMethod,
+    timestamp: new Date().toISOString(),
+    playerStats: {
+      player1: {
+        totalPoints: finalScore.us,
+        bids: [],
+        wins: state.winner === "us" ? 1 : 0,
+      },
+      player2: {
+        totalPoints: finalScore.dem,
+        bids: [],
+        wins: state.winner === "dem" ? 1 : 0,
+      },
+    },
+    usTeamName: state.usTeamName || "Us",
+    demTeamName: state.demTeamName || "Dem",
+    durationMs: finalAccumulated,
+  };
+
+  // 5) Save the game object to localStorage
+  const savedGames = getLocalStorage("savedGames");
+  savedGames.push(gameObj);
+  setLocalStorage("savedGames", savedGames);
+  showSaveIndicator();
+
+  // 6) Clean up current game state
+  localStorage.removeItem(ACTIVE_GAME_KEY);
+  ephemeralCustomBid = "";
+  ephemeralPoints = "";
+  updateState({ ...DEFAULT_STATE });
+  confettiTriggered = false;
 }
 
       function freezeCurrentGame() {
@@ -2213,6 +2170,7 @@ function deleteGame(storageKey, index, descriptor) {
       }
 
       function openViewSavedGameModal() {
+        document.body.classList.add("modal-open");
         const modal = document.getElementById("viewSavedGameModal");
         modal.classList.remove("hidden");
         modal.focus();
@@ -2221,6 +2179,7 @@ function deleteGame(storageKey, index, descriptor) {
       function closeViewSavedGameModal() {
         document.getElementById("viewSavedGameModal").classList.add("hidden");
         document.getElementById("savedGamesModal").classList.remove("hidden");
+        document.body.classList.remove("modal-open");
       }
 
       // Helper to format a duration in ms to H:MM:SS or M:SS
@@ -2245,70 +2204,171 @@ function deleteGame(storageKey, index, descriptor) {
         }
       }
 
-      function renderReadOnlyGameDetails(game) {
-        const {
-          finalScore,
-          rounds,
-          winner,
-          victoryMethod,
-          timestamp,
-          usTeamName,
-          demTeamName,
-          durationMs,
-        } = game;
-        const roundHtml = rounds
-          .map((r, index) => {
-            const arrow = r.biddingTeam === "us" ? `← (${r.bidAmount})` : `(${r.bidAmount}) →`;
-            return `
-              <div class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700">
-                <div class="text-left text-gray-800 dark:text-white font-semibold">${r.runningTotals.us}</div>
-                <div class="text-center">${arrow}</div>
-                <div class="text-right text-gray-800 dark:text-white font-semibold">${r.runningTotals.dem}</div>
-              </div>`;
-          })
-          .join("");
-
-        return `
-          <div class="space-y-4">
-            <div>
-              <h4 class="text-xl font-bold text-gray-800 dark:text-white">${usTeamName || "Us"} vs ${demTeamName || "Dem"}</h4>
-              <p class="text-gray-600 dark:text-white mt-1">Date Played: ${new Date(timestamp).toLocaleString()}</p>
-            </div>
-            <div>
-              <p class="font-semibold text-gray-800 dark:text-white">Final Score:</p>
-              <p class="text-gray-700 dark:text-white mt-1">
-                Us: ${finalScore.us} | Dem: ${finalScore.dem}
-              </p>
-            </div>
-            <div>
-              <p class="font-semibold text-gray-800 dark:text-white">Winner:</p>
-              <p class="text-gray-700 dark:text-white mt-1">${
-                winner === "us" ? (usTeamName || "Us") : winner === "dem" ? (demTeamName || "Dem") : "N/A"
-              }</p>
-            </div>
-            <div>
-              <p class="font-semibold text-gray-800 dark:text-white">Victory Method:</p>
-              <p class="text-gray-700 dark:text-white mt-1">${victoryMethod || "N/A"}</p>
-            </div>
-            <div>
-              <p class="font-semibold text-gray-800 dark:text-white">Duration:</p>
-              <p class="text-gray-700 dark:text-white mt-1">
-                ${durationMs ? formatDuration(durationMs) : "N/A"}
-              </p>
-            </div>
-            <div>
-              <p class="font-semibold text-gray-800 dark:text-white mb-2">Round-by-Round History:</p>
-              <div class="grid grid-cols-3 gap-2 font-semibold text-gray-800 dark:text-white mb-2">
-                <div class="text-left">Us</div>
-                <div class="text-center">Bid</div>
-                <div class="text-right">Dem</div>
-              </div>
-              <div class="space-y-2">
-                ${roundHtml || "<p>No rounds recorded.</p>"}
-              </div>
-            </div>
-          </div>`;
+      function isGameSandbagForTeam(game, team, roundThreshold = 2) {
+  let sandbagCount = 0;
+  if (!game.rounds || !Array.isArray(game.rounds)) return false;
+  game.rounds.forEach((round) => {
+    const usPoints = Number(round.usPoints) || 0;
+    const demPoints = Number(round.demPoints) || 0;
+    const bidAmount = Number(round.bidAmount) || 0;
+    // For team "Us" (or custom team name stored in game.usTeamName):
+    if (team === (game.usTeamName || "Us")) {
+      // When Dem was bidding but lost (demPoints negative) and Us scored well:
+      if (round.biddingTeam === "dem" && demPoints < 0) {
+        if (usPoints >= 80 || usPoints >= bidAmount) {
+          sandbagCount++;
+        }
       }
+    }
+    // For team "Dem" (or custom game.demTeamName):
+    else if (team === (game.demTeamName || "Dem")) {
+      // When Us was bidding but lost (usPoints negative) and Dem scored well:
+      if (round.biddingTeam === "us" && usPoints < 0) {
+        if (demPoints >= 80 || demPoints >= bidAmount) {
+          sandbagCount++;
+        }
+      }
+    }
+  });
+  return sandbagCount >= roundThreshold;
+}
+      // Detects sandbag events for the winning team.
+// Returns "Yes" if the winning team has at least the threshold count, otherwise "No".
+function detectSandbag(rounds, winner, threshold = 2) {
+  let usSandbagCount = 0;
+  let demSandbagCount = 0;
+
+  if (rounds && rounds.length) {
+    rounds.forEach((round, index) => {
+      // Determine individual round points.
+      let roundUsPoints = round.usPoints;
+      let roundDemPoints = round.demPoints;
+
+      // If individual round points are undefined, compute from running totals.
+      if (roundUsPoints === undefined || roundDemPoints === undefined) {
+        if (index === 0) {
+          roundUsPoints = round.runningTotals.us;
+          roundDemPoints = round.runningTotals.dem;
+        } else {
+          const prevTotals = rounds[index - 1].runningTotals;
+          roundUsPoints = round.runningTotals.us - prevTotals.us;
+          roundDemPoints = round.runningTotals.dem - prevTotals.dem;
+        }
+      }
+
+      const { biddingTeam, bidAmount } = round;
+
+      // If US bid but failed, count potential sandbag for Dem.
+      if (biddingTeam === "us" && roundUsPoints < 0) {
+        if (roundDemPoints >= 80 || roundDemPoints >= bidAmount) {
+          demSandbagCount++;
+        }
+      }
+      // If Dem bid but failed, count potential sandbag for Us.
+      if (biddingTeam === "dem" && roundDemPoints < 0) {
+        if (roundUsPoints >= 80 || roundUsPoints >= bidAmount) {
+          usSandbagCount++;
+        }
+      }
+    });
+  }
+
+  // Only the winning team's sandbag events matter.
+  if (winner === "us" && usSandbagCount >= threshold) {
+    return "Yes";
+  } else if (winner === "dem" && demSandbagCount >= threshold) {
+    return "Yes";
+  }
+  return "No";
+}
+
+function renderReadOnlyGameDetails(game) {
+  const {
+    rounds,
+    timestamp,
+    usTeamName,
+    demTeamName,
+    durationMs,
+    winner,
+  } = game;
+
+  // Use the separate detectSandbag function.
+  const sandbagNote = detectSandbag(rounds, winner);
+
+  const roundHtml = rounds
+    .map((r, index) => {
+      const arrow =
+        r.biddingTeam === "us"
+          ? `← (${r.bidAmount})`
+          : `(${r.bidAmount}) →`;
+      return `
+        <div class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700">
+          <div class="text-left text-gray-800 dark:text-white font-semibold">${r.runningTotals.us}</div>
+          <div class="text-center">${arrow}</div>
+          <div class="text-right text-gray-800 dark:text-white font-semibold">${r.runningTotals.dem}</div>
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <div class="space-y-4">
+      <!-- Header -->
+      <div>
+        <h4 class="text-xl font-bold text-gray-800 dark:text-white">
+          Winner: ${
+            winner === "us"
+              ? (usTeamName || "Us")
+              : winner === "dem"
+              ? (demTeamName || "Dem")
+              : "N/A"
+          }
+        </h4>
+        <p class="text-lg text-gray-600 dark:text-white mt-1">
+          ${usTeamName || "Us"} vs ${demTeamName || "Dem"}
+        </p>
+        <p class="text-gray-600 dark:text-white mt-1">
+          Date Played: ${new Date(timestamp).toLocaleString([], {
+            year: "numeric",
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </p>
+      </div>
+
+      <!-- Duration -->
+      <div>
+        <p class="font-semibold text-gray-800 dark:text-white">Duration:</p>
+        <p class="text-gray-700 dark:text-white mt-1">
+          ${durationMs ? formatDuration(durationMs) : "N/A"}
+        </p>
+      </div>
+
+      <!-- Sandbag Info computed from rounds -->
+      <div>
+        <p class="font-semibold text-gray-800 dark:text-white">Sandbag?</p>
+        <p class="text-gray-700 dark:text-white mt-1">
+          ${sandbagNote}
+        </p>
+      </div>
+
+      <!-- Round-by-Round History -->
+      <div>
+        <p class="font-semibold text-gray-800 dark:text-white mb-2">
+          Round-by-Round History:
+        </p>
+        <div class="grid grid-cols-3 gap-2 font-semibold text-gray-800 dark:text-white mb-2">
+          <div class="text-left">Us</div>
+          <div class="text-center">Bid</div>
+          <div class="text-right">Dem</div>
+        </div>
+        <div class="space-y-2">
+          ${roundHtml || "<p>No rounds recorded.</p>"}
+        </div>
+      </div>
+    </div>`;
+}
 
       function renderSavedGames() {
         const savedGames = getLocalStorage("savedGames");
@@ -2922,17 +2982,19 @@ function deleteGame(storageKey, index, descriptor) {
 
       function showVersionNum() {
         alert(
-          "version 1.3.1 adds a fully customizeable color selector & various UI improvements."
+          "version 1.3.2 adds a fully customizeable color selector & various UI improvements."
         );
       }
 
       function openAboutModal() {
-        document.getElementById("aboutModal").classList.remove("hidden");
-      }
+    document.getElementById("aboutModal").classList.remove("hidden");
+    document.body.classList.add("modal-open");
+}
 
-      function closeAboutModal() {
-        document.getElementById("aboutModal").classList.add("hidden");
-      }
+function closeAboutModal() {
+    document.getElementById("aboutModal").classList.add("hidden");
+    document.body.classList.remove("modal-open");
+}
 
       let savedGamesModal,
         viewSavedGameModal,
@@ -3041,8 +3103,7 @@ function deleteGame(storageKey, index, descriptor) {
         }
       });
 
-      // Helper to render the team stats table based on the selected additional stat.
-function renderTeamStatsTable(teamsData, additionalStatKey) {
+      function renderTeamStatsTable(teamsData, additionalStatKey) {
   let headerText = "";
   if (additionalStatKey === "games") {
     headerText = "Games";
@@ -3052,15 +3113,18 @@ function renderTeamStatsTable(teamsData, additionalStatKey) {
     headerText = "Bid Success %";
   } else if (additionalStatKey === "handsWonPct") {
     headerText = "Hands Won %";
+  } else if (additionalStatKey === "sandbagger") {
+    headerText = "Sandbagger?";
+  } else if (additionalStatKey === "360s") {
+    headerText = "360s";
   }
-
+  
   let tableHTML = `
     <div id="teamStatsTableContainer">
       <div class="overflow-x-auto">
         <table class="min-w-full bg-gray-50 dark:bg-gray-700 rounded-xl">
           <thead>
             <tr class="border-b dark:border-gray-600">
-              <!-- Sticky Team header -->
               <th class="px-4 py-2 text-left text-sm font-semibold text-gray-700 dark:text-white sticky left-0 bg-gray-50 dark:bg-gray-700 z-10">
                 Team
               </th>
@@ -3074,11 +3138,10 @@ function renderTeamStatsTable(teamsData, additionalStatKey) {
           </thead>
           <tbody>
   `;
-
+  
   teamsData.forEach((team) => {
     tableHTML += `
       <tr class="border-b last:border-0 dark:border-gray-700">
-        <!-- Sticky Team cell -->
         <td class="px-4 py-2 whitespace-nowrap text-gray-700 dark:text-white sticky left-0 bg-gray-50 dark:bg-gray-700 z-10">
           ${team.name}
           <button
@@ -3103,6 +3166,10 @@ function renderTeamStatsTable(teamsData, additionalStatKey) {
       statValue = team.bidSuccessPct + "%";
     } else if (additionalStatKey === "handsWonPct") {
       statValue = team.handsWonPct + "%";
+    } else if (additionalStatKey === "sandbagger") {
+      statValue = team.sandbagger;
+    } else if (additionalStatKey === "360s") {
+      statValue = team.count360;
     }
     tableHTML += `
         <td class="px-4 py-2 text-center text-gray-700 dark:text-white">
@@ -3111,7 +3178,7 @@ function renderTeamStatsTable(teamsData, additionalStatKey) {
       </tr>
     `;
   });
-
+  
   tableHTML += `
           </tbody>
         </table>
@@ -3121,19 +3188,19 @@ function renderTeamStatsTable(teamsData, additionalStatKey) {
   return tableHTML;
 }
 
-// Updated openStatisticsModal() function.
 function openStatisticsModal() {
+  document.body.classList.add("modal-open");
   const stats = getStatistics();
   let content = "";
   if (!stats.totalGames && !stats.teamsData.length) {
     content =
       '<p class="text-gray-600 dark:text-white mt-2">No completed games and no teams yet.</p>';
   } else {
-    // Optional top row: overall average bid (or any other overall stat)
+    // Top row: Overall Average Bid and Total Time Played.
     let topRow = "";
     if (stats.totalGames > 0) {
       topRow = `
-        <div class="grid grid-cols-1 gap-6 mb-8">
+        <div class="grid grid-cols-2 gap-6 mb-8">
           <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 shadow-sm">
             <p class="text-gray-500 dark:text-white text-sm uppercase font-semibold tracking-wide">
               Overall Average Bid
@@ -3142,9 +3209,17 @@ function openStatisticsModal() {
               ${stats.overallAverageBid}
             </p>
           </div>
+          <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 shadow-sm">
+            <p class="text-gray-500 dark:text-white text-sm uppercase font-semibold tracking-wide">
+              Total Time Played
+            </p>
+            <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+              ${formatDuration(stats.totalTimePlayedMs)}
+            </p>
+          </div>
         </div>`;
     }
-    // Dropdown selector for the additional stat.
+    // Dropdown selector now includes "360s".
     let dropdown = `
       <div class="mb-4">
         <label for="additionalStatSelector" class="block text-sm font-medium text-gray-700 dark:text-white">
@@ -3155,18 +3230,18 @@ function openStatisticsModal() {
           <option value="avgBid">Avg Bid</option>
           <option value="bidSuccessPct">Bid Success %</option>
           <option value="handsWonPct">Hands Won %</option>
+          <option value="sandbagger">Sandbagger?</option>
+          <option value="360s">360s</option>
         </select>
       </div>
     `;
-    // Render the table with an initial additional stat (e.g. "games")
     let teamStatsTable = renderTeamStatsTable(stats.teamsData, "games");
-
     content = `${topRow}${dropdown}<div id="teamStatsTableWrapper">${teamStatsTable}</div>`;
   }
   document.getElementById("statisticsModalContent").innerHTML = content;
   document.getElementById("statisticsModal").classList.remove("hidden");
-
-  // Attach event listener to the dropdown so that the table updates when selection changes.
+  
+  // Update the table when the dropdown selection changes.
   const selector = document.getElementById("additionalStatSelector");
   if (selector) {
     selector.addEventListener("change", function () {
@@ -3176,41 +3251,38 @@ function openStatisticsModal() {
     });
   }
 }
-
       function closeStatisticsModal() {
         document.getElementById("statisticsModal").classList.add("hidden");
         document.getElementById("statisticsModalContent").innerHTML = "";
+        document.body.classList.remove("modal-open");
       }
 
       function getStatistics() {
   const savedGames = getLocalStorage("savedGames");
-
-  // Only consider games that actually have at least one round
   const validSavedGames = savedGames.filter(
     (game) => Array.isArray(game.rounds) && game.rounds.length > 0
   );
-
-  // We will rebuild the "gamesPlayed" and "wins" from scratch
-  // so it matches what actually happened in validSavedGames.
-  const calculatedTeamStats = {}; // { "Ethan & Brett": { gamesPlayed, wins }, ... }
-  const aggregator = {}; // For bids/hands: { "Ethan & Brett": { bidCount, totalBidSum, ... }, ... }
-  const lastPlayedMap = {}; // Tracks most recent timestamp for each team
-
+  
+  // Aggregators for game-level and round-level data.
+  const calculatedTeamStats = {}; // { teamName: { gamesPlayed, wins } }
+  const aggregator = {};          // { teamName: { bidCount, totalBidSum, bidSuccess, totalHands, handsWon, count360 } }
+  const lastPlayedMap = {};       // Most recent game timestamp per team.
+  const sandbagCounts = {};       // Count of sandbag games per team.
+  
   validSavedGames.forEach((game) => {
-    // Team 1 = usTeamName, Team 2 = demTeamName
     const team1 = game.usTeamName || game.player1 || "Us";
     const team2 = game.demTeamName || game.player2 || "Dem";
-
-    // Track last played time
     const gameTimestamp = new Date(game.timestamp).getTime();
+    
+    // Update last played times.
     if (!lastPlayedMap[team1] || gameTimestamp > lastPlayedMap[team1]) {
       lastPlayedMap[team1] = gameTimestamp;
     }
     if (!lastPlayedMap[team2] || gameTimestamp > lastPlayedMap[team2]) {
       lastPlayedMap[team2] = gameTimestamp;
     }
-
-    // Initialize if needed
+    
+    // Initialize if needed.
     if (!calculatedTeamStats[team1]) {
       calculatedTeamStats[team1] = { gamesPlayed: 0, wins: 0 };
     }
@@ -3218,71 +3290,63 @@ function openStatisticsModal() {
       calculatedTeamStats[team2] = { gamesPlayed: 0, wins: 0 };
     }
     if (!aggregator[team1]) {
-      aggregator[team1] = {
-        bidCount: 0,
-        totalBidSum: 0,
-        bidSuccess: 0,
-        totalHands: 0,
-        handsWon: 0,
-      };
+      aggregator[team1] = { bidCount: 0, totalBidSum: 0, bidSuccess: 0, totalHands: 0, handsWon: 0, count360: 0 };
     }
     if (!aggregator[team2]) {
-      aggregator[team2] = {
-        bidCount: 0,
-        totalBidSum: 0,
-        bidSuccess: 0,
-        totalHands: 0,
-        handsWon: 0,
-      };
+      aggregator[team2] = { bidCount: 0, totalBidSum: 0, bidSuccess: 0, totalHands: 0, handsWon: 0, count360: 0 };
     }
-
-    // Count this as one game played for each side
+    
+    // Increment games played.
     calculatedTeamStats[team1].gamesPlayed++;
     calculatedTeamStats[team2].gamesPlayed++;
-    // If the game.winner === "us", that means team1 won
-    // If the game.winner === "dem", team2 won
+    
+    // Count wins.
     if (game.winner === "us") {
       calculatedTeamStats[team1].wins++;
     } else if (game.winner === "dem") {
       calculatedTeamStats[team2].wins++;
     }
-
-    // Now process each round to gather bidding data and hand wins
+    
+    // Count sandbag games (using our helper function defined earlier).
+    if (isGameSandbagForTeam(game, team1)) {
+      sandbagCounts[team1] = (sandbagCounts[team1] || 0) + 1;
+    }
+    if (isGameSandbagForTeam(game, team2)) {
+      sandbagCounts[team2] = (sandbagCounts[team2] || 0) + 1;
+    }
+    
+    // Process each round.
     (game.rounds || []).forEach((round) => {
-      // Convert the biddingTeam to whichever actual name it matches
-      // This allows old data (where biddingTeam was "us"/"dem") and
-      // new data (where biddingTeam might be "Ethan & Brett") to work:
+      // Map biddingTeam to the actual team name.
       let biddingTeamName = round.biddingTeam;
       if (biddingTeamName === "us") {
         biddingTeamName = team1;
       } else if (biddingTeamName === "dem") {
         biddingTeamName = team2;
       }
-
+      
       const bidAmt = Number(round.bidAmount) || 0;
-
-      // Each round includes both teams, so totalHands increments for each
+      
+      // Count this round as a hand for both teams.
       aggregator[team1].totalHands++;
       aggregator[team2].totalHands++;
-
-      // If the bidding team was "Ethan & Brett" (team1) or "Mark & Justina" (team2), etc.
+      
+      // Process bidding details.
       if (biddingTeamName === team1 && bidAmt > 0) {
         aggregator[team1].bidCount++;
         aggregator[team1].totalBidSum += bidAmt;
-        // Did team1 make their bid?
         if (Number(round.usPoints) >= bidAmt) {
           aggregator[team1].bidSuccess++;
         }
       } else if (biddingTeamName === team2 && bidAmt > 0) {
         aggregator[team2].bidCount++;
         aggregator[team2].totalBidSum += bidAmt;
-        // Did team2 make their bid?
         if (Number(round.demPoints) >= bidAmt) {
           aggregator[team2].bidSuccess++;
         }
       }
-
-      // Which side won the hand?
+      
+      // Determine hand wins.
       const usPoints = Number(round.usPoints) || 0;
       const demPoints = Number(round.demPoints) || 0;
       if (usPoints > demPoints) {
@@ -3290,10 +3354,18 @@ function openStatisticsModal() {
       } else if (demPoints > usPoints) {
         aggregator[team2].handsWon++;
       }
+      
+      // New: Count a 360 for a team if they scored exactly 360 in a round.
+      if (usPoints === 360) {
+        aggregator[team1].count360++;
+      }
+      if (demPoints === 360) {
+        aggregator[team2].count360++;
+      }
     });
   });
-
-  // Calculate the overall average bid (only from valid rounds with a positive bid)
+  
+  // Calculate overall average bid.
   let totalBidSum = 0;
   let totalBidCount = 0;
   validSavedGames.forEach((game) => {
@@ -3305,51 +3377,35 @@ function openStatisticsModal() {
       }
     });
   });
-  const overallAverageBid =
-    totalBidCount > 0
-      ? Math.round((totalBidSum / totalBidCount) / 5) * 5
-      : 0;
-
-  // Build final array of team stats
+  const overallAverageBid = totalBidCount > 0 ? Math.round((totalBidSum / totalBidCount) / 5) * 5 : 0;
+  
+  // Build final team data.
   const allTeamNames = new Set([
     ...Object.keys(calculatedTeamStats),
-    ...Object.keys(aggregator),
+    ...Object.keys(aggregator)
   ]);
-
+  
   const teamsData = Array.from(allTeamNames).map((teamName) => {
     const tStats = calculatedTeamStats[teamName] || { gamesPlayed: 0, wins: 0 };
-    const agg = aggregator[teamName] || {
-      bidCount: 0,
-      totalBidSum: 0,
-      bidSuccess: 0,
-      totalHands: 0,
-      handsWon: 0,
-    };
-
-    // Games & Wins
-    const { gamesPlayed, wins } = tStats;
-    const winPercent =
-      gamesPlayed > 0 ? ((wins / gamesPlayed) * 100).toFixed(2) : "N/A";
-
-    // Bidding stats
+    const agg = aggregator[teamName] || { bidCount: 0, totalBidSum: 0, bidSuccess: 0, totalHands: 0, handsWon: 0, count360: 0 };
+    const gamesPlayed = tStats.gamesPlayed;
+    const winPercent = gamesPlayed > 0 ? ((tStats.wins / gamesPlayed) * 100).toFixed(2) : "N/A";
     let avgBid = "N/A";
     if (agg.bidCount > 0) {
-      // Round to the nearest 5
-      const rawAverage = agg.totalBidSum / agg.bidCount;
-      avgBid = Math.round(rawAverage / 5) * 5;
+      avgBid = Math.round((agg.totalBidSum / agg.bidCount) / 5) * 5;
     }
-
     let bidSuccessPct = "N/A";
     if (agg.bidCount > 0) {
       bidSuccessPct = ((agg.bidSuccess / agg.bidCount) * 100).toFixed(2);
     }
-
-    // Hands Won
     let handsWonPct = "N/A";
     if (agg.totalHands > 0) {
       handsWonPct = ((agg.handsWon / agg.totalHands) * 100).toFixed(2);
     }
-
+    const sbCount = sandbagCounts[teamName] || 0;
+    const sandbagger = gamesPlayed > 0 && (sbCount / gamesPlayed > 0.5) ? "Yes" : "No";
+    const count360 = agg.count360 || 0;
+    
     return {
       name: teamName,
       gamesPlayed,
@@ -3357,17 +3413,24 @@ function openStatisticsModal() {
       avgBid,
       bidSuccessPct,
       handsWonPct,
+      sandbagger,
+      count360,
       lastPlayed: lastPlayedMap[teamName] || 0,
     };
   });
-
-  // Sort so the most recently played teams are at the top
+  
   teamsData.sort((a, b) => b.lastPlayed - a.lastPlayed);
-
+  
+  const totalTimePlayedMs = validSavedGames.reduce(
+    (acc, game) => acc + (game.durationMs || 0),
+    0
+  );
+  
   return {
     totalGames: validSavedGames.length,
     overallAverageBid,
     teamsData,
+    totalTimePlayedMs,
   };
 }
 
@@ -3407,6 +3470,38 @@ function handleDeleteTeam(teamName) {
     }
   );
 }
+
+const modals = [
+    { id: "savedGamesModal", closeFn: closeSavedGamesModal },
+    { id: "aboutModal", closeFn: closeAboutModal },
+    { id: "themeModal", closeFn: closeThemeModal },
+    { id: "teamSelectionModal", closeFn: closeTeamSelectionModal },
+    { id: "statisticsModal", closeFn: closeStatisticsModal },
+    { id: "confirmationModal", closeFn: closeConfirmationModal }
+  ];
+
+  // Loop over each modal configuration and attach a click listener to the modal overlay.
+  modals.forEach(modalInfo => {
+    const modalEl = document.getElementById(modalInfo.id);
+    if (modalEl) {
+      modalEl.addEventListener("click", function(e) {
+        // Check if the click target is the overlay (i.e. the modal element itself) and not a child element.
+        if (e.target === modalEl) {
+          modalInfo.closeFn();
+        }
+      });
+    }
+  });
+
+  // Listen for touchstart on the entire document body.
+  // Use passive: false so we can call preventDefault().
+  document.body.addEventListener('touchstart', function(e) {
+    // Only act if the touch is near the left edge (within 20px)
+    if (e.pageX <= 20) {
+      e.preventDefault(); // Prevent the default navigation gesture
+      toggleMenu(e);      // Open the hamburger menu
+    }
+  }, { passive: false });
 
  // Service Worker update handling
 let refreshing = false;
