@@ -1559,71 +1559,66 @@ function deleteGame(storageKey, index, descriptor) {
   };
 }
 
-      function handleTeamSelectionSubmit(e) {
-        e.preventDefault();
-        const usVal = document.getElementById("selectUsTeam").value;
-        const newUsVal = document.getElementById("newUsTeamName").value.trim();
-        const demVal = document.getElementById("selectDemTeam").value;
-        const newDemVal = document.getElementById("newDemTeamName").value.trim();
-        let finalUs = "";
-        let finalDem = "";
-        if (usVal === "NEW_TEAM") {
-          if (!newUsVal) {
-            alert("Please enter a new team name for 'Us' or select an existing team.");
-            return;
-          }
-          finalUs = newUsVal;
-          addTeamIfNotExists(newUsVal);
-        } else {
-          if (!usVal) {
-            alert("Please select a team for 'Us' or create a new one.");
-            return;
-          }
-          finalUs = usVal;
-        }
-        if (demVal === "NEW_TEAM") {
-          if (!newDemVal) {
-            alert("Please enter a new team name for 'Dem' or select an existing team.");
-            return;
-          }
-          finalDem = newDemVal;
-          addTeamIfNotExists(newDemVal);
-        } else {
-          if (!demVal) {
-            alert("Please select a team for 'Dem' or create a new one.");
-            return;
-          }
-          finalDem = demVal;
-        }
-        if (finalUs === finalDem) {
-          alert("Team 'Us' and 'Dem' cannot be the same.");
-          return;
-        }
-        // Update state with chosen names
-        updateState({
-          usTeamName: finalUs,
-          demTeamName: finalDem,
-        });
-        saveCurrentGameState();
-        closeTeamSelectionModal();
+function handleTeamSelectionSubmit(e) {
+  e.preventDefault();
+  const usVal = document.getElementById("selectUsTeam").value;
+  const newUsVal = document.getElementById("newUsTeamName").value.trim();
+  const demVal = document.getElementById("selectDemTeam").value;
+  const newDemVal = document.getElementById("newDemTeamName").value.trim();
+  let finalUs = "";
+  let finalDem = "";
 
-        // If we were in a 'freeze' or 'save' flow, proceed:
-        if (pendingGameAction === "freeze") {
-          openConfirmationModal(
-            "Are you sure you want to freeze this game?",
-            () => {
-              freezeCurrentGame();
-              closeConfirmationModal();
-            },
-            () => {
-              closeConfirmationModal();
-            }
-          );
-        } else if (pendingGameAction === "save") {
-          handleManualSaveGame();
-        }
-        pendingGameAction = null;
-      }
+  if (usVal === "NEW_TEAM") {
+    if (!newUsVal) {
+      alert("Please enter a new team name for 'Us' or select an existing team.");
+      return;
+    }
+    finalUs = newUsVal;
+    addTeamIfNotExists(newUsVal);
+  } else {
+    if (!usVal) {
+      alert("Please select a team for 'Us' or create a new one.");
+      return;
+    }
+    finalUs = usVal;
+  }
+
+  if (demVal === "NEW_TEAM") {
+    if (!newDemVal) {
+      alert("Please enter a new team name for 'Dem' or select an existing team.");
+      return;
+    }
+    finalDem = newDemVal;
+    addTeamIfNotExists(newDemVal);
+  } else {
+    if (!demVal) {
+      alert("Please select a team for 'Dem' or create a new one.");
+      return;
+    }
+    finalDem = demVal;
+  }
+
+  if (finalUs === finalDem) {
+    alert("Team 'Us' and 'Dem' cannot be the same.");
+    return;
+  }
+
+  // Update state with chosen names
+  updateState({
+    usTeamName: finalUs,
+    demTeamName: finalDem,
+  });
+  saveCurrentGameState();
+  closeTeamSelectionModal();
+
+  // Handle pending actions
+  if (pendingGameAction === "freeze") {
+    confirmFreeze(); // Directly proceed to confirmation
+  } else if (pendingGameAction === "save") {
+    handleManualSaveGame();
+  }
+  pendingGameAction = null;
+}
 
       function addTeamIfNotExists(teamName) {
         const teams = getTeamsObject();
@@ -2023,44 +2018,86 @@ function handleManualSaveGame() {
   confettiTriggered = false;
 }
 
-      function freezeCurrentGame() {
-        // Pause timer if running
-        let finalAccumulated = state.accumulatedTime;
-        if (state.startTime !== null) {
-          finalAccumulated += Date.now() - state.startTime;
-        }
+function handleFreezerGame() {
+  // Check if we have anything to freeze (at least one round)
+  if (!state.rounds || state.rounds.length === 0) {
+    alert("No game data to freeze. Play at least one round first.");
+    return;
+  }
 
-        const freezerGames = getLocalStorage("freezerGames");
-        const finalScore = state.rounds.reduce(
-          (acc, r) => ({
-            us: acc.us + r.usPoints,
-            dem: acc.dem + r.demPoints,
-          }),
-          { us: 0, dem: 0 }
-        );
-        const lastRound = state.rounds[state.rounds.length - 1];
-        freezerGames.push({
-          name: `FROZEN-${Date.now()}`,
-          usName: state.usTeamName || "Us",
-          demName: state.demTeamName || "Dem",
-          finalScore,
-          lastBid: lastRound ? lastRound.bidAmount : null,
-          winner: state.winner,
-          victoryMethod: state.victoryMethod,
-          rounds: state.rounds,
-          timestamp: new Date().toISOString(),
-          // Store the accumulated time so we can resume later
-          accumulatedTime: finalAccumulated,
-        });
-        setLocalStorage("freezerGames", freezerGames);
+  // If team names are not set, prompt for them
+  if (!state.usTeamName || !state.demTeamName) {
+    pendingGameAction = "freeze";
+    openTeamSelectionModal();
+    return;
+  }
 
-        // Clear active game
-        localStorage.removeItem(ACTIVE_GAME_KEY);
-        ephemeralCustomBid = "";
-        ephemeralPoints = "";
-        updateState({ ...DEFAULT_STATE });
-        confettiTriggered = false;
-      }
+  // If team names are set, proceed directly to confirmation
+  confirmFreeze();
+}
+
+function confirmFreeze() {
+  openConfirmationModal(
+    "Are you sure you want to freeze this game?",
+    () => {
+      freezeCurrentGame();
+      closeConfirmationModal();
+      closeMenuOverlay(); // Ensure menu closes
+    },
+    () => {
+      closeConfirmationModal();
+    }
+  );
+}
+
+function freezeCurrentGame() {
+  // Pause timer if running
+  let finalAccumulated = state.accumulatedTime;
+  if (state.startTime !== null) {
+    finalAccumulated += Date.now() - state.startTime;
+  }
+
+  // Calculate final score from rounds
+  const finalScore = state.rounds.reduce(
+    (acc, r) => ({
+      us: acc.us + r.usPoints,
+      dem: acc.dem + r.demPoints,
+    }),
+    { us: 0, dem: 0 }
+  );
+
+  const lastRound = state.rounds[state.rounds.length - 1];
+  const freezerGames = getLocalStorage("freezerGames");
+
+  // Create the frozen game object
+  const frozenGame = {
+    name: `FROZEN-${Date.now()}`,
+    usName: state.usTeamName || "Us",
+    demName: state.demTeamName || "Dem",
+    finalScore,
+    lastBid: lastRound ? lastRound.bidAmount : null,
+    winner: state.winner,
+    victoryMethod: state.victoryMethod,
+    rounds: state.rounds,
+    timestamp: new Date().toISOString(),
+    accumulatedTime: finalAccumulated,
+  };
+
+  // Save to freezerGames
+  freezerGames.push(frozenGame);
+  setLocalStorage("freezerGames", freezerGames);
+
+  // Clear active game state
+  localStorage.removeItem(ACTIVE_GAME_KEY);
+  ephemeralCustomBid = "";
+  ephemeralPoints = "";
+  updateState({ ...DEFAULT_STATE });
+  confettiTriggered = false;
+
+  // Clear pending action and refresh UI
+  pendingGameAction = null;
+  renderApp();
+}
 
       function loadFreezerGame(index) {
         const freezerGames = getLocalStorage("freezerGames");
