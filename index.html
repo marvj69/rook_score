@@ -3285,9 +3285,6 @@ function showErrorIndicator(message) {
         });
       })
       .catch(error => console.log('SW registration failed:', error));
-    setInterval(() => {
-      navigator.serviceWorker.ready.then(registration => { registration.update(); });
-    }, 60 * 1000);
   }
   
   function updateState(newState) {
