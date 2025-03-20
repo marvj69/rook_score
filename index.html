@@ -1035,85 +1035,77 @@ function updateAuthUI(user) {
   }
   
   async function mergeLocalStorageWithFirestore(user) {
-    console.log("Merging localStorage with Firestore for user:", user.uid);
-    try {
-      const docRef = doc(db, "rookData", user.uid);
-      const docSnap = await getDoc(docRef);
-      let firestoreData = docSnap.exists() ? docSnap.data() : {};
-      
-      // Get all localStorage data
-      const localData = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key.startsWith('firebase')) {
-          try {
-            localData[key] = JSON.parse(localStorage.getItem(key));
-          } catch (e) {
-            console.error(`Error parsing localStorage key ${key}:`, e);
-          }
-        }
-      }
-  
-      // Merge strategy: localStorage takes precedence for arrays, combine objects
-      const mergedData = {};
-      const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
-      
-      allKeys.forEach(key => {
-        if (key === "timestamp") return;
-        
-        const localValue = localData[key];
-        const firestoreValue = firestoreData[key];
-        
-        if (!localValue) {
-          mergedData[key] = firestoreValue;
-        } else if (!firestoreValue) {
-          mergedData[key] = localValue;
-        } else {
-          // Merge logic for specific data types
-          if (Array.isArray(localValue) && Array.isArray(firestoreValue)) {
-            // For arrays (like savedGames, freezerGames), combine and remove duplicates
-            if (key === "savedGames" || key === "freezerGames") {
-              const combined = [...localValue, ...firestoreValue];
-              // Remove duplicates based on timestamp for games
-              const uniqueMap = new Map();
-              combined.forEach(item => {
-                if (item.timestamp) {
-                  uniqueMap.set(item.timestamp, item);
-                }
-              });
-              mergedData[key] = Array.from(uniqueMap.values());
-            } else {
-              mergedData[key] = [...new Set([...localValue, ...firestoreValue])];
-            }
-          } else if (typeof localValue === 'object' && typeof firestoreValue === 'object') {
-            // For objects, merge recursively
-            mergedData[key] = { ...firestoreValue, ...localValue };
-          } else {
-            // For primitive values, local takes precedence
-            mergedData[key] = localValue;
-          }
-        }
-      });
-  
-      // Add timestamp
-      mergedData.timestamp = new Date().toISOString();
-  
-      // Update Firestore
-      await setDoc(docRef, mergedData, { merge: true });
-  
-      // Update localStorage with merged data
-      Object.entries(mergedData).forEach(([key, value]) => {
-        if (key !== "timestamp") {
-          localStorage.setItem(key, JSON.stringify(value));
-        }
-      });
-  
-      console.log("Successfully merged localStorage with Firestore");
-    } catch (error) {
-      console.error("Error merging data:", error);
+  const docRef = doc(db, "rookData", user.uid);
+  const docSnap = await getDoc(docRef);
+  let firestoreData = docSnap.exists() ? docSnap.data() : {};
+  const localData = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key.startsWith('firebase')) {
+      localData[key] = JSON.parse(localStorage.getItem(key));
     }
-    renderApp();
   }
+  const mergedData = {};
+  const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
+  allKeys.forEach(key => {
+    if (key === "timestamp") return;
+    const localValue = localData[key];
+    const firestoreValue = firestoreData[key];
+    if (key === "currentGameState") {
+      // Always use local currentGameState to ensure reset persists
+      mergedData[key] = localValue || {
+        rounds: [],
+        biddingTeam: null,
+        bidAmount: null,
+        showCustomBid: false,
+        customBidValue: "",
+        enterBidderPoints: true,
+        gameOver: false,
+        winner: null,
+        error: null,
+        lastBidTeam: null,
+        lastBidAmount: null,
+        startTime: Date.now(),
+        usTeamName: null,
+        demTeamName: null,
+        showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
+      };
+    } else if (!localValue) {
+      mergedData[key] = firestoreValue;
+    } else if (!firestoreValue) {
+      mergedData[key] = localValue;
+    } else {
+      if (Array.isArray(localValue) && Array.isArray(firestoreValue)) {
+        if (key === "savedGames" || key === "freezerGames") {
+          const combined = [...localValue, ...firestoreValue];
+          const uniqueMap = new Map();
+          combined.forEach(item => {
+            if (item.timestamp) {
+              uniqueMap.set(item.timestamp, item);
+            }
+          });
+          mergedData[key] = Array.from(uniqueMap.values());
+        } else {
+          mergedData[key] = [...new Set([...localValue, ...firestoreValue])];
+        }
+      } else if (typeof localValue === 'object' && typeof firestoreValue === 'object') {
+        mergedData[key] = { ...firestoreValue, ...localValue };
+      } else {
+        mergedData[key] = localValue;
+      }
+    }
+  });
+  mergedData.timestamp = new Date().toISOString();
+  await setDoc(docRef, mergedData, { merge: true });
+  Object.entries(mergedData).forEach(([key, value]) => {
+    if (key !== "timestamp") {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  });
+  // Ensure state is reset after merge
+  loadCurrentGameState();
+  renderApp();
+}
   
   window.signInWithGoogle = async function() {
   console.log("Attempting Google sign-in");
@@ -1726,30 +1718,28 @@ function showErrorIndicator(message) {
   }
 
   function loadCurrentGameState() {
-    const saved = localStorage.getItem(ACTIVE_GAME_KEY);
-    const isProMode = JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false;
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        state = {
-          ...DEFAULT_STATE,
-          ...parsed,
-          usTeamName: parsed.usTeamName || "Us",
-          demTeamName: parsed.demTeamName || "Dem",
-          showWinProbability: isProMode,
-        };
-      } catch (err) {
-        console.error("Error parsing saved game state:", err);
-        localStorage.removeItem(ACTIVE_GAME_KEY);
-        state = { ...DEFAULT_STATE, showWinProbability: isProMode };
-      }
-    } else {
-      state = { ...DEFAULT_STATE, showWinProbability: isProMode };
-    }
-    const proModeToggleCheckbox = document.getElementById("proModeToggle");
-    if (proModeToggleCheckbox) proModeToggleCheckbox.checked = isProMode;
-    renderApp();
-  }
+  const loadedState = getLocalStorage("currentGameState")[0] || {};
+  // Only restore rounds if explicitly loading (e.g., from freezer), otherwise start fresh
+  const isLoadingGame = window.location.hash === "#loadFreezer"; // Example flag, adjust as needed
+  updateState({
+    rounds: isLoadingGame ? (loadedState.rounds || []) : [],
+    biddingTeam: null,
+    bidAmount: null,
+    showCustomBid: false,
+    customBidValue: "",
+    enterBidderPoints: true,
+    gameOver: false,
+    winner: null,
+    error: null,
+    lastBidTeam: null,
+    lastBidAmount: null,
+    startTime: Date.now(),
+    usTeamName: loadedState.usTeamName || null,
+    demTeamName: loadedState.demTeamName || null,
+    showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
+    ...(isLoadingGame ? loadedState : {}),
+  });
+}
 
   function saveCurrentGameState() {
     if (state.gameOver) {
@@ -2218,6 +2208,10 @@ function showErrorIndicator(message) {
     setLocalStorage("savedGames", savedGames);
     showSaveIndicator();
     localStorage.removeItem(ACTIVE_GAME_KEY);
+    if (window.syncToFirestore && window.firebaseReady && 
+      window.firebaseAuth.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+    window.syncToFirestore(ACTIVE_GAME_KEY, null);
+  }
     ephemeralCustomBid = "";
     ephemeralPoints = "";
     updateState({ ...DEFAULT_STATE });
@@ -2225,22 +2219,52 @@ function showErrorIndicator(message) {
   }
 
   function handleFreezerGame() {
-  if (!state.rounds || state.rounds.length === 0) {
-    alert("No game data to freeze. Play at least one round first.");
-    return;
+  if (state.gameOver || !state.rounds.length) return;
+  const totals = state.rounds.reduce(
+    (acc, r) => ({ us: acc.us + r.usPoints, dem: acc.dem + r.demPoints }),
+    { us: 0, dem: 0 }
+  );
+  const victoryMethod = totals.us >= 500 || totals.dem >= 500 ? "500+" : "N/A";
+  const winner = totals.us >= 500 ? "us" : totals.dem >= 500 ? "dem" : null;
+  const freezerGames = getLocalStorage("freezerGames");
+  const newFreezerGame = {
+    finalScore: totals,
+    rounds: state.rounds,
+    timestamp: new Date().toISOString(),
+    usName: state.usTeamName,
+    demName: state.demTeamName,
+    victoryMethod,
+    winner,
+    lastBid: state.lastBidAmount ? `${state.lastBidAmount} (${state.lastBidTeam})` : "N/A",
+  };
+  freezerGames.unshift(newFreezerGame);
+  setLocalStorage("freezerGames", freezerGames);
+  resetGame();
+  // Explicitly clear currentGameState in localStorage and Firestore
+  const clearedState = {
+    rounds: [],
+    biddingTeam: null,
+    bidAmount: null,
+    showCustomBid: false,
+    customBidValue: "",
+    enterBidderPoints: true,
+    gameOver: false,
+    winner: null,
+    error: null,
+    lastBidTeam: null,
+    lastBidAmount: null,
+    startTime: Date.now(),
+    usTeamName: null,
+    demTeamName: null,
+    showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
+  };
+  setLocalStorage("currentGameState", clearedState);
+  if (window.firebaseReady && window.firebaseAuth.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+    window.syncToFirestore("currentGameState", clearedState).then(() => {
+      console.log("Cleared currentGameState synced to Firestore");
+    });
   }
-  // Check if team names are missing or if both are the default names.
-  if (
-    !state.usTeamName ||
-    !state.demTeamName ||
-    (state.usTeamName.trim().toLowerCase() === "us" &&
-     state.demTeamName.trim().toLowerCase() === "dem")
-  ) {
-    pendingGameAction = "freeze";
-    openTeamSelectionModal();
-    return;
-  }
-  confirmFreeze();
+  showSaveIndicator();
 }
 
   function confirmFreeze() {
@@ -2252,35 +2276,46 @@ function showErrorIndicator(message) {
   }
 
   function freezeCurrentGame() {
-    let finalAccumulated = state.accumulatedTime;
-    if (state.startTime !== null) {
-      finalAccumulated += Date.now() - state.startTime;
-    }
-    const finalScore = state.rounds.reduce((acc, r) => ({ us: acc.us + r.usPoints, dem: acc.dem + r.demPoints }), { us: 0, dem: 0 });
-    const lastRound = state.rounds[state.rounds.length - 1];
-    const freezerGames = getLocalStorage("freezerGames");
-    const frozenGame = {
-      name: `FROZEN-${Date.now()}`,
-      usName: state.usTeamName || "Us",
-      demName: state.demTeamName || "Dem",
-      finalScore,
-      lastBid: lastRound ? lastRound.bidAmount : null,
-      winner: state.winner,
-      victoryMethod: state.victoryMethod,
-      rounds: state.rounds,
-      timestamp: new Date().toISOString(),
-      accumulatedTime: finalAccumulated,
-    };
-    freezerGames.push(frozenGame);
-    setLocalStorage("freezerGames", freezerGames);
-    localStorage.removeItem(ACTIVE_GAME_KEY);
-    ephemeralCustomBid = "";
-    ephemeralPoints = "";
-    updateState({ ...DEFAULT_STATE });
-    confettiTriggered = false;
-    pendingGameAction = null;
-    renderApp();
+  // Existing code to freeze the game
+  let finalAccumulated = state.accumulatedTime;
+  if (state.startTime !== null) {
+    finalAccumulated += Date.now() - state.startTime;
   }
+  const finalScore = state.rounds.reduce((acc, r) => ({ us: acc.us + r.usPoints, dem: acc.dem + r.demPoints }), { us: 0, dem: 0 });
+  const lastRound = state.rounds[state.rounds.length - 1];
+  const freezerGames = getLocalStorage("freezerGames");
+  const frozenGame = {
+    name: `FROZEN-${Date.now()}`,
+    usName: state.usTeamName || "Us",
+    demName: state.demTeamName || "Dem",
+    finalScore,
+    lastBid: lastRound ? lastRound.bidAmount : null,
+    winner: state.winner,
+    victoryMethod: state.victoryMethod,
+    rounds: state.rounds,
+    timestamp: new Date().toISOString(),
+    accumulatedTime: finalAccumulated,
+  };
+  freezerGames.push(frozenGame);
+  setLocalStorage("freezerGames", freezerGames);
+  
+  // Remove from localStorage
+  localStorage.removeItem(ACTIVE_GAME_KEY);
+  
+  // NEW CODE: Sync this removal to Firestore
+  if (window.syncToFirestore && window.firebaseReady && 
+      window.firebaseAuth.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+    window.syncToFirestore(ACTIVE_GAME_KEY, null);
+  }
+  
+  // Existing code to reset the state
+  ephemeralCustomBid = "";
+  ephemeralPoints = "";
+  updateState({ ...DEFAULT_STATE });
+  confettiTriggered = false;
+  pendingGameAction = null;
+  renderApp();
+}
 
   function loadFreezerGame(index) {
     const freezerGames = getLocalStorage("freezerGames");
