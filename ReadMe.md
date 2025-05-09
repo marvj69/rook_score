@@ -4,8 +4,6 @@
 
 **Rook Score!** is a modern, feature-packed web application designed to make score-keeping for the card game Rook effortless and enjoyable. Built with HTML, Tailwind CSS, and vanilla JavaScript, it leverages Firebase for cloud synchronization and offers a Progressive Web App (PWA) experience.
 
-**Live Demo:** [Link to Your Live App Here] (e.g., `https://your-username.github.io/rook-score-app/`)
-
 ## ✨ Features
 
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
@@ -81,7 +79,7 @@
 
 ### Accessing the App
 Simply open the `index.html` file in your web browser, or deploy it to a web server.
-For the best experience, access the live deployed version: [Link to Your Live App Here]
+For the best experience, access the live deployed version.
 
 ### Installation (as a PWA)
 Most modern browsers (Chrome, Edge, Safari on iOS) will allow you to "install" the web app to your home screen or desktop:
@@ -248,7 +246,7 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 ## 🧑‍💻 Author
 
 Mark Heinonen
-*   Email: `heinonenmh@gmail.com` (as per the bug report feature)
+*   Email: `heinonenmh@gmail.com`
 
 ---
 Enjoy keeping score for your Rook games!
