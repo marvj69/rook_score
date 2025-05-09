@@ -1389,38 +1389,67 @@ function openZeroPointsModal(chooseCallback) {
         document.querySelector('meta[name="theme-color"]').setAttribute("content", isDark ? "#1a202c" : "#ffffff");
       }
 
-      function initializeTheme() {
-  const body = document.getElementById("bodyRoot") || document.body;
+      /**
+ * Initialise the <body> classes and colours.
+ *  – keeps compulsory base classes (bg‑white … dark:bg-gray-900 …)
+ *  – migrates themes saved by versions < 1.4.5
+ *  – works even if user previously saved   theme‑blue‑red   etc.
+ *  – guarantees the correct background colour **at runtime**
+ */
+function initializeTheme() {
+  const body   = document.getElementById("bodyRoot") || document.body;
+  const THEME_KEY = "rookSelectedTheme";
 
-  // Classes that must ALWAYS be present, no matter which theme is selected
+  /* ------------------------------------------------------------------ */
+  /* 1.  Classes that the layout ALWAYS needs                            */
+  /* ------------------------------------------------------------------ */
   const BASE_BODY_CLASSES = [
-    "bg-white",          // light-mode background
-    "text-gray-800",     // light-mode text colour
+    "bg-white",                    // light‑mode background
+    "text-gray-800",               // light‑mode text colour
     "min-h-screen",
     "transition-colors", "duration-300",
-    "dark:bg-gray-900",  // dark-mode background
-    "dark:text-white"    // dark-mode text colour
-  ].join(" ");
+    "dark:bg-gray-900",            // dark‑mode background
+    "dark:text-white"              // dark‑mode text colour
+  ];
 
-  // ------------------------------------------------------------------
-  //  One-time migration for themes stored by older app versions
-  // ------------------------------------------------------------------
-  let savedTheme = localStorage.getItem("rookSelectedTheme");
+  /* ------------------------------------------------------------------ */
+  /* 2.  Read & (if necessary) migrate the user‑saved theme             */
+  /* ------------------------------------------------------------------ */
+  let savedClasses = localStorage.getItem(THEME_KEY) || "";   // may be ""
 
-  if (savedTheme && !savedTheme.includes("dark:bg-gray-900")) {
-    // Older value was missing the base classes → prepend them
-    savedTheme = `${BASE_BODY_CLASSES} ${savedTheme}`.trim();
-    localStorage.setItem("rookSelectedTheme", savedTheme);
+  // Any value saved by versions < 1.4.5 is missing the dark bg class.
+  const needsMigration = savedClasses &&
+                         !savedClasses.includes("dark:bg-gray-900");
+
+  if (needsMigration) {
+    savedClasses = `${BASE_BODY_CLASSES.join(" ")} ${savedClasses}`.trim();
+    localStorage.setItem(THEME_KEY, savedClasses);   // write back once
   }
 
-  // ------------------------------------------------------------------
-  //  Apply the theme (or fall back to default)
-  // ------------------------------------------------------------------
-  if (!savedTheme) {
-    // First launch / user has never customised a theme
-    body.className = `${BASE_BODY_CLASSES} theme-blue-red`.trim();
-  } else {
-    body.className = savedTheme;
+  /* ------------------------------------------------------------------ */
+  /* 3.  Compose the final class list, remove duplicates                */
+  /* ------------------------------------------------------------------ */
+  const finalClassList = new Set([
+    ...BASE_BODY_CLASSES,
+    ...(savedClasses ? savedClasses.split(/\s+/) : ["theme-blue-red"])
+  ]);
+
+  body.className = Array.from(finalClassList).join(" ");
+
+  /* ------------------------------------------------------------------ */
+  /* 4.  LAST LINE OF DEFENCE – guarantee the background at runtime     */
+  /*     (overrides any theme class that still happens to win the CSS)  */
+  /* ------------------------------------------------------------------ */
+  const darkIsOn  = document.documentElement.classList.contains("dark");
+  const computed  = getComputedStyle(body).backgroundColor;
+
+  const rgbWhite  = "rgb(255, 255, 255)";
+  const rgbDark   = "rgb(17, 24, 39)";               // Tailwind gray‑900
+
+  if (darkIsOn && computed !== rgbDark) {
+    body.style.backgroundColor = rgbDark;            // force dark bg
+  } else if (!darkIsOn && computed !== rgbWhite) {
+    body.style.backgroundColor = rgbWhite;           // force light bg
   }
 }
       function isValidHexColor(colorString) {
