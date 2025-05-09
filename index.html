@@ -1388,10 +1388,41 @@ function openZeroPointsModal(chooseCallback) {
       function updateMetaThemeColor(isDark) {
         document.querySelector('meta[name="theme-color"]').setAttribute("content", isDark ? "#1a202c" : "#ffffff");
       }
-      function initializeTheme() { // For predefined themes, not custom colors
-        const savedTheme = localStorage.getItem(THEME_KEY);
-        if (savedTheme) document.getElementById("bodyRoot").className = savedTheme; // Simplified theme application
-      }
+
+      function initializeTheme() {
+  const body = document.getElementById("bodyRoot") || document.body;
+
+  // Classes that must ALWAYS be present, no matter which theme is selected
+  const BASE_BODY_CLASSES = [
+    "bg-white",          // light-mode background
+    "text-gray-800",     // light-mode text colour
+    "min-h-screen",
+    "transition-colors", "duration-300",
+    "dark:bg-gray-900",  // dark-mode background
+    "dark:text-white"    // dark-mode text colour
+  ].join(" ");
+
+  // ------------------------------------------------------------------
+  //  One-time migration for themes stored by older app versions
+  // ------------------------------------------------------------------
+  let savedTheme = localStorage.getItem("rookSelectedTheme");
+
+  if (savedTheme && !savedTheme.includes("dark:bg-gray-900")) {
+    // Older value was missing the base classes → prepend them
+    savedTheme = `${BASE_BODY_CLASSES} ${savedTheme}`.trim();
+    localStorage.setItem("rookSelectedTheme", savedTheme);
+  }
+
+  // ------------------------------------------------------------------
+  //  Apply the theme (or fall back to default)
+  // ------------------------------------------------------------------
+  if (!savedTheme) {
+    // First launch / user has never customised a theme
+    body.className = `${BASE_BODY_CLASSES} theme-blue-red`.trim();
+  } else {
+    body.className = savedTheme;
+  }
+}
       function isValidHexColor(colorString) {
   if (!colorString || typeof colorString !== 'string') return false;
   // Basic hex color validation (e.g., #RRGGBB or #RGB)
