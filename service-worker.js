@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v11";
+const CACHE_NAME = "rook-cache-v1.4.516";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -7,8 +7,7 @@ const urlsToCache = [
   "./manifest.json",
   "./icons/icon-192x192.png",
   "./icons/icon-512x512.png",
-  "./service-worker.js",
-  "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+  "./service-worker.js"
 ];
 
 self.addEventListener("install", (event) => {
@@ -24,12 +23,16 @@ self.addEventListener("fetch", (event) => {
   // Handle navigation requests
   if (event.request.mode === "navigate") {
     event.respondWith(
-      caches.match("./index.html").then((cachedResponse) => {
-        return cachedResponse || fetch(event.request).catch(() => {
-          return caches.match(OFFLINE_URL);
-        });
-      })
-    );
+     fetch(event.request)
+       .then((networkResponse) => {
+         // put fresh index.html in the current versioned cache
+         return caches.open(CACHE_NAME).then((cache) => {
+           cache.put("./index.html", networkResponse.clone());
+           return networkResponse;
+         });
+       })
+       .catch(() => caches.match("./index.html")) // offline fallback
+   );
   } else {
     // Handle other assets
     event.respondWith(
@@ -41,15 +44,16 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-});
+  self.clients.claim();
+    event.waitUntil(
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      })
+    );
+  });
