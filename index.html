@@ -1743,15 +1743,25 @@ function applyCheatPenaltyRound(flaggedTeam) {
     gameFinished = true; theWinner = newTotals.us > newTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
   } else if ((biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)) {
     if (!mustWinByBid) { gameFinished = true; theWinner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (newTotals.us >= 500 || newTotals.dem >= 500) {
-    if (mustWinByBid) {
-      // Only possible if the penalized team still wins by making their bid, which can't happen here
-    } else {
-      gameFinished = true; theWinner = newTotals.us >= newTotals.dem ? "us" : (newTotals.dem > newTotals.us ? "dem" : null);
-      if (theWinner === null && newTotals.us === newTotals.dem) victoryMethod = "Tie at 500+";
-      else if (theWinner) victoryMethod = "Reached 500+";
+  } else if (
+      // bidder wins by making their bid and crossing 500
+      (biddingTeam === "us" && newTotals.us >= 500 && usEarned >= numericBid) ||
+      (biddingTeam === "dem" && newTotals.dem >= 500 && demEarned >= numericBid)
+    ) {
+      gameFinished   = true;
+      theWinner      = biddingTeam;
+      victoryMethod  = "Won on Bid";
+    } else if (
+      // non-bidding team wins by setting the bidder and crossing 500
+      (biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) ||
+      (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)
+    ) {
+      gameFinished   = true;
+      theWinner      = biddingTeam === "us" ? "dem" : "us";
+      victoryMethod  = "Set Other Team";
     }
-  }
+    // no “auto-win at 500+” fallback any more
+
   let finalAccumulated = state.accumulatedTime;
   if (state.startTime !== null && !gameFinished) { /* Time continues */ }
   else if (state.startTime !== null && gameFinished) { finalAccumulated += Date.now() - state.startTime; }
@@ -1910,17 +1920,23 @@ function handleCustomBidChange(e) {
             gameFinished = true; theWinner = newTotals.us > newTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
         } else if ((biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)) {
             if (!mustWinByBid) { gameFinished = true; theWinner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-        } else if (newTotals.us >= 500 || newTotals.dem >= 500) {
-            if (mustWinByBid) {
-                if ((biddingTeam === "us" && newTotals.us >= 500 && usEarned >= numericBid) || (biddingTeam === "dem" && newTotals.dem >= 500 && demEarned >= numericBid)) {
-                    gameFinished = true; theWinner = biddingTeam; victoryMethod = "Won on Bid";
-                }
-            } else {
-                gameFinished = true; theWinner = newTotals.us >= newTotals.dem ? "us" : (newTotals.dem > newTotals.us ? "dem" : null /* Tie check, rare */);
-                 if (theWinner === null && newTotals.us === newTotals.dem) victoryMethod = "Tie at 500+"; // Handle tie
-                 else if (theWinner) victoryMethod = "Reached 500+";
-            }
-        }
+          } else if (
+      // bidder wins by making their bid and crossing 500
+      (biddingTeam === "us" && newTotals.us >= 500 && usEarned >= numericBid) ||
+      (biddingTeam === "dem" && newTotals.dem >= 500 && demEarned >= numericBid)
+    ) {
+      gameFinished   = true;
+      theWinner      = biddingTeam;
+      victoryMethod  = "Won on Bid";
+    } else if (
+      // non-bidding team wins by setting the bidder and crossing 500
+      (biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) ||
+      (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)
+    ) {
+      gameFinished   = true;
+      theWinner      = biddingTeam === "us" ? "dem" : "us";
+      victoryMethod  = "Set Other Team";
+    }
         
         ephemeralCustomBid = ""; ephemeralPoints = "";
         let finalAccumulated = state.accumulatedTime;
