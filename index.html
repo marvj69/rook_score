@@ -2061,7 +2061,9 @@ function applyCheatPenaltyRound(flaggedTeam) {
 
   let finalAccumulated = state.accumulatedTime;
   if (state.startTime !== null && !gameFinished) { /* Time continues */ }
-  else if (state.startTime !== null && gameFinished) { finalAccumulated += Date.now() - state.startTime; }
+  else if (state.startTime !== null && gameFinished) { 
+    finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  }
 
   updateState({
     rounds: updatedRounds,
@@ -2238,7 +2240,9 @@ function handleCustomBidChange(e) {
         ephemeralCustomBid = ""; ephemeralPoints = "";
         let finalAccumulated = state.accumulatedTime;
         if (state.startTime !== null && !gameFinished) { /* Time continues */ }
-        else if (state.startTime !== null && gameFinished) { finalAccumulated += Date.now() - state.startTime; }
+        else if (state.startTime !== null && gameFinished) { 
+          finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+        }
 
         updateState({
             rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
@@ -2322,8 +2326,7 @@ function handleGameOverSaveClick(e) {
         }
         if (!state.rounds.length) return;
 
-        let finalAccumulated = state.accumulatedTime;
-        if (state.startTime !== null) finalAccumulated += Date.now() - state.startTime;
+        let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
         const lastRoundTotals = state.rounds.length ? state.rounds[state.rounds.length - 1].runningTotals : { us: 0, dem: 0 };
         const gameObj = {
@@ -2362,8 +2365,7 @@ function handleGameOverSaveClick(e) {
         );
       }
       function freezeCurrentGame() {
-        let finalAccumulated = state.accumulatedTime;
-        if (state.startTime !== null) finalAccumulated += Date.now() - state.startTime;
+        let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
         const finalScore = state.rounds.length ? state.rounds[state.rounds.length-1].runningTotals : {us:0, dem:0};
         const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
 
@@ -2410,7 +2412,7 @@ function handleGameOverSaveClick(e) {
                 lastBidTeam: chosen.lastBidTeam || null,
                 usTeamName: chosen.usName || "Us",
                 demTeamName: chosen.demName || "Dem",
-                accumulatedTime: chosen.accumulatedTime || 0,
+                accumulatedTime: Math.min(chosen.accumulatedTime || 0, MAX_GAME_TIME_MS), // Cap accumulated time
                 startTime: Date.now(), // Restart timer
                 showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
                 undoneRounds: [] // Clear any undone rounds from previous state
@@ -2540,6 +2542,67 @@ function handleGameOverSaveClick(e) {
       function showVersionNum() {
         alert("Version 1.4.6 adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
       }
+      // Time protection constants
+      const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
+      const MAX_ROUND_TIME_MS = 2 * 60 * 60 * 1000; // 2 hours maximum per round
+      
+      function calculateSafeTimeAccumulation(currentAccumulated, startTime) {
+        if (!startTime) return currentAccumulated;
+        
+        const elapsed = Date.now() - startTime;
+        const cappedElapsed = Math.min(elapsed, MAX_ROUND_TIME_MS);
+        const totalTime = currentAccumulated + cappedElapsed;
+        
+        // Cap the total game time as well
+        return Math.min(totalTime, MAX_GAME_TIME_MS);
+      }
+      
+      function getCurrentGameTime() {
+        if (!state.startTime) return state.accumulatedTime;
+        const elapsed = Date.now() - state.startTime;
+        return state.accumulatedTime + elapsed;
+      }
+      
+      function renderTimeWarning() {
+        if (!state.startTime || state.gameOver) return "";
+        
+        const currentTime = getCurrentGameTime();
+        const roundTime = Date.now() - state.startTime;
+        
+                 // Warning thresholds
+         const ROUND_WARNING_TIME = 90 * 60 * 1000; // 90 minutes
+         const GAME_WARNING_TIME = 8 * 60 * 60 * 1000; // 8 hours
+        
+        let warningMessage = "";
+        let warningLevel = "";
+        
+        if (roundTime > ROUND_WARNING_TIME || currentTime > GAME_WARNING_TIME) {
+          if (roundTime > MAX_ROUND_TIME_MS * 0.9) {
+            warningMessage = "⚠️ Round time is very high! Consider saving the game.";
+            warningLevel = "danger";
+          } else if (currentTime > MAX_GAME_TIME_MS * 0.9) {
+            warningMessage = "⚠️ Game time is very high! Consider finishing the game.";
+            warningLevel = "danger";
+          } else if (roundTime > ROUND_WARNING_TIME) {
+            warningMessage = "⏰ Round has been active for " + formatDuration(roundTime);
+            warningLevel = "warning";
+          } else if (currentTime > GAME_WARNING_TIME) {
+            warningMessage = "⏰ Game has been active for " + formatDuration(currentTime);
+            warningLevel = "warning";
+          }
+        }
+        
+        if (!warningMessage) return "";
+        
+        const bgColor = warningLevel === "danger" ? "bg-red-100 border-red-300 text-red-800 dark:bg-red-900 dark:border-red-700 dark:text-red-300" : "bg-yellow-100 border-yellow-300 text-yellow-800 dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300";
+        
+        return `
+          <div class="mx-4 mb-4 p-3 rounded-lg border ${bgColor} text-sm text-center">
+            ${warningMessage}
+          </div>
+        `;
+      }
+      
       function formatDuration(ms) {
         if (!ms || ms < 0) return "0:00";
         const secs = Math.floor(ms / 1000);
@@ -3216,6 +3279,7 @@ function handleGameOverSaveClick(e) {
             <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white">Rook!</h1>
             <p class="text-md sm:text-lg text-gray-600 dark:text-white">Tap a team to start a bid!</p>
           </div>
+          ${renderTimeWarning()}
           <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
             ${renderTeamCard("us", totals.us)}
             ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
