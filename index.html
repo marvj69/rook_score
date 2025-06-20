@@ -1892,26 +1892,8 @@ function initializeCustomThemeColors() {
         if (proToggleModal) proToggleModal.checked = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
         document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
         
-        // Load win probability method setting
-        const winProbMethodSelect = document.getElementById("winProbMethodSelect");
-        if (winProbMethodSelect) {
-          // Change default from 'complex' to 'simple'
-          winProbMethodSelect.value = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
-        }
-        
-        // Load table talk penalty settings
-        const penaltySelect = document.getElementById("tableTalkPenaltySelect");
-        if (penaltySelect) {
-          penaltySelect.value = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
-        }
-        
-        const penaltyPointsInput = document.getElementById("penaltyPointsInput");
-        if (penaltyPointsInput) {
-          penaltyPointsInput.value = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
-        }
-        
-        // Show/hide custom points input based on penalty type
-        handleTableTalkPenaltyChange();
+        // Load all settings using the common function
+        loadSettings();
         
         openModal("settingsModal");
       }
@@ -3804,6 +3786,29 @@ let statVal = lookup[additionalStatKey] ?? '0';
         }, closeConfirmationModal);
       }
 
+      // --- Settings Loading ---
+      function loadSettings() {
+        // Load win probability method setting
+        const winProbMethodSelect = document.getElementById("winProbMethodSelect");
+        if (winProbMethodSelect) {
+          winProbMethodSelect.value = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+        }
+        
+        // Load table talk penalty settings
+        const penaltySelect = document.getElementById("tableTalkPenaltySelect");
+        if (penaltySelect) {
+          penaltySelect.value = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+        }
+        
+        const penaltyPointsInput = document.getElementById("penaltyPointsInput");
+        if (penaltyPointsInput) {
+          penaltyPointsInput.value = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+        }
+        
+        // Show/hide custom points input based on penalty type
+        handleTableTalkPenaltyChange();
+      }
+
       // --- Initialization ---
       document.addEventListener("DOMContentLoaded", () => {
         // Removed performDataMigration();
@@ -3811,6 +3816,7 @@ let statVal = lookup[additionalStatKey] ?? '0';
         initializeTheme(); // Predefined themes
         initializeCustomThemeColors(); // Custom primary/accent
         loadCurrentGameState(); // Load after theme
+        loadSettings(); // Load settings after game state
 
         const darkModeToggle = document.getElementById("darkModeToggle");
         if (darkModeToggle) darkModeToggle.addEventListener("change", (e) => {
