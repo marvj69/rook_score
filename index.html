@@ -676,7 +676,7 @@
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">If enabled, bidder must make bid to win (even if over 500).</p>
                         </div>
                         <div class="relative ml-4">
-                            <input type="checkbox" id="mustWinByBidToggle" class="sr-only peer" onchange="saveSettings()" />
+                            <input type="checkbox" id="mustWinByBidToggle" class="sr-only peer" />
                             <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('mustWinByBidToggle').click()"></div>
                         </div>
                     </div>
@@ -690,7 +690,7 @@
                             </select>
                             <div id="customPenaltyPoints">
                                 <label for="penaltyPointsInput" class="text-sm text-gray-600 dark:text-gray-400 block mb-1">Penalty Points:</label>
-                                <input type="number" id="penaltyPointsInput" min="5" max="500" step="5" value="180" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" onchange="saveSettings()" placeholder="Points to deduct (multiples of 5)" />
+                                <input type="number" id="penaltyPointsInput" min="5" max="500" step="5" value="180" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Points to deduct (multiples of 5)" />
                                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Must be a multiple of 5</p>
                             </div>
                         </div>
@@ -716,7 +716,7 @@
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Choose between simple or complex calculation.</p>
                         </div>
                         <div class="relative ml-4">
-                            <select id="winProbMethodSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" onchange="saveWinProbMethod()">
+                            <select id="winProbMethodSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
                                 <option value="complex">Experimental</option>
                                 <option value="simple">Simple</option>
                             </select>
@@ -735,7 +735,7 @@
                 </div>
             </section>
             <footer class="flex justify-end space-x-2">
-                <button type="button" onclick="closeSettingsModal()" class="bg-gray-300 text-gray-700 px-5 py-2 rounded-xl hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed">Close</button>
+                <button type="button" onclick="closeSettingsModal()" class="bg-blue-600 text-white px-5 py-2 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 threed font-medium">Close</button>
             </footer>
         </div>
       </div>
@@ -1290,6 +1290,19 @@ function calculateWinProbabilitySimple(currentGame, historicalGames) {
     factors: factors
   };
 }
+// --- Calibrated logistic (trained 2025-06-20 on 44 games) -------------
+const L_INTERCEPT   =  0.2084586876141831;
+const L_COEFF_DIFF  =  0.00421107;
+const L_COEFF_ROUND = -0.09520921;
+const L_COEFF_MOM   =  0.00149416;
+
+function logisticProb(diff, roundIdx, mom) {
+  const z = L_INTERCEPT +
+            L_COEFF_DIFF  * diff +
+            L_COEFF_ROUND * roundIdx +
+            L_COEFF_MOM   * mom;
+  return 1 / (1 + Math.exp(-z));           // probability “us” eventually wins
+}
 
 function calculateWinProbabilityComplex(state, historicalGames) {
   // ---------------- deterministic part ----------------
@@ -1308,11 +1321,14 @@ function calculateWinProbabilityComplex(state, historicalGames) {
   const counts   = table[key] || { us: 1, dem: 1 };
   const empirical= counts.us / (counts.us + counts.dem);
 
-  // ---------------- blend with logistic prior ----------------
-  const totalObs = counts.us + counts.dem - 2;          // remove Laplace seed
-  const beta     = Math.min(1, Math.log(totalObs + 1) / 4);  // 0 @ 0 obs → 1 @ e⁴‑1 ≈ 54 obs
-  const prior    = 1 / (1 + Math.exp(-0.015 * diff));   // smooth generic lead effect
-  const pUs      = beta * empirical + (1 - beta) * prior;
+  // ---------------- calibrated logistic ----------------
+const penultimate = rounds.length > 1 ? rounds[rounds.length - 2] : last;
+const prevDiff    = (penultimate.runningTotals?.us ?? 0) -
+                    (penultimate.runningTotals?.dem ?? 0);
+const momentum    = diff - prevDiff;                   // one-step change
+
+const pUs = logisticProb(diff, rounds.length - 1, momentum);
+
 
   return {
     us : +(pUs  * 100).toFixed(1),
@@ -1873,7 +1889,10 @@ function initializeCustomThemeColors() {
         
         openModal("settingsModal");
       }
-      function closeSettingsModal() { closeModal("settingsModal"); }
+      function closeSettingsModal() { 
+        saveSettings(); 
+        closeModal("settingsModal"); 
+      }
       function openAboutModal() { openModal("aboutModal"); }
       function closeAboutModal() { closeModal("aboutModal"); }
       function openStatisticsModal() { renderStatisticsContent(); openModal("statisticsModal"); }
@@ -2450,6 +2469,16 @@ function handleGameOverSaveClick(e) {
           localStorage.setItem(TABLE_TALK_PENALTY_POINTS_KEY, points);
         }
         
+        // Save win probability calculation method
+        const winProbMethodSelect = document.getElementById("winProbMethodSelect");
+        if (winProbMethodSelect) {
+          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
+          // Refresh the display if win probability is currently shown
+          if (state.showWinProbability) {
+            renderApp();
+          }
+        }
+        
         showSaveIndicator("Settings Saved");
       }
       function updateProModeUI(isProMode) {
@@ -2477,8 +2506,8 @@ function handleGameOverSaveClick(e) {
           }
         }
         
-        // Save the setting when it changes
-        saveSettings();
+        // Settings will be saved when the user explicitly saves them
+        // No need to auto-save on every change
       }
 
       // --- Validation ---
@@ -2935,7 +2964,7 @@ function handleGameOverSaveClick(e) {
             <!-- Header -->
             <div class="text-center border-b border-gray-200 dark:border-gray-700 pb-3">
               <div class="text-xl font-bold text-gray-800 dark:text-white mb-1">
-                Advanced Win Probability Analysis (EXPERIMENTAL)
+                Logistic Regression Win Probability Analysis
               </div>
               <div class="flex items-center justify-center gap-6 text-lg">
                 <div class="flex items-center gap-2">
@@ -2948,7 +2977,7 @@ function handleGameOverSaveClick(e) {
                 </div>
               </div>
               <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Method: Complex Analysis • Confidence: ${blendingAnalysis.confidence}
+                Method: Logistic Regression • Confidence: ${blendingAnalysis.confidence}
               </div>
             </div>
             
@@ -3018,16 +3047,16 @@ function handleGameOverSaveClick(e) {
             <!-- How It Works -->
             <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
               <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Calculation Works (Complex Method)</h4>
+                <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Calculation Works (Logistic Regression Method)</h4>
                 <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                  <p>• <strong>Score Bucketing:</strong> Groups similar score differences (0-19, 20-39, etc.) to find patterns</p>
-                  <p>• <strong>Historical Lookup:</strong> Finds past games with similar scores at similar stages</p>
-                  <p>• <strong>Recency Weighting:</strong> Recent games weighted more heavily (decay rate: 80% per 2 weeks)</p>
-                  <p>• <strong>Bayesian Blending:</strong> Combines historical data with mathematical model based on confidence</p>
-                  <p>• <strong>Adaptive Confidence:</strong> More historical data = higher weight on empirical results</p>
+                  <p>• <strong>Feature Extraction:</strong> Each round generates features: score difference, round number, and momentum (change in score diff)</p>
+                  <p>• <strong>Logistic Regression Model:</strong> Trained on historical game data to predict win probability using these three key features</p>
+                  <p>• <strong>Momentum Analysis:</strong> Captures recent performance trends by tracking how the score difference changes between rounds</p>
+                  <p>• <strong>Stage-Aware Modeling:</strong> Round number helps the model understand that early vs. late game situations matter differently</p>
+                  <p>• <strong>Continuous Learning:</strong> Model can be retrained as more game data becomes available for improved accuracy</p>
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-                  This advanced method provides more accurate predictions with sufficient historical data, but falls back to mathematical modeling when data is sparse.
+                  This machine learning approach uses logistic regression to learn patterns from actual game outcomes, providing data-driven win probability estimates that improve with more training data.
                 </div>
               </div>
             </div>
