@@ -690,7 +690,7 @@
                             </select>
                             <div id="customPenaltyPoints">
                                 <label for="penaltyPointsInput" class="text-sm text-gray-600 dark:text-gray-400 block mb-1">Penalty Points:</label>
-                                <input type="number" id="penaltyPointsInput" min="5" max="500" step="5" value="180" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Points to deduct (multiples of 5)" />
+                                <input type="number" id="penaltyPointsInput" min="5" max="500" step="5" value="180" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="Points to deduct (multiples of 5)" onchange="handlePenaltyPointsChange()" />
                                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Must be a multiple of 5</p>
                             </div>
                         </div>
@@ -716,7 +716,7 @@
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Choose between simple or complex calculation.</p>
                         </div>
                         <div class="relative ml-4">
-                            <select id="winProbMethodSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
+                            <select id="winProbMethodSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" onchange="handleWinProbMethodChange()">
                                 <option value="complex">Experimental</option>
                                 <option value="simple">Simple</option>
                             </select>
@@ -2466,7 +2466,7 @@ function handleGameOverSaveClick(e) {
         
         const penaltyPointsInput = document.getElementById("penaltyPointsInput");
         if (penaltyPointsInput) {
-          let points = parseInt(penaltyPointsInput.value) || 50;
+          let points = parseInt(penaltyPointsInput.value) || 180;
           
           // Validate and round to nearest multiple of 5
           if (points < 5) points = 5;
@@ -2514,10 +2514,48 @@ function handleGameOverSaveClick(e) {
           } else {
             customPointsDiv.classList.add("hidden");
           }
+          
+          // Save the penalty type setting
+          console.log("Saving Table Talk Penalty Type:", penaltySelect.value);
+          localStorage.setItem(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
         }
-        
-        // Settings will be saved when the user explicitly saves them
-        // No need to auto-save on every change
+      }
+      
+      function handleWinProbMethodChange() {
+        const winProbMethodSelect = document.getElementById("winProbMethodSelect");
+        if (winProbMethodSelect) {
+          // Save the win probability method setting
+          console.log("Saving Win Prob Method:", winProbMethodSelect.value);
+          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
+          
+          // Update any currently displayed probability calculations
+          if (state.showWinProbability && state.rounds && state.rounds.length > 0) {
+            renderApp(); // Re-render to update probability display
+          }
+        }
+      }
+      
+      function handlePenaltyPointsChange() {
+        const penaltyPointsInput = document.getElementById("penaltyPointsInput");
+        if (penaltyPointsInput) {
+          let points = parseInt(penaltyPointsInput.value);
+          
+          // Validate the points
+          if (isNaN(points) || points < 5 || points > 500) {
+            points = 180; // Default value
+            penaltyPointsInput.value = points;
+          }
+          
+          // Ensure it's a multiple of 5
+          if (points % 5 !== 0) {
+            points = Math.round(points / 5) * 5;
+            penaltyPointsInput.value = points;
+          }
+          
+          // Save the penalty points setting
+          console.log("Saving Table Talk Penalty Points:", points);
+          localStorage.setItem(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
+        }
       }
 
       // --- Validation ---
@@ -3852,25 +3890,41 @@ let statVal = lookup[additionalStatKey] ?? '0';
 
       // --- Settings Loading ---
       function loadSettings() {
+        console.log("Loading settings from localStorage...");
+        
         // Load win probability method setting
         const winProbMethodSelect = document.getElementById("winProbMethodSelect");
         if (winProbMethodSelect) {
-          winProbMethodSelect.value = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+          const savedMethod = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+          console.log("Loading Win Prob Method:", savedMethod);
+          winProbMethodSelect.value = savedMethod;
+        } else {
+          console.warn("winProbMethodSelect element not found");
         }
         
         // Load table talk penalty settings
         const penaltySelect = document.getElementById("tableTalkPenaltySelect");
         if (penaltySelect) {
-          penaltySelect.value = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+          const savedPenaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+          console.log("Loading Table Talk Penalty Type:", savedPenaltyType);
+          penaltySelect.value = savedPenaltyType;
+        } else {
+          console.warn("tableTalkPenaltySelect element not found");
         }
         
         const penaltyPointsInput = document.getElementById("penaltyPointsInput");
         if (penaltyPointsInput) {
-          penaltyPointsInput.value = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+          const savedPenaltyPoints = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+          console.log("Loading Table Talk Penalty Points:", savedPenaltyPoints);
+          penaltyPointsInput.value = savedPenaltyPoints;
+        } else {
+          console.warn("penaltyPointsInput element not found");
         }
         
         // Show/hide custom points input based on penalty type
         handleTableTalkPenaltyChange();
+        
+        console.log("Settings loading completed");
       }
 
       // --- Initialization ---
