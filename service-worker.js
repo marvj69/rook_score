@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v1.4.522";
+const CACHE_NAME = "rook-cache-v1.4.545";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -7,7 +7,10 @@ const urlsToCache = [
   "./manifest.json",
   "./icons/icon-192x192.png",
   "./icons/icon-512x512.png",
-  "./service-worker.js"
+  "./service-worker.js",
+  // External CDN resources for offline functionality
+  "https://cdn.tailwindcss.com",
+  "https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"
 ];
 
 self.addEventListener("install", (event) => {
@@ -34,10 +37,24 @@ self.addEventListener("fetch", (event) => {
        .catch(() => caches.match("./index.html")) // offline fallback
    );
   } else {
-    // Handle other assets
+    // Handle other assets (including external CDN resources)
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
-        return cachedResponse || fetch(event.request);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        
+        return fetch(event.request).then((networkResponse) => {
+          // Cache external resources for offline use
+          if (event.request.url.includes('cdn.tailwindcss.com') || 
+              event.request.url.includes('cdn.jsdelivr.net')) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        });
       })
     );
   }
