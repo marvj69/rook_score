@@ -580,7 +580,7 @@
             </div>
           </section>
           <section class="bg-gray-50 dark:bg-gray-700 rounded-xl p-5 shadow-sm mb-6">
-            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>What's New in v1.4.6</h3>
+            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>What's New in v1.4.6 (Build 5)</h3>
             <ul class="space-y-2 text-gray-700 dark:text-gray-200">
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Improved 0-Point Handling:</strong> Added a smart popup to confirm if a 0-point team should trigger a 180 or 360-point bonus to the bidding team.</span></li>
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Enhanced Table-Talk Feature:</strong> Choose which team committed table-talk violation (not just bidding team)</span></li>
@@ -599,7 +599,7 @@
             </ul>
           </section>
           <section class="bg-yellow-50 dark:bg-gray-700 rounded-xl p-5 shadow-sm mb-6">
-            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4.93 4.93l1.07 1.07M18 18l1.07 1.07M4.93 19.07l1.07-1.07M18 6l1.07-1.07M12 2a10 10 0 100 20 10 10 0 000-20zM12 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM12 6a1.5 1.5 0 100 3 1.5 1.5 0 000-3z"/></svg>Report an Issue</h3>
+            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Report an Issue</h3>
             <p class="text-gray-600 dark:text-gray-300 mb-4 text-sm">Found a problem? Click below to open an email draft with debug info. Please describe the issue.</p>
             <button type="button" onclick="handleBugReportClick()" class="w-full bg-yellow-500 text-white px-4 py-2.5 rounded-xl hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 dark:focus:ring-yellow-400 transition-colors duration-200 font-medium threed flex items-center justify-center shadow-md"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>Create Bug Report Email</button>
           </section>
@@ -801,11 +801,6 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
            class="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 threed">
      360
    </button>
-
-   <button id="zeroPtsZeroBtn"
-           class="px-4 py-2 bg-gray-300 text-gray-800 rounded-xl hover:bg-gray-400 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 threed">
-     Keep&nbsp;0
-   </button>
  </div>
 
  <div class="flex justify-end">
@@ -994,8 +989,8 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
           console.warn("Firebase not initialized for sync.");
           return false;
         }
-        if (!window.firebaseAuth.currentUser || window.firebaseAuth.currentUser.isAnonymous) {
-          console.log("User not signed in with Google or is anonymous. Not syncing to Firestore.");
+        if (!window.firebaseAuth.currentUser) {
+          console.log("User not authenticated. Not syncing to Firestore.");
           return false;
         }
         try {
@@ -1301,7 +1296,7 @@ function logisticProb(diff, roundIdx, mom) {
             L_COEFF_DIFF  * diff +
             L_COEFF_ROUND * roundIdx +
             L_COEFF_MOM   * mom;
-  return 1 / (1 + Math.exp(-z));           // probability “us” eventually wins
+  return 1 / (1 + Math.exp(-z));           // probability "us" eventually wins
 }
 
 /**
@@ -1365,7 +1360,7 @@ function calculateWinProbabilityComplex(state, historicalGames) {
 function calculateWinProbability(state, historicalGames) {
   // Get the user's preference for calculation method
   // Change default from 'complex' to 'simple'
-  const method = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+  const method = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
   
   if (method === "simple") {
     return calculateWinProbabilitySimple(state, historicalGames);
@@ -1379,7 +1374,7 @@ function calculateWinProbability(state, historicalGames) {
       function setLocalStorage(key, value) {
         try {
           localStorage.setItem(key, JSON.stringify(value));
-          if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+          if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
             // Non-blocking sync
             setTimeout(() => {
               window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
@@ -1390,27 +1385,19 @@ function calculateWinProbability(state, historicalGames) {
         }
       }
 
-      function getLocalStorage(key) {
-  // grab the raw string (or null if the key isn't present)
-  const raw = localStorage.getItem(key);
-
-  // nothing stored yet → sensible defaults
-  if (raw === null) {
-    // for the two keys that always hold arrays we return an empty array,
-    // everything else gets an empty object so later code can still `...spread`
-    if (key === "savedGames" || key === "freezerGames") return [];
-    return {};
-  }
-
-  // try to parse JSON — most of our keys are JSON-encoded
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    // not valid JSON (legacy plain string, hand-edited, etc.)
-    console.warn(`localStorage[${key}] is not JSON – returning the raw value`, err);
-    return raw;        // fall back to the literal string so the app keeps running
-  }
-}
+      function getLocalStorage(key, defaultValue = null) {
+        const raw = localStorage.getItem(key);
+        if (raw === null) {
+          if (defaultValue !== null) return defaultValue;
+          if (key === "savedGames" || key === "freezerGames") return [];
+          return {};
+        }
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          return raw;
+        }
+      }
 
       
       // --- Icons ---
@@ -1464,33 +1451,7 @@ function calculateWinProbability(state, historicalGames) {
         const modal = document.getElementById('presetEditorModal');
         if (modal) { modal.remove(); document.body.classList.remove('modal-open'); }
       }
-      /* ---------- zero-points modal helpers ---------- */
-function openZeroPointsModal(chooseCallback) {
-  const modalEl = document.getElementById("zeroPointsModal");
-  modalEl.classList.remove("hidden");
-  document.body.classList.add("modal-open");
-  document.getElementById("app")?.classList.add("modal-active");
-
-  const close = () => {
-    modalEl.classList.add("hidden");
-    document.body.classList.remove("modal-open");
-    document.getElementById("app")?.classList.remove("modal-active");
-    // clean up listeners so they can't pile up
-    ["zeroPts180Btn","zeroPts360Btn","zeroPtsZeroBtn","zeroPtsCancelBtn"]
-      .forEach(id => {
-        const btn=document.getElementById(id);
-        const newBtn=btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn,btn);
-      });
-  };
-
-  document.getElementById("zeroPts180Btn").onclick = () => { close(); chooseCallback(180); };
-  document.getElementById("zeroPts360Btn").onclick = () => { close(); chooseCallback(360); };
-  document.getElementById("zeroPtsZeroBtn").onclick  = () => { close(); chooseCallback(0);   };
-  document.getElementById("zeroPtsCancelBtn").onclick = close;
-}
-/* ---------------------------------------------- */
-
+      
       function validatePresetInput(inputEl) {
         const val = Number(inputEl.value);
         const errDiv = inputEl.nextElementSibling;
@@ -1576,9 +1537,6 @@ function openZeroPointsModal(chooseCallback) {
         showSaveIndicator("Bid presets updated");
       }
       
-      // --- Migrations ---
-      // Removed performDataMigration and all migration logic
-
       // --- Theme & UI Helpers ---
       function initializeDarkMode() {
         const isDark = JSON.parse(localStorage.getItem(DARK_MODE_KEY) || "false");
@@ -1756,7 +1714,7 @@ function initializeCustomThemeColors() {
         ephemeralPoints = "";
         localStorage.removeItem(ACTIVE_GAME_KEY);
         // Attempt to also clear from Firebase if user is signed in
-        if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+        if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
             window.syncToFirestore(ACTIVE_GAME_KEY, null); // Sync deletion of active game
         }
       }
@@ -1797,7 +1755,7 @@ function initializeCustomThemeColors() {
       function saveCurrentGameState() {
         if (state.gameOver) {
           localStorage.removeItem(ACTIVE_GAME_KEY);
-          if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser && !window.firebaseAuth.currentUser.isAnonymous) {
+          if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
             window.syncToFirestore(ACTIVE_GAME_KEY, null);
           }
         } else {
@@ -1877,7 +1835,7 @@ function initializeCustomThemeColors() {
       function saveWinProbMethod() {
         const select = document.getElementById("winProbMethodSelect");
         if (select) {
-          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, select.value);
+          setLocalStorage(WIN_PROB_CALC_METHOD_KEY, select.value);
           // Refresh the display if win probability is currently shown
           if (state.showWinProbability) {
             renderApp();
@@ -1907,6 +1865,50 @@ function initializeCustomThemeColors() {
       function closeStatisticsModal() { closeModal("statisticsModal"); document.getElementById("statisticsModalContent").innerHTML = "";}
       function openViewSavedGameModal() { openModal("viewSavedGameModal"); }
       function closeViewSavedGameModal() { closeModal("viewSavedGameModal"); openModal("savedGamesModal"); } // Reopen parent
+
+      function openZeroPointsModal(callback) {
+        let zeroPointsCallback = callback;
+        
+        // Open the modal
+        openModal("zeroPointsModal");
+        
+        // Add event listeners to the buttons
+        const btn180 = document.getElementById("zeroPts180Btn");
+        const btn360 = document.getElementById("zeroPts360Btn");
+        const btnCancel = document.getElementById("zeroPtsCancelBtn");
+        
+        // Remove existing listeners by cloning nodes
+        const newBtn180 = btn180.cloneNode(true);
+        const newBtn360 = btn360.cloneNode(true);
+        const newBtnCancel = btnCancel.cloneNode(true);
+        
+        btn180.parentNode.replaceChild(newBtn180, btn180);
+        btn360.parentNode.replaceChild(newBtn360, btn360);
+        btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+        
+        // Add new event listeners
+        newBtn180.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeModal("zeroPointsModal");
+          if (zeroPointsCallback) zeroPointsCallback(180);
+        });
+        
+        newBtn360.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeModal("zeroPointsModal");
+          if (zeroPointsCallback) zeroPointsCallback(360);
+        });
+        
+        newBtnCancel.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeModal("zeroPointsModal");
+          // No callback on cancel
+        });
+      }
+
+      function closeZeroPointsModal() {
+        closeModal("zeroPointsModal");
+      }
 
       // --- Game Actions & Logic ---
       function handleCheatFlag() {
@@ -1971,14 +1973,20 @@ function initializeCustomThemeColors() {
         closeTableTalkModal();
         
         // Get penalty type and create appropriate confirmation message
-        const penaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+        const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
         let confirmationMessage;
         
+        console.log("Table Talk Penalty Type:", penaltyType);
+        
         if (penaltyType === "setPoints") {
-          const penaltyPoints = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+          const penaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
+          console.log("Using setPoints penalty:", penaltyPoints);
           confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${penaltyPoints} points.`;
         } else {
-          confirmationMessage = `Flag ${teamName} for table-talk? They will lose their bid for this round.`;
+          // penaltyType === "loseBid" - they lose the bid amount in points
+          const bidAmount = state.bidAmount || "0";
+          console.log("Using loseBid penalty:", bidAmount);
+          confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${bidAmount} points (the bid amount).`;
         }
         
         // Show confirmation before applying penalty
@@ -2001,11 +2009,11 @@ function applyCheatPenaltyRound(flaggedTeam) {
   const lastTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, dem: 0 };
   
   // Get penalty type and calculate penalty amount
-  const penaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+  const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
   let penaltyAmount;
   
   if (penaltyType === "setPoints") {
-    penaltyAmount = parseInt(localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180");
+    penaltyAmount = parseInt(getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180"));
   } else {
     penaltyAmount = numericBid; // Traditional penalty - lose the bid amount
   }
@@ -2034,7 +2042,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   const updatedRounds = [...rounds, newRound];
 
   // Check for game over
-  const mustWinByBid = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
+  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
   let gameFinished = false, theWinner = null, victoryMethod = "Penalty: Lost Bid";
   if (Math.abs(newTotals.us - newTotals.dem) >= 1000) {
     gameFinished = true; theWinner = newTotals.us > newTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
@@ -2212,7 +2220,7 @@ function handleCustomBidChange(e) {
         const newRound = { biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
         const updatedRounds = [...rounds, newRound];
 
-        const mustWinByBid = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
+        const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
         let gameFinished = false, theWinner = null, victoryMethod = "Won on Bid";
 
         if (Math.abs(newTotals.us - newTotals.dem) >= 1000) {
@@ -2274,7 +2282,7 @@ function handleCustomBidChange(e) {
         // Re-check game over condition based on the new last round
         const lastTotals = newRounds[newRounds.length - 1].runningTotals;
         let gameOver = false, winner = null, victoryMethod = null;
-        const mustWinByBid = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
+        const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
 
         if (Math.abs(lastTotals.us - lastTotals.dem) >= 1000) {
             gameOver = true; winner = lastTotals.us > lastTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
@@ -2340,7 +2348,7 @@ function handleGameOverSaveClick(e) {
                 [state.demTeamName]: { totalPoints: lastRoundTotals.dem, wins: state.winner === "dem" ? 1 : 0 }
             }
         };
-        const savedGames = getLocalStorage("savedGames");
+        const savedGames = getLocalStorage("savedGames", []);
         savedGames.push(gameObj);
         setLocalStorage("savedGames", savedGames);
         showSaveIndicator("Game Saved!");
@@ -2462,7 +2470,7 @@ function handleGameOverSaveClick(e) {
         if (mustWinToggle) localStorage.setItem(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
         
         const penaltySelect = document.getElementById("tableTalkPenaltySelect");
-        if (penaltySelect) localStorage.setItem(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
+        if (penaltySelect) setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
         
         const penaltyPointsInput = document.getElementById("penaltyPointsInput");
         if (penaltyPointsInput) {
@@ -2476,13 +2484,13 @@ function handleGameOverSaveClick(e) {
             penaltyPointsInput.value = points; // Update the input to show corrected value
           }
           
-          localStorage.setItem(TABLE_TALK_PENALTY_POINTS_KEY, points);
+          setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points);
         }
         
         // Save win probability calculation method
         const winProbMethodSelect = document.getElementById("winProbMethodSelect");
         if (winProbMethodSelect) {
-          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
+          setLocalStorage(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
           // Refresh the display if win probability is currently shown
           if (state.showWinProbability) {
             renderApp();
@@ -2517,7 +2525,7 @@ function handleGameOverSaveClick(e) {
           
           // Save the penalty type setting
           console.log("Saving Table Talk Penalty Type:", penaltySelect.value);
-          localStorage.setItem(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
+          setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
         }
       }
       
@@ -2526,7 +2534,7 @@ function handleGameOverSaveClick(e) {
         if (winProbMethodSelect) {
           // Save the win probability method setting
           console.log("Saving Win Prob Method:", winProbMethodSelect.value);
-          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
+          setLocalStorage(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
           
           // Update any currently displayed probability calculations
           if (state.showWinProbability && state.rounds && state.rounds.length > 0) {
@@ -2554,7 +2562,7 @@ function handleGameOverSaveClick(e) {
           
           // Save the penalty points setting
           console.log("Saving Table Talk Penalty Points:", points);
-          localStorage.setItem(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
+          setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
         }
       }
 
@@ -2616,10 +2624,10 @@ function handleGameOverSaveClick(e) {
         
         if (roundTime > ROUND_WARNING_TIME || currentTime > GAME_WARNING_TIME) {
           if (roundTime > MAX_ROUND_TIME_MS * 0.9) {
-            warningMessage = "⚠️ Round time is very high! Consider saving the game.";
+            warningMessage = "⚠️ Round time is very high! Consider starting a new game.";
             warningLevel = "danger";
           } else if (currentTime > MAX_GAME_TIME_MS * 0.9) {
-            warningMessage = "⚠️ Game time is very high! Consider finishing the game.";
+            warningMessage = "⚠️ Game time is very high! Consider starting a new game.";
             warningLevel = "danger";
           } else if (roundTime > ROUND_WARNING_TIME) {
             warningMessage = "⏰ Round has been active for " + formatDuration(roundTime);
@@ -2699,7 +2707,7 @@ function handleGameOverSaveClick(e) {
         const labelDem = state.demTeamName || "Dem";
         
         // Detect which calculation method is being used
-        const method = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+        const method = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
         const isComplex = method === "complex";
         
         if (isComplex) {
@@ -3618,8 +3626,8 @@ function handleGameOverSaveClick(e) {
         renderGamesWithFilter();
       }
       function updateGamesCount() {
-        const savedGames = getLocalStorage("savedGames");
-        const freezerGames = getLocalStorage("freezerGames");
+        const savedGames = getLocalStorage("savedGames", []);
+        const freezerGames = getLocalStorage("freezerGames", []);
         document.getElementById('completedGamesCount').textContent = savedGames.length;
         document.getElementById('freezerGamesCount').textContent = freezerGames.length;
         document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', savedGames.length > 0);
@@ -3634,7 +3642,7 @@ function handleGameOverSaveClick(e) {
         isCompletedTabActive ? renderSavedGamesList(searchTerm, sortOption) : renderFreezerGamesList(searchTerm, sortOption);
       }
       function renderSavedGamesList(searchTerm = '', sortOption = 'newest') {
-        let games = getLocalStorage("savedGames");
+        let games = getLocalStorage("savedGames", []);
         if (searchTerm) {
             games = games.filter(g => 
                 (g.usTeamName || "Us").toLowerCase().includes(searchTerm) || 
@@ -3646,7 +3654,7 @@ function handleGameOverSaveClick(e) {
         const container = document.getElementById("savedGamesList");
         document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', games.length > 0);
         container.innerHTML = games.map((g, idx) => { // Use original index for deletion/viewing
-            const originalIndex = getLocalStorage("savedGames").findIndex(sg => sg.timestamp === g.timestamp); // Find original index
+            const originalIndex = getLocalStorage("savedGames", []).findIndex(sg => sg.timestamp === g.timestamp); // Find original index
             const usS = g.finalScore.us, demS = g.finalScore.dem;
             const usW = g.winner === "us", demW = g.winner === "dem";
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
@@ -3678,7 +3686,7 @@ function handleGameOverSaveClick(e) {
         }).join("") || (!searchTerm ? "" : `<p class="text-gray-500 col-span-full text-center">No completed games match "${searchTerm}".</p>`);
       }
       function renderFreezerGamesList(searchTerm = '', sortOption = 'newest') {
-        let games = getLocalStorage("freezerGames");
+        let games = getLocalStorage("freezerGames", []);
         if (searchTerm) {
             games = games.filter(g => 
                 (g.usName || "Us").toLowerCase().includes(searchTerm) || 
@@ -3690,7 +3698,7 @@ function handleGameOverSaveClick(e) {
         const container = document.getElementById("freezerGamesList");
         document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', games.length > 0);
         container.innerHTML = games.map((g, idx) => {
-            const originalIndex = getLocalStorage("freezerGames").findIndex(fg => fg.timestamp === g.timestamp);
+            const originalIndex = getLocalStorage("freezerGames", []).findIndex(fg => fg.timestamp === g.timestamp);
             const usS = g.finalScore.us, demS = g.finalScore.dem;
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
             const leadInfo = usS > demS ? `${g.usName || "Us"} leads by ${usS - demS}` : (demS > usS ? `${g.demName || "Dem"} leads by ${demS - usS}` : "Tied");
@@ -3735,7 +3743,7 @@ function handleGameOverSaveClick(e) {
         const stats = getStatistics();
         let content = "";
         if (!stats.totalGames && !stats.teamsData.length) {
-            content = `<div class="py-8 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg><p class="mt-4 text-gray-600 dark:text-gray-400 text-lg">No stats yet. Play some games!</p><button onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">Start New Game</button></div>`;
+            content = `<div class="py-8 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg><p class="mt-4 text-gray-600 dark:text-gray-400 text-lg">No stats yet. Play some games!</p><button onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">Start New Game</button></div>`;
         } else {
             const statCard = (title, value, iconSvg, color) => `
                 <div class="bg-gradient-to-br from-${color}-50 to-${color}-100 dark:from-gray-700 dark:to-gray-800 rounded-lg p-2.5 shadow-sm">
@@ -3767,7 +3775,7 @@ function handleGameOverSaveClick(e) {
         }
       }
       function getStatistics() {
-        const savedGames = getLocalStorage("savedGames").filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
+        const savedGames = getLocalStorage("savedGames", []).filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
         const teamData = {}; // Using object for easier access by team name
         let totalBids = 0, sumOfBids = 0, totalGameDuration = 0;
 
@@ -3895,7 +3903,7 @@ let statVal = lookup[additionalStatKey] ?? '0';
         // Load win probability method setting
         const winProbMethodSelect = document.getElementById("winProbMethodSelect");
         if (winProbMethodSelect) {
-          const savedMethod = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+          const savedMethod = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
           console.log("Loading Win Prob Method:", savedMethod);
           winProbMethodSelect.value = savedMethod;
         } else {
@@ -3905,7 +3913,7 @@ let statVal = lookup[additionalStatKey] ?? '0';
         // Load table talk penalty settings
         const penaltySelect = document.getElementById("tableTalkPenaltySelect");
         if (penaltySelect) {
-          const savedPenaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+          const savedPenaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
           console.log("Loading Table Talk Penalty Type:", savedPenaltyType);
           penaltySelect.value = savedPenaltyType;
         } else {
@@ -3914,7 +3922,7 @@ let statVal = lookup[additionalStatKey] ?? '0';
         
         const penaltyPointsInput = document.getElementById("penaltyPointsInput");
         if (penaltyPointsInput) {
-          const savedPenaltyPoints = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+          const savedPenaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
           console.log("Loading Table Talk Penalty Points:", savedPenaltyPoints);
           penaltyPointsInput.value = savedPenaltyPoints;
         } else {
@@ -3947,10 +3955,10 @@ let statVal = lookup[additionalStatKey] ?? '0';
         // Pro mode toggle (in settings modal, not main nav)
         const proModeToggleModal = document.getElementById("proModeToggleModal");
         if (proModeToggleModal) {
-            proModeToggleModal.checked = JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false;
+            proModeToggleModal.checked = getLocalStorage(PRO_MODE_KEY, false);
             proModeToggleModal.addEventListener("change", (e) => toggleProMode(e.target));
         }
-        updateProModeUI(JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false); // Initial UI update
+        updateProModeUI(getLocalStorage(PRO_MODE_KEY, false)); // Initial UI update
 
         document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
         document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
