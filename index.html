@@ -370,6 +370,26 @@
       }
       html, body {height:100%; overflow:hidden; overscroll-behavior:none;}
       
+      /* Probability Modal Styling */
+      .probability-modal {
+        backdrop-filter: blur(4px);
+        animation: fadeIn 0.2s ease-out;
+      }
+      .probability-modal-content {
+        animation: slideIn 0.3s ease-out;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
     </style>
 </head>
 <body class="bg-white text-gray-800 min-h-screen transition-colors duration-300 dark:bg-gray-900 dark:text-white theme-blue-red" id="bodyRoot">
@@ -430,7 +450,7 @@
 
     <!-- Version Number -->
     <div class="absolute top-0 right-0 m-4 p-2 text-gray-800 font-medium text-xs bg-white bg-opacity-70 rounded shadow px-3 py-1 dark:bg-gray-800 dark:text-white cursor-pointer" onclick="showVersionNum()">
-      <p>version 1.4.5</p>
+      <p>version 1.4.6</p>
     </div>
 
     <!-- Main App Container -->
@@ -556,14 +576,14 @@
               <div class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-blue-600 dark:text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2 text-gray-700 dark:text-gray-200">Dark Mode</span></div>
               <div class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-blue-600 dark:text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2 text-gray-700 dark:text-gray-200">Win Probability</span></div>
               <!-- Table-talk/cheating penalty feature -->
-              <div class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-blue-600 dark:text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2 text-gray-700 dark:text-gray-200"><strong>Table-Talk Penalty:</strong> Flag a team for table-talk (cheating) during a round. The flagged team will automatically lose their bid for that hand.</span></div>
+              <div class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-blue-600 dark:text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2 text-gray-700 dark:text-gray-200"><strong>Table-Talk Penalty:</strong> Choose which team engaged in table-talk (cheating) during a round. The penalty can be configured in Settings - either lose their bid amount or a set number of points.</span></div>
             </div>
           </section>
           <section class="bg-gray-50 dark:bg-gray-700 rounded-xl p-5 shadow-sm mb-6">
-            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>What's New in v1.4.5</h3>
+            <h3 class="text-xl font-semibold mb-3 text-gray-700 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>What's New in v1.4.6</h3>
             <ul class="space-y-2 text-gray-700 dark:text-gray-200">
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Improved 0-Point Handling:</strong> Added a smart popup to confirm if a 0-point team should trigger a 180 or 360-point bonus to the bidding team.</span></li>
-              <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Table-Talk Feature:</strong> New "Table-Talk" button lets you remove the bid from offending team</span></li>
+              <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Enhanced Table-Talk Feature:</strong> Choose which team committed table-talk violation (not just bidding team)</span></li>
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Pro Mode:</strong> Unlock win probability.</span></li>
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Sandbagger Stat.</strong></span></li>
               <li class="flex items-start"><div class="flex-shrink-0 h-5 w-5 text-green-600 dark:text-green-400"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></div><span class="ml-2"><strong>Settings Button:</strong> Access game rules, Pro Mode, theme color customization, and bid presets from the new settings menu.</span></li>
@@ -629,7 +649,7 @@
               <input type="text" id="newDemTeamName" name="newDemTeamName" class="mt-2 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white hidden" placeholder="New Name for Dem" />
             </div>
             <div class="flex justify-end space-x-2">
-              <button type="button" onclick="closeTeamSelectionModal();" class="bg-gray-400 text-white px-4 py-2 rounded-xl hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-400 dark:hover:bg-gray-600 dark:focus:ring-blue-400">Cancel</button>
+              <button type="button" onclick="handleTeamSelectionCancel();" class="bg-gray-400 text-white px-4 py-2 rounded-xl hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-400 dark:hover:bg-gray-600 dark:focus:ring-blue-400">Cancel</button>
               <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400">Confirm</button>
             </div>
           </form>
@@ -660,6 +680,21 @@
                             <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('mustWinByBidToggle').click()"></div>
                         </div>
                     </div>
+                    <div class="p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
+                        <label for="tableTalkPenaltySelect" class="text-gray-700 dark:text-white font-medium block mb-2">Table Talk Penalty</label>
+                        <p class="text-sm text-gray-500 dark:text-gray-300 mb-3">Choose how to penalize teams for table talking.</p>
+                        <div class="space-y-3">
+                            <select id="tableTalkPenaltySelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" onchange="handleTableTalkPenaltyChange()">
+                                <option value="loseBid">Team loses the bid amount</option>
+                                <option value="setPoints" selected>Team loses set amount of points</option>
+                            </select>
+                            <div id="customPenaltyPoints">
+                                <label for="penaltyPointsInput" class="text-sm text-gray-600 dark:text-gray-400 block mb-1">Penalty Points:</label>
+                                <input type="number" id="penaltyPointsInput" min="5" max="500" step="5" value="180" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" onchange="saveSettings()" placeholder="Points to deduct (multiples of 5)" />
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Must be a multiple of 5</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
             <section class="bg-gray-50 dark:bg-gray-700 rounded-xl p-5 mb-6">
@@ -673,6 +708,18 @@
                         <div class="relative ml-4">
                             <input type="checkbox" id="proModeToggleModal" class="sr-only peer" onchange="toggleProMode(this)" />
                             <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('proModeToggleModal').click()"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
+                        <div>
+                            <label for="winProbMethodSelect" class="text-gray-700 dark:text-white font-medium">Win Probability Method</label>
+                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Choose between simple or complex calculation.</p>
+                        </div>
+                        <div class="relative ml-4">
+                            <select id="winProbMethodSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" onchange="saveWinProbMethod()">
+                                <option value="complex">Experimental</option>
+                                <option value="simple">Simple</option>
+                            </select>
                         </div>
                     </div>
                     <button type="button" onclick="openThemeModal(event)" class="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors">
@@ -1012,11 +1059,15 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
 
       // --- Configuration & Constants ---
       const MUST_WIN_BY_BID_KEY = "rookMustWinByBid";
+      const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
+      const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
+      const WIN_PROB_CALC_METHOD_KEY = "winProbCalcMethod";
       const ACTIVE_GAME_KEY = "activeGameState";
       const DARK_MODE_KEY = "darkModeEnabled";
       const PRO_MODE_KEY = "proModeEnabled";
       const THEME_KEY = "rookSelectedTheme";
       const PRESET_BIDS_KEY = 'customPresetBids';
+      const PROB_CACHE = new Map();   // memoise across calls
       const DEFAULT_STATE = {
         rounds: [], undoneRounds: [], biddingTeam: "", bidAmount: "",
         customBidValue: "", showCustomBid: false, enterBidderPoints: false,
@@ -1056,15 +1107,80 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
   const winProb = calculateWinProbability(state, historicalGames);
   const labelUs = usTeamName || "Us";
   const labelDem = demTeamName || "Dem";
+  
+  // Get current game state for context
+  const lastRound = rounds[rounds.length - 1];
+  const currentScores = lastRound.runningTotals || { us: 0, dem: 0 };
+  const scoreDiff = currentScores.us - currentScores.dem;
+  const leader = scoreDiff > 0 ? labelUs : scoreDiff < 0 ? labelDem : "Tied";
+  const margin = Math.abs(scoreDiff);
+  
+  // Determine win probability context
+  let contextText = "";
+  if (scoreDiff === 0) {
+    contextText = "Even game";
+  } else if (margin <= 30) {
+    contextText = `${leader} slightly ahead`;
+  } else if (margin <= 60) {
+    contextText = `${leader} leading`;
+  } else {
+    contextText = `${leader} strongly ahead`;
+  }
+  
   return `
-    <div id="winProbabilityDisplay" class="text-center text-sm text-gray-600 dark:text-gray-300">
-      <span class="inline-block px-4">${labelUs}: ${winProb.us.toFixed(1)}%</span>
-      <span class="inline-block px-4">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+    <div id="winProbabilityDisplay" class="text-center text-sm text-gray-600 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+      <div class="flex items-center justify-center gap-4 mb-2">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-primary"></div>
+          <span class="font-medium">${labelUs}: ${winProb.us.toFixed(1)}%</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-accent"></div>
+          <span class="font-medium">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div class="text-xs text-gray-500 dark:text-gray-400">
+        ${contextText} • ${historicalGames.length} games analyzed
+      </div>
     </div>
   `;
 }
 
-function calculateWinProbability(currentGame, historicalGames) {
+// --- Win‑probability engine -------------------------------------------
+
+function bucketScore(diff) {
+  const sign = diff < 0 ? -1 : 1;
+  const abs  = Math.min(Math.abs(diff), 180);   // ≥180 ⇒ final bucket
+  const band = Math.floor(abs / 20) * 20;       // 0‑19,20‑39,…160‑179
+  return sign * band;                           // e.g.  -40  or  120
+}
+
+function buildProbabilityIndex(historicalGames) {
+  const table = {};
+
+  const add = (k, winner, weight) => {
+    if (!table[k]) table[k] = { us: 1, dem: 1 };      // Laplace prior (1 | 1)
+    table[k][winner] += weight;
+  };
+
+  historicalGames.forEach(g => {
+    if (!g.rounds?.length || !g.finalScore) return;
+
+    const winner = g.finalScore.us > g.finalScore.dem ? 'us' : 'dem';
+    const ageDays = (Date.now() - new Date(g.timestamp)) / 86_400_000;
+    const w       = Math.pow(0.8, ageDays / 14);             // recency weight
+
+    g.rounds.forEach((r, idx) => {
+      if (!r.runningTotals) return;
+      const diff = r.runningTotals.us - r.runningTotals.dem;
+      const key  = `${idx}|${bucketScore(diff)}`;
+      add(key, winner, w);
+    });
+  });
+  return table;
+}
+
+function calculateWinProbabilitySimple(currentGame, historicalGames) {
   const { rounds } = currentGame;
   
   if (!rounds || rounds.length === 0) {
@@ -1174,6 +1290,48 @@ function calculateWinProbability(currentGame, historicalGames) {
     factors: factors
   };
 }
+
+function calculateWinProbabilityComplex(state, historicalGames) {
+  // ---------------- deterministic part ----------------
+  const { rounds } = state;
+  if (!rounds?.length) return { us: 50, dem: 50 };
+
+  // Memoise so we only crunch once per page‑load
+  const cacheKey = historicalGames.length;
+  if (!PROB_CACHE.has(cacheKey))
+    PROB_CACHE.set(cacheKey, buildProbabilityIndex(historicalGames));
+  const table = PROB_CACHE.get(cacheKey);
+
+  const last     = rounds[rounds.length - 1];
+  const diff     = last.runningTotals.us - last.runningTotals.dem;
+  const key      = `${rounds.length - 1}|${bucketScore(diff)}`;
+  const counts   = table[key] || { us: 1, dem: 1 };
+  const empirical= counts.us / (counts.us + counts.dem);
+
+  // ---------------- blend with logistic prior ----------------
+  const totalObs = counts.us + counts.dem - 2;          // remove Laplace seed
+  const beta     = Math.min(1, Math.log(totalObs + 1) / 4);  // 0 @ 0 obs → 1 @ e⁴‑1 ≈ 54 obs
+  const prior    = 1 / (1 + Math.exp(-0.015 * diff));   // smooth generic lead effect
+  const pUs      = beta * empirical + (1 - beta) * prior;
+
+  return {
+    us : +(pUs  * 100).toFixed(1),
+    dem: +((1 - pUs) * 100).toFixed(1)
+  };
+}
+
+function calculateWinProbability(state, historicalGames) {
+  // Get the user's preference for calculation method
+  // Change default from 'complex' to 'simple'
+  const method = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+  
+  if (method === "simple") {
+    return calculateWinProbabilitySimple(state, historicalGames);
+  } else {
+    return calculateWinProbabilityComplex(state, historicalGames);
+  }
+}
+
 
       // --- Local Storage & Sync ---
       function setLocalStorage(key, value) {
@@ -1674,12 +1832,45 @@ function initializeCustomThemeColors() {
       function closeConfirmationModal() { closeModal("confirmationModal"); confirmationCallback = null; noCallback = null; }
       function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
       function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
+      function saveWinProbMethod() {
+        const select = document.getElementById("winProbMethodSelect");
+        if (select) {
+          localStorage.setItem(WIN_PROB_CALC_METHOD_KEY, select.value);
+          // Refresh the display if win probability is currently shown
+          if (state.showWinProbability) {
+            renderApp();
+          }
+        }
+      }
+
       function openSettingsModal() {
         const mustWinToggle = document.getElementById("mustWinByBidToggle");
         if (mustWinToggle) mustWinToggle.checked = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
         const proToggleModal = document.getElementById("proModeToggleModal");
         if (proToggleModal) proToggleModal.checked = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
         document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
+        
+        // Load win probability method setting
+        const winProbMethodSelect = document.getElementById("winProbMethodSelect");
+        if (winProbMethodSelect) {
+          // Change default from 'complex' to 'simple'
+          winProbMethodSelect.value = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+        }
+        
+        // Load table talk penalty settings
+        const penaltySelect = document.getElementById("tableTalkPenaltySelect");
+        if (penaltySelect) {
+          penaltySelect.value = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+        }
+        
+        const penaltyPointsInput = document.getElementById("penaltyPointsInput");
+        if (penaltyPointsInput) {
+          penaltyPointsInput.value = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+        }
+        
+        // Show/hide custom points input based on penalty type
+        handleTableTalkPenaltyChange();
+        
         openModal("settingsModal");
       }
       function closeSettingsModal() { closeModal("settingsModal"); }
@@ -1692,22 +1883,88 @@ function initializeCustomThemeColors() {
 
       // --- Game Actions & Logic ---
       function handleCheatFlag() {
-  if (!state.biddingTeam) return;  // nothing to flag
-
-  const teamName = state.biddingTeam === "us"
-      ? (state.usTeamName || "Us")
-      : (state.demTeamName || "Dem");
-
-  openConfirmationModal(
-    `Flag ${teamName} for table-talk? They will lose their bid.`,
-    () => { // YES
-      applyCheatPenaltyRound(state.biddingTeam);
-      closeConfirmationModal();
-      showSaveIndicator("Penalty applied");
-    },
-    closeConfirmationModal // NO
-  );
+  if (!state.biddingTeam) return;  // Can't apply penalty without an active bidding team
+  
+  // Open team selection modal for table talk penalty
+  openTableTalkModal();
 }
+
+      function openTableTalkModal() {
+        const usTeamName = state.usTeamName || "Us";
+        const demTeamName = state.demTeamName || "Dem";
+        
+        const modalHtml = `
+          <div class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50" id="tableTalkModal">
+            <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-xl shadow-lg">
+              <div class="p-6">
+                <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white text-center">Table Talk Penalty</h2>
+                <p class="text-gray-600 dark:text-gray-300 mb-6 text-center">Which team engaged in table talk during this round?</p>
+                <div class="space-y-3">
+                  <button 
+                    onclick="applyTableTalkPenalty('us')" 
+                    class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+                    style="background-color: var(--primary-color);">
+                    ${usTeamName}
+                  </button>
+                  <button 
+                    onclick="applyTableTalkPenalty('dem')" 
+                    class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+                    style="background-color: var(--accent-color);">
+                    ${demTeamName}
+                  </button>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                  <button 
+                    onclick="closeTableTalkModal()" 
+                    class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('modal-open');
+      }
+
+      function closeTableTalkModal() {
+        const modal = document.getElementById('tableTalkModal');
+        if (modal) {
+          modal.remove();
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      function applyTableTalkPenalty(flaggedTeam) {
+        const teamName = flaggedTeam === "us" 
+          ? (state.usTeamName || "Us") 
+          : (state.demTeamName || "Dem");
+        
+        closeTableTalkModal();
+        
+        // Get penalty type and create appropriate confirmation message
+        const penaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+        let confirmationMessage;
+        
+        if (penaltyType === "setPoints") {
+          const penaltyPoints = localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180";
+          confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${penaltyPoints} points.`;
+        } else {
+          confirmationMessage = `Flag ${teamName} for table-talk? They will lose their bid for this round.`;
+        }
+        
+        // Show confirmation before applying penalty
+        openConfirmationModal(
+          confirmationMessage,
+          () => { // YES
+            applyCheatPenaltyRound(flaggedTeam);
+            closeConfirmationModal();
+            showSaveIndicator(`Penalty applied to ${teamName}`);
+          },
+          closeConfirmationModal // NO
+        );
+      }
 
 function applyCheatPenaltyRound(flaggedTeam) {
   // Get current state values
@@ -1715,13 +1972,24 @@ function applyCheatPenaltyRound(flaggedTeam) {
   if (!biddingTeam || !bidAmount) return;
   const numericBid = Number(bidAmount);
   const lastTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, dem: 0 };
+  
+  // Get penalty type and calculate penalty amount
+  const penaltyType = localStorage.getItem(TABLE_TALK_PENALTY_TYPE_KEY) || "setPoints";
+  let penaltyAmount;
+  
+  if (penaltyType === "setPoints") {
+    penaltyAmount = parseInt(localStorage.getItem(TABLE_TALK_PENALTY_POINTS_KEY) || "180");
+  } else {
+    penaltyAmount = numericBid; // Traditional penalty - lose the bid amount
+  }
+  
   let usEarned = 0, demEarned = 0;
   if (flaggedTeam === "us") {
-    usEarned = -numericBid;
+    usEarned = -penaltyAmount;
     demEarned = 0;
   } else {
     usEarned = 0;
-    demEarned = -numericBid;
+    demEarned = -penaltyAmount;
   }
   const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
   const newRound = {
@@ -1732,7 +2000,9 @@ function applyCheatPenaltyRound(flaggedTeam) {
     runningTotals: newTotals,
     usTeamNameOnRound: usTeamName || "Us",
     demTeamNameOnRound: demTeamName || "Dem",
-    penalty: "cheat"
+    penalty: "cheat",
+    penaltyType: penaltyType,
+    penaltyAmount: penaltyAmount
   };
   const updatedRounds = [...rounds, newRound];
 
@@ -1760,7 +2030,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
       theWinner      = biddingTeam === "us" ? "dem" : "us";
       victoryMethod  = "Set Other Team";
     }
-    // no “auto-win at 500+” fallback any more
+    // no "auto-win at 500+" fallback any more
 
   let finalAccumulated = state.accumulatedTime;
   if (state.startTime !== null && !gameFinished) { /* Time continues */ }
@@ -2161,6 +2431,25 @@ function handleGameOverSaveClick(e) {
       function saveSettings() {
         const mustWinToggle = document.getElementById("mustWinByBidToggle");
         if (mustWinToggle) localStorage.setItem(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
+        
+        const penaltySelect = document.getElementById("tableTalkPenaltySelect");
+        if (penaltySelect) localStorage.setItem(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
+        
+        const penaltyPointsInput = document.getElementById("penaltyPointsInput");
+        if (penaltyPointsInput) {
+          let points = parseInt(penaltyPointsInput.value) || 50;
+          
+          // Validate and round to nearest multiple of 5
+          if (points < 5) points = 5;
+          if (points > 500) points = 500;
+          if (points % 5 !== 0) {
+            points = Math.round(points / 5) * 5;
+            penaltyPointsInput.value = points; // Update the input to show corrected value
+          }
+          
+          localStorage.setItem(TABLE_TALK_PENALTY_POINTS_KEY, points);
+        }
+        
         showSaveIndicator("Settings Saved");
       }
       function updateProModeUI(isProMode) {
@@ -2175,6 +2464,22 @@ function handleGameOverSaveClick(e) {
         updateProModeUI(isPro);
         saveCurrentGameState(); // Save state with new pro mode setting
       }
+      
+      function handleTableTalkPenaltyChange() {
+        const penaltySelect = document.getElementById("tableTalkPenaltySelect");
+        const customPointsDiv = document.getElementById("customPenaltyPoints");
+        
+        if (penaltySelect && customPointsDiv) {
+          if (penaltySelect.value === "setPoints") {
+            customPointsDiv.classList.remove("hidden");
+          } else {
+            customPointsDiv.classList.add("hidden");
+          }
+        }
+        
+        // Save the setting when it changes
+        saveSettings();
+      }
 
       // --- Validation ---
       function validateBid(bidStr) {
@@ -2183,6 +2488,7 @@ function handleGameOverSaveClick(e) {
         if (bidNum <= 0) return "Bid must be > 0.";
         if (bidNum % 5 !== 0) return "Bid must be multiple of 5.";
         if (bidNum > 360) return "Bid max 360.";
+        if (bidNum > 180 && bidNum < 360) return "Bids between 180 and 360 are not allowed.";
         return "";
       }
       function validatePoints(pointsStr) {
@@ -2195,7 +2501,7 @@ function handleGameOverSaveClick(e) {
       
       // --- Misc UI & Utility ---
       function showVersionNum() {
-        alert("Version 1.4.5 adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
+        alert("Version 1.4.6 adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
       }
       function formatDuration(ms) {
         if (!ms || ms < 0) return "0:00";
@@ -2205,6 +2511,543 @@ function handleGameOverSaveClick(e) {
         const s = secs % 60;
         const m = mins % 60;
         return `${hrs > 0 ? hrs + ':' : ''}${hrs > 0 && m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+      }
+
+      // --- Probability Breakdown Functions ---
+      function openProbabilityModal() {
+        const modalHtml = `
+          <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
+            <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">
+              <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 id="probabilityModalTitle" class="text-xl font-bold text-gray-800 dark:text-white">Win Probability Breakdown</h2>
+                <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="p-4">
+                ${generateProbabilityBreakdown()}
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('modal-open');
+      }
+
+      function closeProbabilityModal() {
+        const modal = document.getElementById('probabilityModal');
+        if (modal) {
+          modal.remove();
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      function generateProbabilityBreakdown() {
+        if (!state.showWinProbability || !state.rounds || state.rounds.length === 0 || state.gameOver) {
+          return "";
+        }
+
+        const historicalGames = getLocalStorage("savedGames");
+        const winProb = calculateWinProbability(state, historicalGames);
+        
+        // Get current game state
+        const lastRound = state.rounds[state.rounds.length - 1];
+        const currentScores = lastRound.runningTotals || { us: 0, dem: 0 };
+        const scoreDiff = currentScores.us - currentScores.dem;
+        const roundsPlayed = state.rounds.length;
+        const labelUs = state.usTeamName || "Us";
+        const labelDem = state.demTeamName || "Dem";
+        
+        // Detect which calculation method is being used
+        const method = localStorage.getItem(WIN_PROB_CALC_METHOD_KEY) || "simple";
+        const isComplex = method === "complex";
+        
+        if (isComplex) {
+          return generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores);
+        } else {
+          return generateSimpleProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores);
+        }
+      }
+
+      function generateSimpleProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores) {
+        // Score Analysis
+        const scoreAnalysis = (() => {
+          const margin = Math.abs(scoreDiff);
+          const leader = scoreDiff > 0 ? labelUs : scoreDiff < 0 ? labelDem : "Neither";
+          let impact = "";
+          let explanation = "";
+          
+          if (margin === 0) {
+            impact = "Minimal impact (+0%)";
+            explanation = "Tied games have equal probability to start";
+          } else if (margin <= 130) {
+            impact = `Close game advantage (${Math.round(margin / 15)}%)`;
+            explanation = "Close game - either team can still win";
+          } else if (margin <= 180) {
+            impact = `Large lead advantage (${Math.round(margin / 15)}%)`;
+            explanation = "Significant lead, but comeback still possible";
+          } else {
+            impact = `Dominant position (${Math.round(margin / 15)}%)`;
+            explanation = "Very large lead, comeback highly unlikely";
+          }
+          
+          return { margin, leader, impact, explanation };
+        })();
+        
+        // Momentum analysis with more detail
+        const momentumAnalysis = (() => {
+          if (state.rounds.length < 3) {
+            return {
+              text: "Not enough rounds",
+              impact: "No momentum factor",
+              explanation: "Need at least 3 rounds to analyze momentum"
+            };
+          }
+          
+          let recentUsPoints = 0;
+          let recentDemPoints = 0;
+          
+          for (let i = state.rounds.length - 3; i < state.rounds.length; i++) {
+            if (i >= 0) {
+              recentUsPoints += state.rounds[i].usPoints || 0;
+              recentDemPoints += state.rounds[i].demPoints || 0;
+            }
+          }
+          
+          const diff = recentUsPoints - recentDemPoints;
+          let text, impact, explanation;
+          
+          if (Math.abs(diff) <= 10) {
+            text = "Balanced recent performance";
+            impact = "Neutral (0%)";
+            explanation = "Both teams scoring similarly in recent rounds";
+          } else if (diff > 10) {
+            text = `${labelUs} gaining momentum`;
+            impact = "Slight boost (+2%)";
+            explanation = `${labelUs} outscored ${labelDem} ${recentUsPoints} to ${recentDemPoints} in last 3 rounds`;
+          } else {
+            text = `${labelDem} gaining momentum`;
+            impact = "Slight disadvantage (-2%)";
+            explanation = `${labelDem} outscored ${labelUs} ${recentDemPoints} to ${recentUsPoints} in last 3 rounds`;
+          }
+          
+          return { text, impact, explanation };
+        })();
+
+        // Bid strength analysis with detailed explanation
+        const bidAnalysis = (() => {
+          const usHighBids = state.rounds.filter(r => r.biddingTeam === "us" && r.bidAmount >= 140).length;
+          const demHighBids = state.rounds.filter(r => r.biddingTeam === "dem" && r.bidAmount >= 140).length;
+          const usBids = state.rounds.filter(r => r.biddingTeam === "us").length;
+          const demBids = state.rounds.filter(r => r.biddingTeam === "dem").length;
+          
+          let text, impact, explanation;
+          
+          if (usHighBids === demHighBids) {
+            text = "Equal aggressive bidding";
+            impact = "Neutral (0%)";
+            explanation = `Both teams made ${usHighBids} high bids (140+)`;
+          } else if (usHighBids > demHighBids) {
+            text = `${labelUs} more aggressive`;
+            impact = "Confidence boost (+2%)";
+            explanation = `${labelUs} made ${usHighBids} high bids vs ${labelDem}'s ${demHighBids}. Aggressive bidding often indicates confidence and card strength.`;
+          } else {
+            text = `${labelDem} more aggressive`;
+            impact = "Confidence disadvantage (-2%)";
+            explanation = `${labelDem} made ${demHighBids} high bids vs ${labelUs}'s ${usHighBids}. Aggressive bidding often indicates confidence and card strength.`;
+          }
+          
+          return { text, impact, explanation, usHighBids, demHighBids, usBids, demBids };
+        })();
+
+        // Historical context analysis
+        const historicalAnalysis = (() => {
+          const relevantGames = historicalGames.filter(game => {
+            return game.rounds && game.rounds.length > 0 && game.finalScore;
+          });
+          
+          if (relevantGames.length === 0) {
+            return {
+              text: "No historical data",
+              explanation: "Predictions based on general scoring patterns only"
+            };
+          }
+          
+          // Find similar game states
+          const similarSituations = relevantGames.filter(game => {
+            if (game.rounds.length < roundsPlayed) return false;
+            const historicalRound = game.rounds[roundsPlayed - 1];
+            if (!historicalRound?.runningTotals) return false;
+            
+            const historicalDiff = historicalRound.runningTotals.us - historicalRound.runningTotals.dem;
+            const diffSimilarity = Math.abs(historicalDiff - scoreDiff);
+            return diffSimilarity <= 30; // Within 30 points
+          });
+          
+          let explanation = `Drawing from ${relevantGames.length} completed games`;
+          if (similarSituations.length > 0) {
+            explanation += `. Found ${similarSituations.length} games with similar score positions at this stage.`;
+          }
+          
+          return {
+            text: `${relevantGames.length} games analyzed`,
+            explanation,
+            totalGames: relevantGames.length,
+            similarSituations: similarSituations.length
+          };
+        })();
+
+        // Calculate confidence level
+        const confidenceLevel = (() => {
+          const dataPoints = historicalAnalysis.totalGames;
+          if (dataPoints === 0) return "Low";
+          if (dataPoints < 5) return "Low";
+          if (dataPoints < 15) return "Medium";
+          if (dataPoints < 30) return "High";
+          return "Very High";
+        })();
+
+        return `
+          <div class="space-y-4">
+            <!-- Header -->
+            <div class="text-center border-b border-gray-200 dark:border-gray-700 pb-3">
+              <div class="text-xl font-bold text-gray-800 dark:text-white mb-1">
+                Win Probability Analysis
+              </div>
+              <div class="flex items-center justify-center gap-6 text-lg">
+                <div class="flex items-center gap-2">
+                  <div class="w-3 h-3 rounded-full bg-primary"></div>
+                  <span class="font-semibold">${labelUs}: ${winProb.us.toFixed(1)}%</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="w-3 h-3 rounded-full bg-accent"></div>
+                  <span class="font-semibold">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+                </div>
+              </div>
+              <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Method: Simple Analysis • Confidence: ${confidenceLevel}
+              </div>
+            </div>
+            
+            <!-- Current Game State -->
+            <div class="space-y-3">
+              <h3 class="font-semibold text-gray-800 dark:text-white">Current Game State</h3>
+              
+              <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Score Impact</div>
+                  <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${scoreAnalysis.impact}</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
+                  ${scoreAnalysis.margin > 0 ? `(${scoreAnalysis.leader} ahead by ${scoreAnalysis.margin})` : '(Tied)'}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${scoreAnalysis.explanation}
+                </div>
+              </div>
+              
+              <div class="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Momentum Factor</div>
+                  <div class="text-sm text-green-700 dark:text-green-300 font-medium">${momentumAnalysis.impact}</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Recent Trend:</strong> ${momentumAnalysis.text}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${momentumAnalysis.explanation}
+                </div>
+              </div>
+              
+              <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Bidding Confidence</div>
+                  <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${bidAnalysis.impact}</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Pattern:</strong> ${bidAnalysis.text}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${bidAnalysis.explanation}
+                </div>
+              </div>
+            </div>
+            
+            <!-- Historical Context -->
+            <div class="space-y-3">
+              <h3 class="font-semibold text-gray-800 dark:text-white">Historical Context</h3>
+              
+              <div class="bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Data Foundation</div>
+                  <div class="text-sm text-yellow-700 dark:text-yellow-300 font-medium">${historicalAnalysis.text}</div>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">
+                  ${historicalAnalysis.explanation}
+                </div>
+              </div>
+            </div>
+            
+            <!-- How It Works -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Calculation Works (Simple Method)</h4>
+                <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                  <p>• <strong>Score Difference:</strong> Each 15-point lead adds roughly 1% win probability</p>
+                  <p>• <strong>Momentum:</strong> Recent performance trends can add ±2% adjustment</p>
+                  <p>• <strong>Bidding Patterns:</strong> Aggressive bidding (140+ bids) suggests confidence and strong cards</p>
+                  <p>• <strong>Historical Data:</strong> Past games with similar situations inform the baseline probability</p>
+                  <p>• <strong>Comeback Factor:</strong> Analysis of how often trailing teams recover in similar situations</p>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
+                  Remember: Rook is a game of skill and luck. These probabilities are educated estimates based on patterns, not guarantees!
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores) {
+        // Get the probability table for complex analysis
+        const cacheKey = historicalGames.length;
+        if (!PROB_CACHE.has(cacheKey)) {
+          PROB_CACHE.set(cacheKey, buildProbabilityIndex(historicalGames));
+        }
+        const table = PROB_CACHE.get(cacheKey);
+        
+        // Calculate the bucketed score and key for this situation
+        const bucketedScore = bucketScore(scoreDiff);
+        const key = `${roundsPlayed - 1}|${bucketedScore}`;
+        const counts = table[key] || { us: 1, dem: 1 };
+        const empirical = counts.us / (counts.us + counts.dem);
+        const totalObs = counts.us + counts.dem - 2; // Remove Laplace prior
+        const beta = Math.min(1, Math.log(totalObs + 1) / 4);
+        const prior = 1 / (1 + Math.exp(-0.015 * scoreDiff));
+        
+        // Score bucketing analysis
+        const bucketAnalysis = (() => {
+          const bucketRange = getBucketRange(bucketedScore);
+          const bucketSize = Math.abs(bucketedScore);
+          let bucketDescription = "";
+          
+          if (bucketSize === 0) {
+            bucketDescription = "Tied games (0 points)";
+          } else if (bucketSize <= 130) {
+            bucketDescription = `Close games (${bucketRange})`;
+          } else if (bucketSize <= 180) {
+            bucketDescription = `Large leads (${bucketRange})`;
+          } else {
+            bucketDescription = `Dominant positions (${bucketRange})`;
+          }
+          
+          return {
+            bucketedScore,
+            bucketDescription,
+            bucketRange
+          };
+        })();
+        
+        // Historical pattern analysis
+        const historicalAnalysis = (() => {
+          const relevantGames = historicalGames.filter(game => {
+            return game.rounds && game.rounds.length > 0 && game.finalScore;
+          });
+          
+          if (relevantGames.length === 0) {
+            return {
+              text: "No historical data",
+              explanation: "Using mathematical model only",
+              empiricalRate: 0,
+              totalObservations: 0
+            };
+          }
+          
+          // Count games from this bucket
+          let bucketGames = 0;
+          let bucketWins = 0;
+          
+          Object.keys(table).forEach(tableKey => {
+            if (tableKey.includes(`|${bucketedScore}`)) {
+              const keyRound = parseInt(tableKey.split('|')[0]);
+              if (Math.abs(keyRound - (roundsPlayed - 1)) <= 1) { // Similar round
+                bucketGames += table[tableKey].us + table[tableKey].dem - 2;
+                bucketWins += table[tableKey].us - 1;
+              }
+            }
+          });
+          
+          return {
+            text: `${relevantGames.length} games analyzed`,
+            explanation: `Found ${bucketGames} similar situations in historical data`,
+            empiricalRate: bucketGames > 0 ? (bucketWins / bucketGames) : 0,
+            totalObservations: bucketGames,
+            bucketWins,
+            bucketGames
+          };
+        })();
+        
+        // Blending analysis
+        const blendingAnalysis = (() => {
+          const empiricalWeight = Math.round(beta * 100);
+          const priorWeight = Math.round((1 - beta) * 100);
+          const empiricalPercent = Math.round(empirical * 100);
+          const priorPercent = Math.round(prior * 100);
+          
+          let confidence = "Low";
+          if (totalObs >= 50) confidence = "Very High";
+          else if (totalObs >= 20) confidence = "High";
+          else if (totalObs >= 10) confidence = "Medium";
+          else if (totalObs >= 5) confidence = "Low-Medium";
+          
+          return {
+            empiricalWeight,
+            priorWeight,
+            empiricalPercent,
+            priorPercent,
+            confidence,
+            totalObservations: totalObs
+          };
+        })();
+        
+        // Recency weighting analysis
+        const recencyAnalysis = (() => {
+          const recentGames = historicalGames.filter(game => {
+            if (!game.timestamp) return false;
+            const ageDays = (Date.now() - new Date(game.timestamp)) / 86_400_000;
+            return ageDays <= 30; // Games within 30 days
+          });
+          
+          const olderGames = historicalGames.length - recentGames.length;
+          
+          return {
+            recentGames: recentGames.length,
+            olderGames,
+            explanation: `Recent games (≤30 days) weighted more heavily than older games`
+          };
+        })();
+
+        return `
+          <div class="space-y-4">
+            <!-- Header -->
+            <div class="text-center border-b border-gray-200 dark:border-gray-700 pb-3">
+              <div class="text-xl font-bold text-gray-800 dark:text-white mb-1">
+                Advanced Win Probability Analysis (EXPERIMENTAL)
+              </div>
+              <div class="flex items-center justify-center gap-6 text-lg">
+                <div class="flex items-center gap-2">
+                  <div class="w-3 h-3 rounded-full bg-primary"></div>
+                  <span class="font-semibold">${labelUs}: ${winProb.us.toFixed(1)}%</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="w-3 h-3 rounded-full bg-accent"></div>
+                  <span class="font-semibold">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+                </div>
+              </div>
+              <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Method: Complex Analysis • Confidence: ${blendingAnalysis.confidence}
+              </div>
+            </div>
+            
+            <!-- Current Situation -->
+            <div class="space-y-3">
+              <h3 class="font-semibold text-gray-800 dark:text-white">Current Situation</h3>
+              
+              <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Score Classification</div>
+                  <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${bucketAnalysis.bucketDescription}</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
+                  ${Math.abs(scoreDiff) > 0 ? `(${Math.abs(scoreDiff)} point ${scoreDiff > 0 ? labelUs : labelDem} lead)` : '(Tied)'}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Bucketed as: ${bucketAnalysis.bucketRange} • Round ${roundsPlayed}
+                </div>
+              </div>
+            </div>
+            
+            <!-- Statistical Analysis -->
+            <div class="space-y-3">
+              <h3 class="font-semibold text-gray-800 dark:text-white">Statistical Analysis</h3>
+              
+              <div class="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Historical Pattern</div>
+                  <div class="text-sm text-green-700 dark:text-green-300 font-medium">${historicalAnalysis.empiricalRate > 0 ? `${Math.round(historicalAnalysis.empiricalRate * 100)}% historical win rate` : 'No similar data'}</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Data:</strong> ${historicalAnalysis.totalObservations} similar situations found
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${historicalAnalysis.explanation}
+                </div>
+              </div>
+              
+              <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Probability Blending</div>
+                  <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${blendingAnalysis.empiricalWeight}% Historical + ${blendingAnalysis.priorWeight}% Mathematical</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Components:</strong> ${blendingAnalysis.empiricalPercent}% (data) + ${blendingAnalysis.priorPercent}% (model) = ${winProb.us.toFixed(1)}%
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Based on ${blendingAnalysis.totalObservations} observations. More data = higher historical weight.
+                </div>
+              </div>
+              
+              <div class="bg-gradient-to-r from-orange-50 to-orange-100 dark:from-orange-900/30 dark:to-orange-800/30 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-medium text-gray-700 dark:text-gray-300">Recency Weighting</div>
+                  <div class="text-sm text-orange-700 dark:text-orange-300 font-medium">${recencyAnalysis.recentGames} recent, ${recencyAnalysis.olderGames} older</div>
+                </div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                  <strong>Impact:</strong> Recent games matter more than older ones
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${recencyAnalysis.explanation}
+                </div>
+              </div>
+            </div>
+            
+            <!-- How It Works -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Calculation Works (Complex Method)</h4>
+                <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                  <p>• <strong>Score Bucketing:</strong> Groups similar score differences (0-19, 20-39, etc.) to find patterns</p>
+                  <p>• <strong>Historical Lookup:</strong> Finds past games with similar scores at similar stages</p>
+                  <p>• <strong>Recency Weighting:</strong> Recent games weighted more heavily (decay rate: 80% per 2 weeks)</p>
+                  <p>• <strong>Bayesian Blending:</strong> Combines historical data with mathematical model based on confidence</p>
+                  <p>• <strong>Adaptive Confidence:</strong> More historical data = higher weight on empirical results</p>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
+                  This advanced method provides more accurate predictions with sufficient historical data, but falls back to mathematical modeling when data is sparse.
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function getBucketRange(bucketedScore) {
+        const abs = Math.abs(bucketedScore);
+        if (abs === 0) return "0";
+        if (abs === 20) return "0-19";
+        if (abs === 40) return "20-39";
+        if (abs === 60) return "40-59";
+        if (abs === 80) return "60-79";
+        if (abs === 100) return "80-99";
+        if (abs === 120) return "100-119";
+        if (abs === 140) return "120-139";
+        if (abs === 160) return "140-159";
+        if (abs === 180) return "160+";
+        return `${abs}`;
       }
       function populateTeamSelects() {
         const teamsObj = getTeamsObject();
@@ -2403,8 +3246,8 @@ function handleGameOverSaveClick(e) {
         const focusRingColor = biddingTeam === "us" ? "focus:ring-blue-500 dark:focus:ring-blue-400" : "focus:ring-red-500 dark:focus:ring-red-400";
         const penaltyActive = pendingPenalty && pendingPenalty.team === biddingTeam && pendingPenalty.type === "cheat";
         const penaltyBtnClass = penaltyActive
-          ? "flex items-center border border-orange-400 rounded px-2 py-1 text-sm text-orange-700 bg-orange-100 hover:bg-orange-200 transition focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-orange-900/60 dark:text-orange-300 threed"
-          : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed";
+          ? "flex items-center border border-orange-400 rounded px-2 py-1 text-sm text-orange-700 bg-orange-100 hover:bg-orange-200 transition focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-orange-900/60 dark:text-orange-300 threed disabled:opacity-50 disabled:cursor-not-allowed"
+          : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed disabled:opacity-50 disabled:cursor-not-allowed";
         const penaltyBtnOnClick = penaltyActive ? 'undoPenaltyFlag()' : 'handleCheatFlag()';
         return `
           <div class="${fadeClass} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
@@ -2416,7 +3259,8 @@ function handleGameOverSaveClick(e) {
                 <button type="button"
           class="${penaltyBtnClass}"
           onclick="${penaltyBtnOnClick}"
-          title="Flag Cheating">
+          ${!hasBid ? "disabled" : ""}
+          title="Flag Table Talk - Choose Team">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 3V6L6 9H4a1 1 0 0 0-1 1zm13-1.5v5a2.5 2.5 0 0 0 0-5z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 12a4 4 0 0 0 4-4" stroke="currentColor" stroke-width="2" fill="none"/></svg>
   </button>
               </div>
@@ -2480,6 +3324,10 @@ function handleGameOverSaveClick(e) {
         const labelUs = usTeamName || "Us";
         const labelDem = demTeamName || "Dem";
         if (!rounds.length) return ""; // Don't render if no history
+        
+        // Check if we should show the probability dropdown button
+        const showProbabilityButton = state.showWinProbability && !state.gameOver && rounds.length > 0;
+        
         return `
           <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
             <div class="border-b border-gray-200 p-4 dark:border-gray-700">
@@ -2505,6 +3353,19 @@ function handleGameOverSaveClick(e) {
                 }).join("")}
               </div>
             </div>
+            ${showProbabilityButton ? `
+              <div class="border-t border-gray-200 dark:border-gray-700">
+                <button onclick="openProbabilityModal()" 
+                        class="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-b-xl">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">How was this probability reached?</span>
+                    <svg class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                  </div>
+                </button>
+              </div>
+            ` : ''}
           </div>`;
       }
       function renderGameOverOverlay() {
@@ -2735,7 +3596,7 @@ function handleGameOverSaveClick(e) {
         const stats = getStatistics();
         let content = "";
         if (!stats.totalGames && !stats.teamsData.length) {
-            content = `<div class="py-8 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg><p class="mt-4 text-gray-600 dark:text-gray-400 text-lg">No stats yet. Play some games!</p><button onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">Start New Game</button></div>`;
+            content = `<div class="py-8 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg><p class="mt-4 text-gray-600 dark:text-gray-400 text-lg">No stats yet. Play some games!</p><button onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">Start New Game</button></div>`;
         } else {
             const statCard = (title, value, iconSvg, color) => `
                 <div class="bg-gradient-to-br from-${color}-50 to-${color}-100 dark:from-gray-700 dark:to-gray-800 rounded-lg p-2.5 shadow-sm">
@@ -2935,9 +3796,6 @@ let statVal = lookup[additionalStatKey] ?? '0';
                 }
             });
         });
-         // Hamburger menu swipe gesture (simple version)
-        let touchStartX = 0;
-        document.body.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
         document.body.addEventListener('touchend', e => {
             const touchEndX = e.changedTouches[0].clientX;
             if (touchStartX < 50 && touchEndX > touchStartX + 50) { // Swipe right from left edge
@@ -2989,6 +3847,95 @@ document.addEventListener('DOMContentLoaded', () => {
         updateState({ pendingPenalty: null });
         showSaveIndicator("Penalty removed");
       }
+    </script>
+    <script>
+      function handleTeamSelectionCancel() {
+        if (state.gameOver) {
+          openConfirmationModal(
+            'The game is completed. Canceling will erase this game. Are you sure?',
+            () => { closeTeamSelectionModal(); resetGame(); closeConfirmationModal(); },
+            closeConfirmationModal
+          );
+        } else {
+          closeTeamSelectionModal();
+        }
+      }
+    </script>
+    <script>
+      // Swipe-and-drag gesture for menu open/close
+      (function() {
+          const menu = document.getElementById("menu");
+          const overlay = document.getElementById("menuOverlay");
+          const icon = document.getElementById("hamburgerIcon");
+          let startX = 0;
+          let currentX = 0;
+          let isDragging = false;
+          let isOpening = false;
+          const menuWidth = menu.offsetWidth;
+
+          function onTouchStart(e) {
+              startX = e.touches[0].clientX;
+              currentX = startX;
+              if (!menu.classList.contains("show") && startX <= 20) {
+                  isDragging = true;
+                  isOpening = true;
+                  menu.style.transition = "none";
+                  overlay.classList.add("show");
+                  overlay.style.opacity = "0";
+                  document.body.classList.add("overflow-hidden");
+              } else if (menu.classList.contains("show") && startX <= menuWidth) {
+                  isDragging = true;
+                  isOpening = false;
+                  menu.style.transition = "none";
+              }
+          }
+
+          function onTouchMove(e) {
+              if (!isDragging) return;
+              currentX = e.touches[0].clientX;
+              let deltaX = currentX - startX;
+              if (isOpening) {
+                  const left = Math.min(0, -menuWidth + currentX);
+                  menu.style.left = left + "px";
+                  overlay.style.opacity = (menuWidth + left) / menuWidth;
+              } else {
+                  const left = Math.min(0, deltaX);
+                  menu.style.left = left + "px";
+                  overlay.style.opacity = (menuWidth + left) / menuWidth;
+              }
+          }
+
+          function onTouchEnd() {
+              if (!isDragging) return;
+              isDragging = false;
+              const deltaX = currentX - startX;
+              const threshold = menuWidth / 3;
+              let shouldOpen;
+              if (isOpening) {
+                  shouldOpen = deltaX > threshold;
+              } else {
+                  shouldOpen = deltaX > -threshold;
+              }
+              menu.style.transition = "";
+              if (shouldOpen) {
+                  menu.classList.add("show");
+                  icon.classList.add("open");
+                  overlay.classList.add("show");
+                  document.body.classList.add("overflow-hidden");
+              } else {
+                  menu.classList.remove("show");
+                  icon.classList.remove("open");
+                  overlay.classList.remove("show");
+                  document.body.classList.remove("overflow-hidden");
+              }
+              menu.style.left = "";
+              overlay.style.opacity = "";
+          }
+
+          document.addEventListener("touchstart", onTouchStart, { passive: false });
+          document.addEventListener("touchmove", onTouchMove, { passive: false });
+          document.addEventListener("touchend", onTouchEnd, { passive: true });
+      })();
     </script>
 </body>
 </html>
