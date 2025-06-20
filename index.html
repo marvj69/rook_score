@@ -1304,35 +1304,61 @@ function logisticProb(diff, roundIdx, mom) {
   return 1 / (1 + Math.exp(-z));           // probability “us” eventually wins
 }
 
+/**
+ * SHARPENED: Calculates win probability by blending historical empirical data
+ * with a logistic regression model for a more robust and accurate prediction.
+ */
 function calculateWinProbabilityComplex(state, historicalGames) {
-  // ---------------- deterministic part ----------------
+  // ---------------- Guards & Setup ----------------
   const { rounds } = state;
-  if (!rounds?.length) return { us: 50, dem: 50 };
+  if (!rounds?.length) return { us: 50, dem: 50 }; // No rounds played yet, 50/50 chance.
 
-  // Memoise so we only crunch once per page‑load
+  const lastRound = rounds[rounds.length - 1];
+  const roundIndex = rounds.length - 1;
+  const currentDiff = lastRound.runningTotals.us - lastRound.runningTotals.dem;
+
+  // ---------------- 1. Empirical Probability (from Historical Data) ----------------
+  // Get the pre-computed index of historical game outcomes.
+  // We use memoization (PROB_CACHE) to avoid rebuilding this on every single call.
   const cacheKey = historicalGames.length;
-  if (!PROB_CACHE.has(cacheKey))
+  if (!PROB_CACHE.has(cacheKey)) {
     PROB_CACHE.set(cacheKey, buildProbabilityIndex(historicalGames));
+  }
   const table = PROB_CACHE.get(cacheKey);
 
-  const last     = rounds[rounds.length - 1];
-  const diff     = last.runningTotals.us - last.runningTotals.dem;
-  const key      = `${rounds.length - 1}|${bucketScore(diff)}`;
-  const counts   = table[key] || { us: 1, dem: 1 };
-  const empirical= counts.us / (counts.us + counts.dem);
+  // Find the result for the current game situation (round index + bucketed score difference).
+  const key = `${roundIndex}|${bucketScore(currentDiff)}`;
+  const counts = table[key] || { us: 1, dem: 1 }; // Use Laplace prior (1,1) if no data.
+  const empiricalProbUs = counts.us / (counts.us + counts.dem);
+  
+  // Count how many actual past games fall into this bucket (before our +1 prior).
+  const observationsInBucket = (counts.us - 1) + (counts.dem - 1);
 
-  // ---------------- calibrated logistic ----------------
-const penultimate = rounds.length > 1 ? rounds[rounds.length - 2] : last;
-const prevDiff    = (penultimate.runningTotals?.us ?? 0) -
-                    (penultimate.runningTotals?.dem ?? 0);
-const momentum    = diff - prevDiff;                   // one-step change
+  // ---------------- 2. Model-Based Probability (Logistic Regression) ----------------
+  // Calculate momentum (change in score difference from the previous round).
+  const prevRound = rounds.length > 1 ? rounds[rounds.length - 2] : { runningTotals: { us: 0, dem: 0 } };
+  const prevDiff = prevRound.runningTotals.us - prevRound.runningTotals.dem;
+  const momentum = currentDiff - prevDiff;
 
-const pUs = logisticProb(diff, rounds.length - 1, momentum);
+  // Get the "smoothed" probability from your trained logistic model.
+  const modelProbUs = logisticProb(currentDiff, roundIndex, momentum);
 
+  // ---------------- 3. Blending with Credibility Weighting (The Core Improvement) ----------------
+  // Create a weight 'beta' that determines how much we trust the empirical data.
+  // The more data we have for a situation (observationsInBucket), the higher the weight.
+  // If we have no data, the weight is 0, and we rely 100% on the logistic model.
+  
+  // K is the number of observations at which we are 'fully confident' in the empirical data.
+  // A value of 30 means after 30 similar past situations, we heavily trust the historical record.
+  const K_CONFIDENCE_THRESHOLD = 30; 
+  const beta = Math.min(1, Math.log(observationsInBucket + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));
 
+  // The final probability is a weighted average of the two approaches.
+  const blendedProbUs = (beta * empiricalProbUs) + ((1 - beta) * modelProbUs);
+  
   return {
-    us : +(pUs  * 100).toFixed(1),
-    dem: +((1 - pUs) * 100).toFixed(1)
+    us: +(blendedProbUs * 100).toFixed(1),
+    dem: +((1 - blendedProbUs) * 100).toFixed(1)
   };
 }
 
