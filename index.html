@@ -1112,6 +1112,14 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
         return [sanitizePlayerName(arr[0] ?? ""), sanitizePlayerName(arr[1] ?? "")];
       }
 
+      function canonicalizePlayers(players) {
+        const arr = ensurePlayersArray(players);
+        const nonEmpty = arr.filter(Boolean);
+        if (!nonEmpty.length) return arr;
+        const sorted = [...nonEmpty].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        return [sorted[0] || '', sorted[1] || ''];
+      }
+
       function formatTeamDisplay(players) {
         const cleaned = ensurePlayersArray(players).filter(Boolean);
         return cleaned.join(" & ");
@@ -1146,13 +1154,14 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
         const fallback = side === 'us' ? 'Us' : 'Dem';
         if (!game || (side !== 'us' && side !== 'dem')) return fallback;
         const playersField = side === 'us' ? game.usPlayers || game.usTeamPlayers || game.usTeam : game.demPlayers || game.demTeamPlayers || game.demTeam;
+        const canonicalPlayers = canonicalizePlayers(playersField);
         const nameField = side === 'us' ? (game.usTeamName || game.usName) : (game.demTeamName || game.demName);
-        return deriveTeamDisplay(playersField, nameField || fallback) || fallback;
+        return deriveTeamDisplay(canonicalPlayers, nameField || fallback) || fallback;
       }
 
       function playersEqual(a, b) {
-        const [a1, a2] = ensurePlayersArray(a);
-        const [b1, b2] = ensurePlayersArray(b);
+        const [a1, a2] = canonicalizePlayers(a);
+        const [b1, b2] = canonicalizePlayers(b);
         return a1 === b1 && a2 === b2;
       }
 
@@ -1164,6 +1173,8 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
       let confirmationCallback = null;
       let noCallback = null;
       let pendingGameAction = null; // For actions requiring team name input first
+      let statsViewMode = 'teams';
+      let statsMetricKey = 'games';
 
       let presetBids;
         try {
@@ -1909,14 +1920,14 @@ function initializeCustomThemeColors() {
           let stats = { wins: 0, losses: 0, gamesPlayed: 0 };
 
           if (payload && typeof payload === 'object' && !Array.isArray(payload) && Array.isArray(payload.players)) {
-            players = ensurePlayersArray(payload.players);
+            players = canonicalizePlayers(payload.players);
             stats = {
               wins: Number(payload.wins) || 0,
               losses: Number(payload.losses) || 0,
               gamesPlayed: Number(payload.gamesPlayed) || 0,
             };
           } else {
-            players = parseLegacyTeamName(legacyName);
+            players = canonicalizePlayers(parseLegacyTeamName(legacyName));
             if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
               stats = {
                 wins: Number(payload.wins) || 0,
@@ -1929,7 +1940,7 @@ function initializeCustomThemeColors() {
           const key = buildTeamKey(players);
           const displayName = deriveTeamDisplay(players, legacyName);
           if (!converted[key]) {
-            converted[key] = { players: ensurePlayersArray(players), displayName, wins: 0, losses: 0, gamesPlayed: 0 };
+            converted[key] = { players: canonicalizePlayers(players), displayName, wins: 0, losses: 0, gamesPlayed: 0 };
           }
           converted[key].wins += stats.wins;
           converted[key].losses += stats.losses;
@@ -1952,8 +1963,8 @@ function initializeCustomThemeColors() {
         Object.entries(obj || {}).forEach(([key, value]) => {
           if (!key || !value) return;
           entries[key] = {
-            players: ensurePlayersArray(value.players),
-            displayName: deriveTeamDisplay(value.players, value.displayName || ''),
+            players: canonicalizePlayers(value.players),
+            displayName: deriveTeamDisplay(canonicalizePlayers(value.players), value.displayName || ''),
             wins: Number(value.wins) || 0,
             losses: Number(value.losses) || 0,
             gamesPlayed: Number(value.gamesPlayed) || 0,
@@ -1963,7 +1974,7 @@ function initializeCustomThemeColors() {
       }
 
       function ensureTeamEntry(teamsObj, players, fallbackDisplay = '') {
-        const normalizedPlayers = ensurePlayersArray(players);
+        const normalizedPlayers = canonicalizePlayers(players);
         const key = buildTeamKey(normalizedPlayers);
         if (!key) return { teams: teamsObj, key: null };
         if (!teamsObj[key]) {
@@ -3857,8 +3868,10 @@ function handleGameOverSaveClick(e) {
         // Determine sandbag for winner
         let sandbagResult = "N/A";
         if (winner === "us" || winner === "dem") {
-          const winnerTeamName = winner === "us" ? usDisp : demDisp;
-          sandbagResult = isGameSandbagForTeam(game, winnerTeamName) ? "Yes" : "No";
+          const winnerPlayers = winner === "us"
+            ? canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName))
+            : canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
+          sandbagResult = isGameSandbagForTeamKey(game, winnerPlayers) ? "Yes" : "No";
         }
         
         const roundHtml = (rounds || []).map((r, idx) => {
@@ -4075,137 +4088,341 @@ function handleGameOverSaveClick(e) {
                 ${statCard("Time Played", formatDuration(stats.totalTimePlayedMs), icons.timePlayed, "purple")}
                 ${statCard("Games Played", stats.totalGames, icons.gamesPlayed, "green")}
             </div>` : "";
+            const viewSelector = `<div class="mt-6 mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
 
-            let statSelector = `<div class="mt-6 mb-4"><label for="additionalStatSelector" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Team Statistics</label><div class="relative"><select id="additionalStatSelector" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="games">Games Played</option><option value="avgBid">Avg Bid</option><option value="bidSuccessPct">Bid Success %</option><option value="sandbagger">Sandbagger?</option><option value="360s">360s</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
-            let teamStatsTable = renderTeamStatsTable(stats.teamsData, "games");
-            content = `${statCardsHtml}${statSelector}<div id="teamStatsTableWrapper">${teamStatsTable}</div>`;
+            const metricOptions = ['games', 'avgBid', 'bidSuccessPct', 'sandbagger', '360s']
+              .map(opt => `<option value="${opt}"${statsMetricKey === opt ? ' selected' : ''}>${opt === 'games' ? 'Games Played' : opt === 'avgBid' ? 'Avg Bid' : opt === 'bidSuccessPct' ? 'Bid Success %' : opt === 'sandbagger' ? 'Sandbagger?' : '360s'}</option>`)
+              .join('');
+            const metricLabel = statsViewMode === 'teams' ? 'Team statistic' : 'Individual statistic';
+            const statSelector = `<div class="mb-4"><label for="additionalStatSelector" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">${metricLabel}</label><div class="relative"><select id="additionalStatSelector" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400">${metricOptions}</select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
+
+            const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
+            const statsTableHtml = renderStatsTable(statsViewMode, statsDataForMode, statsMetricKey);
+            content = `${statCardsHtml}${viewSelector}${statSelector}<div id="teamStatsTableWrapper">${statsTableHtml}</div>`;
         }
         document.getElementById("statisticsModalContent").innerHTML = content;
+        const viewModeSelect = document.getElementById('statsViewModeSelect');
+        if (viewModeSelect) {
+          viewModeSelect.value = statsViewMode;
+          viewModeSelect.addEventListener('change', e => {
+            statsViewMode = e.target.value === 'players' ? 'players' : 'teams';
+            renderStatisticsContent();
+          });
+        }
         const selector = document.getElementById("additionalStatSelector");
         if (selector) {
+            selector.value = statsMetricKey;
             selector.addEventListener("change", function () {
-                document.getElementById("teamStatsTableWrapper").innerHTML = renderTeamStatsTable(getStatistics().teamsData, this.value);
+                statsMetricKey = this.value;
+                const latestStats = getStatistics();
+                const data = statsViewMode === 'players' ? latestStats.playersData : latestStats.teamsData;
+                document.getElementById("teamStatsTableWrapper").innerHTML = renderStatsTable(statsViewMode, data, statsMetricKey);
             });
         }
       }
       function getStatistics() {
         const savedGames = getLocalStorage("savedGames", []).filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
-        const teamData = {}; // Using object for easier access by team name
-        let totalBids = 0, sumOfBids = 0, totalGameDuration = 0;
+
+        const teamStatsMap = new Map();
+        const playerStatsMap = new Map();
+        let totalBids = 0;
+        let sumOfBids = 0;
+        let totalGameDuration = 0;
+
+        const ensureTeamRecord = (key, players, displayName, timestampMs) => {
+          if (!key) return null;
+          if (!teamStatsMap.has(key)) {
+            teamStatsMap.set(key, {
+              key,
+              name: displayName,
+              players,
+              gamesPlayed: 0,
+              wins: 0,
+              losses: 0,
+              totalBidAmount: 0,
+              bidsMade: 0,
+              bidsSucceeded: 0,
+              handsPlayed: 0,
+              handsWon: 0,
+              sandbagGames: 0,
+              perfect360s: 0,
+              lastPlayed: 0,
+              totalTimeMs: 0,
+            });
+          }
+          const record = teamStatsMap.get(key);
+          if (timestampMs && timestampMs > record.lastPlayed) record.lastPlayed = timestampMs;
+          if (!record.name) record.name = displayName;
+          record.players = canonicalizePlayers(record.players.length ? record.players : players);
+          return record;
+        };
+
+        const ensurePlayerRecord = (name, timestampMs) => {
+          const cleanName = sanitizePlayerName(name);
+          if (!cleanName) return null;
+          const key = cleanName.toLowerCase();
+          if (!playerStatsMap.has(key)) {
+            playerStatsMap.set(key, {
+              key,
+              name: cleanName,
+              gamesPlayed: 0,
+              wins: 0,
+              losses: 0,
+              totalBidAmount: 0,
+              bidsMade: 0,
+              bidsSucceeded: 0,
+              handsPlayed: 0,
+              handsWon: 0,
+              sandbagGames: 0,
+              perfect360s: 0,
+              lastPlayed: 0,
+              totalTimeMs: 0,
+            });
+          }
+          const record = playerStatsMap.get(key);
+          if (timestampMs && timestampMs > record.lastPlayed) record.lastPlayed = timestampMs;
+          return record;
+        };
 
         savedGames.forEach(game => {
-            totalGameDuration += game.durationMs || 0;
-            const usDisplay = getGameTeamDisplay(game, 'us');
-            const demDisplay = getGameTeamDisplay(game, 'dem');
-            const teamsInGame = [usDisplay, demDisplay];
-            teamsInGame.forEach(teamName => {
-                if (!teamData[teamName]) {
-                    teamData[teamName] = { name: teamName, gamesPlayed: 0, wins: 0, totalBidAmount: 0, bidsMade: 0, bidsSucceeded: 0, handsPlayed: 0, handsWon: 0, sandbagGames: 0, perfect360s: 0, lastPlayed: 0 };
-                }
-                teamData[teamName].gamesPlayed++;
-                if (new Date(game.timestamp).getTime() > teamData[teamName].lastPlayed) {
-                    teamData[teamName].lastPlayed = new Date(game.timestamp).getTime();
-                }
-            });
+          const gameDuration = Number(game.durationMs) || 0;
+          totalGameDuration += gameDuration;
+          const timestampMs = new Date(game.timestamp || Date.now()).getTime();
 
-            if (game.winner === "us") teamData[usDisplay].wins++;
-            else if (game.winner === "dem") teamData[demDisplay].wins++;
-            
-            if (isGameSandbagForTeam(game, usDisplay)) teamData[usDisplay].sandbagGames++;
-            if (isGameSandbagForTeam(game, demDisplay)) teamData[demDisplay].sandbagGames++;
+          const usPlayers = canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
+          const demPlayers = canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
+          const usKey = buildTeamKey(usPlayers);
+          const demKey = buildTeamKey(demPlayers);
+          const usDisplay = deriveTeamDisplay(usPlayers, game.usTeamName || game.usName || 'Us') || 'Us';
+          const demDisplay = deriveTeamDisplay(demPlayers, game.demTeamName || game.demName || 'Dem') || 'Dem';
 
-            game.rounds.forEach(round => {
-                sumOfBids += round.bidAmount; totalBids++;
-                const biddingTeamName = round.biddingTeam === "us" ? usDisplay : demDisplay;
-                const nonBiddingTeamName = round.biddingTeam === "us" ? demDisplay : usDisplay;
+          const usTeam = ensureTeamRecord(usKey, usPlayers, usDisplay, timestampMs);
+          const demTeam = ensureTeamRecord(demKey, demPlayers, demDisplay, timestampMs);
 
-                teamData[biddingTeamName].handsPlayed++;
-                teamData[nonBiddingTeamName].handsPlayed++;
-                teamData[biddingTeamName].bidsMade++;
-                teamData[biddingTeamName].totalBidAmount += round.bidAmount;
+          const usPlayerRecords = usPlayers.filter(Boolean).map(name => ensurePlayerRecord(name, timestampMs)).filter(Boolean);
+          const demPlayerRecords = demPlayers.filter(Boolean).map(name => ensurePlayerRecord(name, timestampMs)).filter(Boolean);
 
-                if ((round.biddingTeam === "us" && round.usPoints >= round.bidAmount) || (round.biddingTeam === "dem" && round.demPoints >= round.bidAmount)) {
-                    teamData[biddingTeamName].bidsSucceeded++;
-                }
-                if (round.usPoints > round.demPoints) teamData[usDisplay].handsWon++;
-                else if (round.demPoints > round.usPoints) teamData[demDisplay].handsWon++;
-                
-                if (round.usPoints === 360) teamData[usDisplay].perfect360s++;
-                if (round.demPoints === 360) teamData[demDisplay].perfect360s++;
-            });
+          if (usTeam) {
+            usTeam.gamesPlayed++;
+            usTeam.totalTimeMs += gameDuration;
+          }
+          if (demTeam) {
+            demTeam.gamesPlayed++;
+            demTeam.totalTimeMs += gameDuration;
+          }
+          usPlayerRecords.forEach(rec => {
+            rec.gamesPlayed++;
+            rec.totalTimeMs += gameDuration;
+          });
+          demPlayerRecords.forEach(rec => {
+            rec.gamesPlayed++;
+            rec.totalTimeMs += gameDuration;
+          });
+
+          if (game.winner === 'us') {
+            if (usTeam) usTeam.wins++;
+            if (demTeam) demTeam.losses++;
+            usPlayerRecords.forEach(rec => rec.wins++);
+            demPlayerRecords.forEach(rec => rec.losses++);
+          } else if (game.winner === 'dem') {
+            if (demTeam) demTeam.wins++;
+            if (usTeam) usTeam.losses++;
+            demPlayerRecords.forEach(rec => rec.wins++);
+            usPlayerRecords.forEach(rec => rec.losses++);
+          }
+
+          game.rounds.forEach(round => {
+            const bidAmount = Number(round.bidAmount) || 0;
+            if (bidAmount) {
+              sumOfBids += bidAmount;
+              totalBids++;
+            }
+
+            const usPoints = Number(round.usPoints) || 0;
+            const demPoints = Number(round.demPoints) || 0;
+
+            if (usTeam) usTeam.handsPlayed++;
+            if (demTeam) demTeam.handsPlayed++;
+            usPlayerRecords.forEach(rec => rec.handsPlayed++);
+            demPlayerRecords.forEach(rec => rec.handsPlayed++);
+
+            if (usPoints > demPoints) {
+              if (usTeam) usTeam.handsWon++;
+              usPlayerRecords.forEach(rec => rec.handsWon++);
+            } else if (demPoints > usPoints) {
+              if (demTeam) demTeam.handsWon++;
+              demPlayerRecords.forEach(rec => rec.handsWon++);
+            }
+
+            if (usPoints === 360) {
+              if (usTeam) usTeam.perfect360s++;
+              usPlayerRecords.forEach(rec => rec.perfect360s++);
+            }
+            if (demPoints === 360) {
+              if (demTeam) demTeam.perfect360s++;
+              demPlayerRecords.forEach(rec => rec.perfect360s++);
+            }
+
+            if (round.biddingTeam === 'us') {
+              if (usTeam) {
+                usTeam.bidsMade++;
+                usTeam.totalBidAmount += bidAmount;
+                if (usPoints >= bidAmount) usTeam.bidsSucceeded++;
+              }
+              usPlayerRecords.forEach(rec => {
+                rec.bidsMade++;
+                rec.totalBidAmount += bidAmount;
+                if (usPoints >= bidAmount) rec.bidsSucceeded++;
+              });
+            } else if (round.biddingTeam === 'dem') {
+              if (demTeam) {
+                demTeam.bidsMade++;
+                demTeam.totalBidAmount += bidAmount;
+                if (demPoints >= bidAmount) demTeam.bidsSucceeded++;
+              }
+              demPlayerRecords.forEach(rec => {
+                rec.bidsMade++;
+                rec.totalBidAmount += bidAmount;
+                if (demPoints >= bidAmount) rec.bidsSucceeded++;
+              });
+            }
+          });
+
+          const sandbagUs = isGameSandbagForTeamKey(game, usPlayers);
+          const sandbagDem = isGameSandbagForTeamKey(game, demPlayers);
+          if (sandbagUs) {
+            if (usTeam) usTeam.sandbagGames++;
+            usPlayerRecords.forEach(rec => rec.sandbagGames++);
+          }
+          if (sandbagDem) {
+            if (demTeam) demTeam.sandbagGames++;
+            demPlayerRecords.forEach(rec => rec.sandbagGames++);
+          }
         });
 
-        const teamsArray = Object.values(teamData).map(t => ({
-            ...t,
-            winPercent: t.gamesPlayed > 0 ? ((t.wins / t.gamesPlayed) * 100).toFixed(1) : "0.0",
-            avgBid: t.bidsMade > 0 ? (t.totalBidAmount / t.bidsMade).toFixed(0) : "N/A",
-            bidSuccessPct: t.bidsMade > 0 ? ((t.bidsSucceeded / t.bidsMade) * 100).toFixed(1) : "N/A",
-            sandbagger: t.gamesPlayed > 0 && (t.sandbagGames / t.gamesPlayed > 0.5) ? "Yes" : "No", // Example threshold
-            count360: t.perfect360s
-        })).sort((a,b) => b.lastPlayed - a.lastPlayed); // Sort by most recently played
+        const teamsData = Array.from(teamStatsMap.values()).map(team => {
+          const winPercent = team.gamesPlayed ? ((team.wins / team.gamesPlayed) * 100).toFixed(1) : '0.0';
+          const avgBid = team.bidsMade ? (team.totalBidAmount / team.bidsMade).toFixed(0) : 'N/A';
+          const bidSuccessPct = team.bidsMade ? ((team.bidsSucceeded / team.bidsMade) * 100).toFixed(1) : 'N/A';
+          const sandbagger = team.gamesPlayed && (team.sandbagGames / team.gamesPlayed > 0.5) ? 'Yes' : 'No';
+          return {
+            ...team,
+            winPercent,
+            avgBid,
+            bidSuccessPct,
+            sandbagger,
+            count360: team.perfect360s,
+          };
+        }).sort((a, b) => b.lastPlayed - a.lastPlayed);
+
+        const playersData = Array.from(playerStatsMap.values()).map(player => {
+          const winPercent = player.gamesPlayed ? ((player.wins / player.gamesPlayed) * 100).toFixed(1) : '0.0';
+          const avgBid = player.bidsMade ? (player.totalBidAmount / player.bidsMade).toFixed(0) : 'N/A';
+          const bidSuccessPct = player.bidsMade ? ((player.bidsSucceeded / player.bidsMade) * 100).toFixed(1) : 'N/A';
+          const sandbagger = player.gamesPlayed && (player.sandbagGames / player.gamesPlayed > 0.5) ? 'Yes' : 'No';
+          return {
+            ...player,
+            winPercent,
+            avgBid,
+            bidSuccessPct,
+            sandbagger,
+            count360: player.perfect360s,
+          };
+        }).sort((a, b) => b.lastPlayed - a.lastPlayed);
 
         return {
-            totalGames: savedGames.length,
-            overallAverageBid: totalBids > 0 ? (sumOfBids / totalBids).toFixed(0) : "N/A",
-            teamsData: teamsArray,
-            totalTimePlayedMs: totalGameDuration
+          totalGames: savedGames.length,
+          overallAverageBid: totalBids > 0 ? (sumOfBids / totalBids).toFixed(0) : 'N/A',
+          teamsData,
+          playersData,
+          totalTimePlayedMs: totalGameDuration,
         };
       }
-      function isGameSandbagForTeam(game, teamName, threshold = 2) {
-        let sandbagOpportunities = 0;
-        const targetTeamKey = (game.usTeamName || "Us") === teamName ? "us" : "dem";
-        const opponentTeamKey = targetTeamKey === "us" ? "dem" : "us";
-        const opponentName = (game.usTeamName || "Us") === teamName ? (game.demTeamName || "Dem") : (game.usTeamName || "Us");
 
-        game.rounds.forEach(round => {
-            // Check if opponent bid and went set
-            if (round.biddingTeam === opponentTeamKey && round[`${opponentTeamKey}Points`] < 0) {
-                // Check if the target team scored significantly (e.g., >= 80 or made bid equivalent if they had bid)
-                if (round[`${targetTeamKey}Points`] >= 80 || round[`${targetTeamKey}Points`] >= round.bidAmount) {
-                    sandbagOpportunities++;
-                }
-            }
+      function isGameSandbagForTeamKey(game, teamPlayers, threshold = 2) {
+        const teamKey = buildTeamKey(teamPlayers);
+        if (!teamKey) return false;
+
+        const gameUsKey = buildTeamKey(canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName)));
+        const gameDemKey = buildTeamKey(canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName)));
+
+        let target = null;
+        let opponent = null;
+        if (teamKey === gameUsKey) {
+          target = 'us';
+          opponent = 'dem';
+        } else if (teamKey === gameDemKey) {
+          target = 'dem';
+          opponent = 'us';
+        } else {
+          return false;
+        }
+
+        let sandbagOpportunities = 0;
+        (game.rounds || []).forEach(round => {
+          if (round.biddingTeam === opponent && Number(round[`${opponent}Points`]) < 0) {
+            const targetPoints = Number(round[`${target}Points`]) || 0;
+            const bidAmount = Number(round.bidAmount) || 0;
+            if (targetPoints >= 80 || targetPoints >= bidAmount) sandbagOpportunities++;
+          }
         });
         return sandbagOpportunities >= threshold;
       }
-      function renderTeamStatsTable(teamsData, additionalStatKey) {
+      function renderStatsTable(mode, statsData, additionalStatKey) {
         const headers = { games: "Games", avgBid: "Avg Bid", bidSuccessPct: "Bid Success %", sandbagger: "Sandbagger?", "360s": "360s" };
+        const nameHeader = mode === 'teams' ? 'Team' : 'Player';
+        if (!statsData || !statsData.length) {
+          const emptyLabel = mode === 'teams' ? 'No team stats yet.' : 'No individual stats yet.';
+          return `<p class="text-center text-gray-500 dark:text-gray-400 mt-4">${emptyLabel}</p>`;
+        }
+
         let tableHTML = `<div id="teamStatsTableContainer" class="mt-4"><div class="overflow-x-auto -mx-4 sm:mx-0"><div class="inline-block min-w-full align-middle"><table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600"><thead><tr>
-            <th scope="col" class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 sticky left-0 z-10">Team</th>
+            <th scope="col" class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 sticky left-0 z-10">${nameHeader}</th>
             <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Win %</th>
-            <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">${headers[additionalStatKey] || 'Stat'}</th>
-            <th scope="col" class="pl-3 pr-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Del</th>
-            </tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-600 bg-white dark:bg-gray-800">`;
-        teamsData.forEach((team, index) => {
-            const rowClass = index % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700"; // Ensure sticky respects row color
-            const lookup = {
-  games   : team.gamesPlayed,
-  "360s"  : team.count360,
-  avgBid  : team.avgBid,
-  bidSuccessPct : team.bidSuccessPct,
-  sandbagger    : team.sandbagger
-};
-let statVal = lookup[additionalStatKey] ?? '0';
+            <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">${headers[additionalStatKey] || 'Stat'}</th>`;
+        if (mode === 'teams') {
+          tableHTML += `<th scope="col" class="pl-3 pr-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Del</th>`;
+        }
+        tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-600 bg-white dark:bg-gray-800">`;
 
-            if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
+        statsData.forEach((item, index) => {
+          const rowClass = index % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700";
+          const lookup = {
+            games: item.gamesPlayed,
+            '360s': item.count360,
+            avgBid: item.avgBid,
+            bidSuccessPct: item.bidSuccessPct,
+            sandbagger: item.sandbagger,
+          };
+          let statVal = lookup[additionalStatKey] ?? '0';
+          if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
 
-            tableHTML += `<tr class="${rowClass}">
-                <td class="whitespace-nowrap py-3.5 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">${team.name}</td>
-                <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${team.winPercent}%</td>
-                <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statVal}</td>
-                <td class="whitespace-nowrap pl-3 pr-4 py-3.5 text-sm text-center"><button onclick="handleDeleteTeam('${team.name}'); event.stopPropagation();" class="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full p-1.5 dark:text-red-400 dark:hover:text-red-300" aria-label="Delete Team">${Icons.Trash}</button></td></tr>`;
+          const displayName = mode === 'teams' ? item.name : item.name;
+          tableHTML += `<tr class="${rowClass}">
+            <td class="whitespace-nowrap py-3.5 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">${displayName}</td>
+            <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${item.winPercent}%</td>
+            <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statVal}</td>`;
+          if (mode === 'teams') {
+            const escapedName = displayName.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            tableHTML += `<td class="whitespace-nowrap pl-3 pr-4 py-3.5 text-sm text-center"><button onclick="handleDeleteTeam('${item.key}', '${escapedName}'); event.stopPropagation();" class="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full p-1.5 dark:text-red-400 dark:hover:text-red-300" aria-label="Delete Team">${Icons.Trash}</button></td>`;
+          }
+          tableHTML += `</tr>`;
         });
+
         tableHTML += `</tbody></table></div></div></div>`;
         return tableHTML;
       }
-      function handleDeleteTeam(teamName) {
-        openConfirmationModal(`Delete team "${teamName}" and all game data? This is irreversible.`, () => {
+      function handleDeleteTeam(teamKey, displayName = '') {
+        const fallbackLabel = displayName || 'this team';
+        openConfirmationModal(`Delete team "${fallbackLabel}" and all related game data? This is irreversible.`, () => {
             const teams = getTeamsObject();
-            let keyToDelete = null;
-            Object.entries(teams).forEach(([key, value]) => {
-              const display = deriveTeamDisplay(value.players, value.displayName || '');
-              if (!keyToDelete && display === teamName) keyToDelete = key;
-            });
+            let keyToDelete = teamKey && teams[teamKey] ? teamKey : null;
+            if (!keyToDelete && displayName) {
+              Object.entries(teams).forEach(([key, value]) => {
+                const display = deriveTeamDisplay(value.players, value.displayName || '');
+                if (!keyToDelete && display === displayName) keyToDelete = key;
+              });
+            }
             if (keyToDelete) {
               delete teams[keyToDelete];
               setTeamsObject(teams);
@@ -4213,21 +4430,23 @@ let statVal = lookup[additionalStatKey] ?? '0';
 
             let savedGames = getLocalStorage("savedGames");
             savedGames = savedGames.filter(g => {
-              const usDisplay = g.usTeamName || "Us";
-              const demDisplay = g.demTeamName || "Dem";
-              const sameDisplay = usDisplay === teamName || demDisplay === teamName;
               const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
-              return !(sameDisplay || sameKey);
+              if (sameKey) return false;
+              if (!displayName) return true;
+              const usDisplay = getGameTeamDisplay(g, 'us');
+              const demDisplay = getGameTeamDisplay(g, 'dem');
+              return usDisplay !== displayName && demDisplay !== displayName;
             });
             setLocalStorage("savedGames", savedGames);
 
             let freezerGames = getLocalStorage("freezerGames");
             freezerGames = freezerGames.filter(g => {
-              const usDisplay = g.usName || "Us";
-              const demDisplay = g.demName || "Dem";
-              const sameDisplay = usDisplay === teamName || demDisplay === teamName;
               const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
-              return !(sameDisplay || sameKey);
+              if (sameKey) return false;
+              if (!displayName) return true;
+              const usDisplay = getGameTeamDisplay(g, 'us');
+              const demDisplay = getGameTeamDisplay(g, 'dem');
+              return usDisplay !== displayName && demDisplay !== displayName;
             });
             setLocalStorage("freezerGames", freezerGames);
 
@@ -4289,8 +4508,8 @@ let statVal = lookup[additionalStatKey] ?? '0';
         let changed = false;
         const migrated = savedGames.map(game => {
           if (!game || typeof game !== 'object') return game;
-          const usPlayers = ensurePlayersArray(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
-          const demPlayers = ensurePlayersArray(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
+          const usPlayers = canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
+          const demPlayers = canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
           const usDisplay = deriveTeamDisplay(usPlayers, game.usTeamName || game.usName || 'Us') || 'Us';
           const demDisplay = deriveTeamDisplay(demPlayers, game.demTeamName || game.demName || 'Dem') || 'Dem';
           const usTeamKey = buildTeamKey(usPlayers) || null;
@@ -4321,8 +4540,8 @@ let statVal = lookup[additionalStatKey] ?? '0';
         let changed = false;
         const migrated = freezerGames.map(game => {
           if (!game || typeof game !== 'object') return game;
-          const usPlayers = ensurePlayersArray(game.usPlayers || parseLegacyTeamName(game.usName));
-          const demPlayers = ensurePlayersArray(game.demPlayers || parseLegacyTeamName(game.demName));
+          const usPlayers = canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usName));
+          const demPlayers = canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demName));
           const usDisplay = deriveTeamDisplay(usPlayers, game.usName || 'Us') || 'Us';
           const demDisplay = deriveTeamDisplay(demPlayers, game.demName || 'Dem') || 'Dem';
           const usTeamKey = buildTeamKey(usPlayers) || null;
@@ -4358,8 +4577,8 @@ let statVal = lookup[additionalStatKey] ?? '0';
         }
         if (!rawState || typeof rawState !== 'object') return;
 
-        const usPlayers = ensurePlayersArray(rawState.usPlayers || parseLegacyTeamName(rawState.usTeamName));
-        const demPlayers = ensurePlayersArray(rawState.demPlayers || parseLegacyTeamName(rawState.demTeamName));
+        const usPlayers = canonicalizePlayers(rawState.usPlayers || parseLegacyTeamName(rawState.usTeamName));
+        const demPlayers = canonicalizePlayers(rawState.demPlayers || parseLegacyTeamName(rawState.demTeamName));
         const usDisplay = deriveTeamDisplay(usPlayers, rawState.usTeamName || 'Us') || 'Us';
         const demDisplay = deriveTeamDisplay(demPlayers, rawState.demTeamName || 'Dem') || 'Dem';
 
