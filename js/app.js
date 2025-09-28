@@ -950,30 +950,92 @@ function ensureTeamEntry(teamsObj, players, fallbackDisplay = '') {
   return { teams: teamsObj, key };
 }
 
-function updateTeamsStatsOnGameEnd(winner) {
-  const usPlayers = ensurePlayersArray(state.usPlayers);
-  const demPlayers = ensurePlayersArray(state.demPlayers);
-  const usKeyRaw = buildTeamKey(usPlayers);
-  const demKeyRaw = buildTeamKey(demPlayers);
-  if (!usKeyRaw || !demKeyRaw) return;
+function applyTeamResultDelta(teamsObj, { usPlayers, demPlayers, usDisplay, demDisplay, winner }, direction = 1) {
+  if (!direction) return false;
 
-  const teams = getTeamsObject();
-  const { key: usKey } = ensureTeamEntry(teams, usPlayers, state.usTeamName || 'Us');
-  const { key: demKey } = ensureTeamEntry(teams, demPlayers, state.demTeamName || 'Dem');
-  if (!usKey || !demKey) return;
+  const normalizedUs = canonicalizePlayers(usPlayers);
+  const normalizedDem = canonicalizePlayers(demPlayers);
+  const usName = deriveTeamDisplay(normalizedUs, usDisplay || 'Us') || 'Us';
+  const demName = deriveTeamDisplay(normalizedDem, demDisplay || 'Dem') || 'Dem';
+  const usKey = buildTeamKey(normalizedUs);
+  const demKey = buildTeamKey(normalizedDem);
+  if (!usKey || !demKey) return false;
 
-  teams[usKey].gamesPlayed++;
-  teams[demKey].gamesPlayed++;
-  if (winner === "us") {
-    teams[usKey].wins++;
-    teams[demKey].losses++;
-  } else if (winner === "dem") {
-    teams[demKey].wins++;
-    teams[usKey].losses++;
+  if (direction > 0) {
+    ensureTeamEntry(teamsObj, normalizedUs, usName);
+    ensureTeamEntry(teamsObj, normalizedDem, demName);
   }
+
+  const usEntry = teamsObj[usKey];
+  const demEntry = teamsObj[demKey];
+  if (!usEntry || !demEntry) return false;
+
+  const clamp = (value) => Math.max(0, Number.isFinite(value) ? value : 0);
+
+  usEntry.players = canonicalizePlayers(usEntry.players);
+  demEntry.players = canonicalizePlayers(demEntry.players);
+  if (!usEntry.displayName) usEntry.displayName = usName;
+  if (!demEntry.displayName) demEntry.displayName = demName;
+
+  usEntry.gamesPlayed = clamp((Number(usEntry.gamesPlayed) || 0) + direction);
+  demEntry.gamesPlayed = clamp((Number(demEntry.gamesPlayed) || 0) + direction);
+
+  if (winner === 'us') {
+    usEntry.wins = clamp((Number(usEntry.wins) || 0) + direction);
+    demEntry.losses = clamp((Number(demEntry.losses) || 0) + direction);
+  } else if (winner === 'dem') {
+    demEntry.wins = clamp((Number(demEntry.wins) || 0) + direction);
+    usEntry.losses = clamp((Number(usEntry.losses) || 0) + direction);
+  }
+
+  return true;
+}
+
+function updateTeamsStatsOnGameEnd(winner) {
+  const teams = getTeamsObject();
+  const updated = applyTeamResultDelta(teams, {
+    usPlayers: state.usPlayers,
+    demPlayers: state.demPlayers,
+    usDisplay: state.usTeamName,
+    demDisplay: state.demTeamName,
+    winner,
+  }, 1);
+  if (updated) setTeamsObject(teams);
+}
+function recalcTeamsStats() {
+  const teams = getTeamsObject();
+  Object.values(teams).forEach(entry => {
+    if (!entry) return;
+    entry.gamesPlayed = 0;
+    entry.wins = 0;
+    entry.losses = 0;
+  });
+
+  const accumulateFromGame = (game) => {
+    if (!game) return;
+    const usPlayers = canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
+    const demPlayers = canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
+    const usDisplay = deriveTeamDisplay(usPlayers, game.usTeamName || game.usName || 'Us');
+    const demDisplay = deriveTeamDisplay(demPlayers, game.demTeamName || game.demName || 'Dem');
+    const winner = game.winner === 'us' || game.winner === 'dem' ? game.winner : null;
+    applyTeamResultDelta(teams, { usPlayers, demPlayers, usDisplay, demDisplay, winner }, 1);
+  };
+
+  const savedGames = getLocalStorage('savedGames', []);
+  savedGames.forEach(accumulateFromGame);
+
+  if (state.gameOver && Array.isArray(state.rounds) && state.rounds.length) {
+    accumulateFromGame({
+      usPlayers: ensurePlayersArray(state.usPlayers),
+      demPlayers: ensurePlayersArray(state.demPlayers),
+      usTeamName: state.usTeamName,
+      demTeamName: state.demTeamName,
+      winner: state.winner,
+    });
+  }
+
   setTeamsObject(teams);
 }
-function recalcTeamsStats() { /* See getStatistics for actual calculation logic */ }
 function addTeamIfNotExists(players, display = '') {
   const teams = getTeamsObject();
   const { key } = ensureTeamEntry(teams, players, display);
@@ -1456,6 +1518,14 @@ victoryMethod  = "Set Other Team";
 }
 function handleUndo() {
   if (!state.rounds.length) return;
+  const wasGameOver = state.gameOver;
+  const priorWinner = state.winner;
+  const teamSnapshot = {
+    usPlayers: state.usPlayers,
+    demPlayers: state.demPlayers,
+    usDisplay: state.usTeamName,
+    demDisplay: state.demTeamName,
+  };
   const lastRound = state.rounds[state.rounds.length - 1];
   const newRounds = state.rounds.slice(0, -1);
   const newUndoneRounds = [...state.undoneRounds, lastRound];
@@ -1469,6 +1539,11 @@ function handleUndo() {
       nextState.startTime = null;
       nextState.accumulatedTime = 0;
       nextState.timerLastSavedAt = null;
+  }
+  if (wasGameOver && priorWinner) {
+    const teams = getTeamsObject();
+    const reverted = applyTeamResultDelta(teams, { ...teamSnapshot, winner: priorWinner }, -1);
+    if (reverted) setTeamsObject(teams);
   }
   updateState(nextState);
   saveCurrentGameState();
@@ -1503,6 +1578,7 @@ function handleRedo() {
   }
 
   updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam });
+  if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
   saveCurrentGameState();
 }
 function handleNewGame() {
@@ -3468,6 +3544,8 @@ function handleDeleteTeam(teamKey, displayName = '') {
         return usDisplay !== displayName && demDisplay !== displayName;
       });
       setLocalStorage("freezerGames", freezerGames);
+
+      recalcTeamsStats();
 
       closeConfirmationModal();
       renderStatisticsContent(); // Refresh stats modal
