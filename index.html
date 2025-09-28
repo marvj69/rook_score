@@ -4063,17 +4063,19 @@ document.addEventListener('DOMContentLoaded', () => {
           function onTouchStart(e) {
               startX = e.touches[0].clientX;
               currentX = startX;
-              if (!menu.classList.contains("show") && startX <= 20) {
+              const menuOpen = menu.classList.contains("show");
+              if (!menuOpen && startX <= 20) {
                   isDragging = true;
                   isOpening = true;
                   menu.style.transition = "none";
                   overlay.classList.add("show");
                   overlay.style.opacity = "0";
                   document.body.classList.add("overflow-hidden");
-              } else if (menu.classList.contains("show") && startX <= menuWidth) {
+              } else if (menuOpen) {
                   isDragging = true;
                   isOpening = false;
                   menu.style.transition = "none";
+                  overlay.classList.add("show");
               }
           }
 
