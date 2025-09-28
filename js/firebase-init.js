@@ -28,46 +28,16 @@ window.googleProvider = googleProvider;
 function updateAuthUI(user) {
   const authLabel = document.getElementById("authLabel");
   if (!authLabel) return;
-  if (user) {
-    if (user.isAnonymous) {
-authLabel.textContent = "Sign in with Google";
-    } else {
-authLabel.innerHTML = `Sign Out <img src="${user.photoURL}" alt="Profile" style="display:inline-block;width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-left:8px;">`;
-authLabel.style.display = 'inline-flex';
-authLabel.style.alignItems = 'center';
-    }
-  } else {
-    authLabel.textContent = "Sign in with Google";
-  }
-}
+  authLabel.textContent = "Sign in with Google";
+  authLabel.style.display = '';
+  authLabel.style.alignItems = '';
 
-async function loadFirestoreData(user) {
-  // This function is called by the main script's onAuthStateChanged logic if needed
-  // For now, the main script handles loading after merge/anonymous sign-in
   if (user && !user.isAnonymous) {
-console.log("Loading data from Firestore for user:", user.uid);
-try {
-    const docRef = doc(db, "rookData", user.uid);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-        console.log("Found data in Firestore, merging/loading is handled by main script");
-        const data = docSnap.data();
-        // The main script's mergeLocalStorageWithFirestore will handle this
-        // For safety, we can iterate and set if not already done by merge
-        for (const [key, value] of Object.entries(data)) {
-            if (key !== "timestamp" && !localStorage.getItem(key)) { // Only if not already set by merge
-                 localStorage.setItem(key, JSON.stringify(value));
-            }
-        }
-    } else {
-        console.log("No data found in Firestore for this user, local data will be used/synced up.");
-    }
-} catch (error) {
-    console.error("Error loading from Firestore:", error);
-}
+    const photoUrl = user.photoURL ? `<img src="${user.photoURL}" alt="Profile" style="display:inline-block;width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-left:8px;">` : '';
+    authLabel.innerHTML = `Sign Out ${photoUrl}`.trim();
+    authLabel.style.display = 'inline-flex';
+    authLabel.style.alignItems = 'center';
   }
-  // Ensure renderApp is called from the main script after all data ops
-  if (window.renderApp) window.renderApp();
 }
 
 window.mergeLocalStorageWithFirestore = async function(user) {

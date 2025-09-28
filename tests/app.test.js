@@ -1,7 +1,5 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const fs = require('node:fs');
 
 function setupDomStubs() {
   const noop = () => {};
@@ -166,66 +164,6 @@ function setupDomStubs() {
 
 setupDomStubs();
 
-function loadAppHelpers() {
-  const appPath = path.join(__dirname, '..', 'js', 'app.js');
-  const code = fs.readFileSync(appPath, 'utf8');
-
-  const factory = new Function(
-    'window',
-    'document',
-    'localStorage',
-    'navigator',
-    'globalThis',
-    'setTimeout',
-    'clearTimeout',
-    'setInterval',
-    'clearInterval',
-    'requestAnimationFrame',
-    'cancelAnimationFrame',
-    'performance',
-    'crypto',
-    'console',
-    `${code}; return {
-      sanitizePlayerName,
-      ensurePlayersArray,
-      canonicalizePlayers,
-      formatTeamDisplay,
-      buildTeamKey,
-      parseLegacyTeamName,
-      deriveTeamDisplay,
-      getGameTeamDisplay,
-      playersEqual,
-      bucketScore,
-      buildProbabilityIndex,
-      calculateWinProbabilitySimple,
-      calculateWinProbabilityComplex,
-      calculateWinProbability,
-    };`
-  );
-
-  const windowStub = global.window;
-  windowStub.window = windowStub;
-  windowStub.document = global.document;
-  windowStub.globalThis = windowStub;
-
-  return factory(
-    windowStub,
-    global.document,
-    global.localStorage,
-    global.navigator,
-    windowStub,
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
-    windowStub.requestAnimationFrame,
-    windowStub.cancelAnimationFrame,
-    windowStub.performance,
-    windowStub.crypto,
-    console,
-  );
-}
-
 const {
   sanitizePlayerName,
   ensurePlayersArray,
@@ -241,7 +179,7 @@ const {
   calculateWinProbabilitySimple,
   calculateWinProbabilityComplex,
   calculateWinProbability,
-} = loadAppHelpers();
+} = require('../js/app.js');
 
 const WIN_METHOD_KEY = 'winProbCalcMethod';
 

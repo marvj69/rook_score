@@ -2580,6 +2580,10 @@ function renderApp() {
   const totals = rounds.reduce((acc, r) => ({ us: acc.us + (r.usPoints || 0), dem: acc.dem + (r.demPoints || 0) }), { us: 0, dem: 0 });
   const roundNumber = rounds.length + 1;
 
+  const shouldShowWinProbability = state.showWinProbability && !gameOver && rounds.length > 0;
+  const historicalGames = shouldShowWinProbability ? getLocalStorage("savedGames") : null;
+  const winProb = shouldShowWinProbability ? calculateWinProbability(state, historicalGames) : null;
+
   let lastBidDisplayHtml = "";
   // Show "Current Bid" if a bid is being selected
   if (biddingTeam && (bidAmount || (showCustomBid && customBidValue))) {
@@ -2610,9 +2614,9 @@ function renderApp() {
     </div>
     ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
-      ${renderTeamCard("us", totals.us)}
+      ${renderTeamCard("us", totals.us, winProb)}
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
-      ${renderTeamCard("dem", totals.dem)}
+      ${renderTeamCard("dem", totals.dem, winProb)}
     </div>
     ${error ? `<div>${renderErrorAlert(error)}</div>` : ""}
     ${renderScoreInputCard()}
@@ -2624,14 +2628,13 @@ function renderApp() {
     if (typeof confetti === 'function') confetti({ particleCount: 200, spread: 70, origin: { y: 0.6 } });
   }
 }
-function renderTeamCard(teamKey, score) {
+function renderTeamCard(teamKey, score, winProb) {
   const isSelected = state.biddingTeam === teamKey;
   const teamLabel = teamKey === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const colorClass = teamKey === "us" ? "bg-primary" : "bg-accent";
   const selectedEffect = isSelected ? "sunken-selected" : "";
   let winProbDisplay = "";
-  if (state.showWinProbability && !state.gameOver && state.rounds.length > 0) {
-    const winProb = calculateWinProbability(state, getLocalStorage("savedGames"));
+  if (winProb) {
     const prob = teamKey === "us" ? winProb.us : winProb.dem;
     const teamColorVar = teamKey === "us" ? "var(--primary-color)" : "var(--accent-color)";
     const brightness = isSelected ? "brightness(0.7)" : "brightness(0.85)"; // Darken more when selected
@@ -2921,108 +2924,162 @@ function updateGamesCount() {
 function filterGames() { renderGamesWithFilter(); }
 function sortGames() { renderGamesWithFilter(); }
 function renderGamesWithFilter() {
-  const searchTerm = document.getElementById('gameSearchInput').value.toLowerCase();
+  const rawSearchValue = document.getElementById('gameSearchInput').value || '';
+  const searchTerm = rawSearchValue.trim().toLowerCase();
+  const displaySearch = rawSearchValue.trim();
   const sortOption = document.getElementById('gameSortSelect').value;
-  const isCompletedTabActive = !document.getElementById('completedGamesSection').classList.contains('hidden');
-  isCompletedTabActive ? renderSavedGamesList(searchTerm, sortOption) : renderFreezerGamesList(searchTerm, sortOption);
-}
-function renderSavedGamesList(searchTerm = '', sortOption = 'newest') {
-  let games = getLocalStorage("savedGames", []);
-  if (searchTerm) {
-      games = games.filter(g => 
-          getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
-          getGameTeamDisplay(g, 'dem').toLowerCase().includes(searchTerm) ||
-          new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
-      );
+  const completedTabActive = !document.getElementById('completedGamesSection').classList.contains('hidden');
+
+  if (completedTabActive) {
+    renderGamesList({
+      storageKey: 'savedGames',
+      containerId: 'savedGamesList',
+      emptyMessageId: 'noCompletedGamesMessage',
+      emptySearchMessage: 'No completed games match',
+      searchTerm,
+      displaySearch,
+      sortOption,
+      buildCard: buildSavedGameCard,
+    });
+  } else {
+    renderGamesList({
+      storageKey: 'freezerGames',
+      containerId: 'freezerGamesList',
+      emptyMessageId: 'noFreezerGamesMessage',
+      emptySearchMessage: 'No frozen games match',
+      searchTerm,
+      displaySearch,
+      sortOption,
+      buildCard: buildFreezerGameCard,
+    });
   }
-  games = sortGamesBy(games, sortOption, true); // true for completed games
-  const container = document.getElementById("savedGamesList");
-  document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', games.length > 0);
-  container.innerHTML = games.map((g, idx) => { // Use original index for deletion/viewing
-      const originalIndex = getLocalStorage("savedGames", []).findIndex(sg => sg.timestamp === g.timestamp); // Find original index
-      const usDisplay = getGameTeamDisplay(g, 'us');
-      const demDisplay = getGameTeamDisplay(g, 'dem');
-      const usS = g.finalScore.us, demS = g.finalScore.dem;
-      const usW = g.winner === "us", demW = g.winner === "dem";
-      const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
-      return `
-      <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
-        ${usW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplay}</div>` : ''}
-        ${demW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplay}</div>` : ''}
-        <div class="p-5">
-          <div class="flex justify-between items-start mb-2">
-            <div>
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
-              <div class="text-sm text-gray-500 dark:text-gray-400">${dateStr}</div>
-            </div>
-            <div class="flex space-x-1">
-              <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
-              <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
-            </div>
+}
+
+function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, buildCard }) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const entries = getLocalStorage(storageKey, []).map((game, index) => ({ game, index }));
+  const normalizedTerm = searchTerm || '';
+
+  const filteredEntries = normalizedTerm
+    ? entries.filter(({ game }) => {
+        const us = getGameTeamDisplay(game, 'us').toLowerCase();
+        const dem = getGameTeamDisplay(game, 'dem').toLowerCase();
+        const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString().toLowerCase() : '';
+        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm);
+      })
+    : entries;
+
+  const sortedEntries = sortGamesBy(filteredEntries, sortOption);
+  const listHtml = sortedEntries.map(({ game, index }) => buildCard(game, index)).join('');
+
+  const emptyMessageEl = document.getElementById(emptyMessageId);
+  if (emptyMessageEl) emptyMessageEl.classList.toggle('hidden', sortedEntries.length > 0);
+
+  container.innerHTML = listHtml || (!normalizedTerm ? '' : `<p class="text-gray-500 col-span-full text-center">${emptySearchMessage} "${displaySearch}".</p>`);
+}
+
+function buildSavedGameCard(game, originalIndex) {
+  const usDisplay = getGameTeamDisplay(game, 'us');
+  const demDisplay = getGameTeamDisplay(game, 'dem');
+  const usScore = game.finalScore?.us ?? 0;
+  const demScore = game.finalScore?.dem ?? 0;
+  const usWon = game.winner === 'us';
+  const demWon = game.winner === 'dem';
+  const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
+
+  return `
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
+      ${usWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplay}</div>` : ''}
+      ${demWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplay}</div>` : ''}
+      <div class="p-5">
+        <div class="flex justify-between items-start mb-2">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400">${timestamp}</div>
           </div>
-          <div class="text-sm">
-            <span class="${usW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplay}: ${usS}</span> | 
-            <span class="${demW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplay}: ${demS}</span>
-          </div>
-          <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-            ${g.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${g.victoryMethod}</span>` : ''}
-            ${g.durationMs ? `<span>${formatDuration(g.durationMs)}</span>` : ''}
+          <div class="flex space-x-1">
+            <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
+            <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
           </div>
         </div>
-      </div>`;
-  }).join("") || (!searchTerm ? "" : `<p class="text-gray-500 col-span-full text-center">No completed games match "${searchTerm}".</p>`);
+        <div class="text-sm">
+          <span class="${usWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplay}: ${usScore}</span> |
+          <span class="${demWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplay}: ${demScore}</span>
+        </div>
+        <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
+          ${game.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${game.victoryMethod}</span>` : ''}
+          ${game.durationMs ? `<span>${formatDuration(game.durationMs)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
 }
-function renderFreezerGamesList(searchTerm = '', sortOption = 'newest') {
-  let games = getLocalStorage("freezerGames", []);
-  if (searchTerm) {
-      games = games.filter(g => 
-          getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
-          getGameTeamDisplay(g, 'dem').toLowerCase().includes(searchTerm) ||
-          new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
-      );
-  }
-  games = sortGamesBy(games, sortOption, false); // false for freezer games
-  const container = document.getElementById("freezerGamesList");
-  document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', games.length > 0);
-  container.innerHTML = games.map((g, idx) => {
-      const originalIndex = getLocalStorage("freezerGames", []).findIndex(fg => fg.timestamp === g.timestamp);
-      const usDisplay = getGameTeamDisplay(g, 'us');
-      const demDisplay = getGameTeamDisplay(g, 'dem');
-      const usS = g.finalScore.us, demS = g.finalScore.dem;
-      const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
-      const leadInfo = usS > demS ? `${usDisplay} leads by ${usS - demS}` : (demS > usS ? `${demDisplay} leads by ${demS - usS}` : "Tied");
-      return `
-      <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
-        <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfo}</div>
-        <div class="p-5">
-          <div class="flex justify-between items-start mb-2">
-            <div>
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
-              <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${dateStr}</div>
-            </div>
-            <div class="flex space-x-1">
-              <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
-              <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
-            </div>
+
+function buildFreezerGameCard(game, originalIndex) {
+  const usDisplay = getGameTeamDisplay(game, 'us');
+  const demDisplay = getGameTeamDisplay(game, 'dem');
+  const usScore = game.finalScore?.us ?? 0;
+  const demScore = game.finalScore?.dem ?? 0;
+  const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
+  const leadInfo = usScore > demScore
+    ? `${usDisplay} leads by ${usScore - demScore}`
+    : demScore > usScore
+      ? `${demDisplay} leads by ${demScore - usScore}`
+      : 'Tied';
+
+  return `
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
+      <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfo}</div>
+      <div class="p-5">
+        <div class="flex justify-between items-start mb-2">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestamp}</div>
           </div>
-          <div class="text-sm text-gray-700 dark:text-gray-300">
-            <span>${usDisplay}: ${usS}</span> | <span>${demDisplay}: ${demS}</span>
-          </div>
-          <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-            ${g.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${g.lastBid}</span>` : ''}
-            ${g.accumulatedTime ? `<span>Played: ${formatDuration(g.accumulatedTime)}</span>` : ''}
+          <div class="flex space-x-1">
+            <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
+            <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
           </div>
         </div>
-      </div>`;
-  }).join("") || (!searchTerm ? "" : `<p class="text-gray-500 col-span-full text-center">No frozen games match "${searchTerm}".</p>`);
+        <div class="text-sm text-gray-700 dark:text-gray-300">
+          <span>${usDisplay}: ${usScore}</span> | <span>${demDisplay}: ${demScore}</span>
+        </div>
+        <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
+          ${game.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${game.lastBid}</span>` : ''}
+          ${game.accumulatedTime ? `<span>Played: ${formatDuration(game.accumulatedTime)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
 }
-function sortGamesBy(games, sortOption, isCompletedGameType) {
-  const sorted = [...games]; // Create a mutable copy
+
+function sortGamesBy(entries, sortOption = 'newest') {
+  const sorted = [...entries];
+  const getTimestamp = ({ game }) => {
+    const parsed = game.timestamp ? Date.parse(game.timestamp) : NaN;
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  const getHighScore = ({ game }) => {
+    const finalScore = game.finalScore || {};
+    const usScore = Number(finalScore.us) || 0;
+    const demScore = Number(finalScore.dem) || 0;
+    return Math.max(usScore, demScore);
+  };
+
   switch (sortOption) {
-    case 'oldest': sorted.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); break;
-    case 'highest': sorted.sort((a, b) => Math.max(b.finalScore.us, b.finalScore.dem) - Math.max(a.finalScore.us, a.finalScore.dem)); break;
-    case 'lowest': sorted.sort((a, b) => Math.max(a.finalScore.us, a.finalScore.dem) - Math.max(b.finalScore.us, b.finalScore.dem)); break;
-    case 'newest': default: sorted.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); break;
+    case 'oldest':
+      sorted.sort((a, b) => getTimestamp(a) - getTimestamp(b));
+      break;
+    case 'highest':
+      sorted.sort((a, b) => getHighScore(b) - getHighScore(a));
+      break;
+    case 'lowest':
+      sorted.sort((a, b) => getHighScore(a) - getHighScore(b));
+      break;
+    case 'newest':
+    default:
+      sorted.sort((a, b) => getTimestamp(b) - getTimestamp(a));
+      break;
   }
   return sorted;
 }
@@ -3573,6 +3630,9 @@ function performTeamPlayerMigration() {
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   performTeamPlayerMigration();
+  document.body.classList.remove('modal-open');
+  document.getElementById('app')?.classList.remove('modal-active');
+  document.querySelectorAll('.modal').forEach(modal => modal.classList.add('hidden'));
   initializeDarkMode();
   initializeTheme(); // Predefined themes
   initializeCustomThemeColors(); // Custom primary/accent
@@ -3600,40 +3660,37 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
 
   // Close modals on outside click (simplified)
-  const allModals = ["savedGamesModal", "viewSavedGameModal", "aboutModal", "statisticsModal", "teamSelectionModal", "settingsModal", "themeModal", "confirmationModal", "presetEditorModal"];
+  const modalCloseHandlers = {
+    savedGamesModal: closeSavedGamesModal,
+    viewSavedGameModal: closeViewSavedGameModal,
+    aboutModal: closeAboutModal,
+    statisticsModal: closeStatisticsModal,
+    teamSelectionModal: closeTeamSelectionModal,
+    settingsModal: closeSettingsModal,
+    themeModal: () => closeThemeModal(null),
+    confirmationModal: closeConfirmationModal,
+    presetEditorModal: closePresetEditorModal,
+  };
+
   document.addEventListener("click", (e) => {
-      allModals.forEach(id => {
-          const modalEl = document.getElementById(id);
-          if (modalEl && !modalEl.classList.contains("hidden") && e.target === modalEl) {
-              // Find the specific close function if available, otherwise generic close
-              if (id === "savedGamesModal") closeSavedGamesModal();
-              else if (id === "viewSavedGameModal") closeViewSavedGameModal();
-              else if (id === "aboutModal") closeAboutModal();
-              else if (id === "statisticsModal") closeStatisticsModal();
-              else if (id === "teamSelectionModal") closeTeamSelectionModal();
-              else if (id === "settingsModal") closeSettingsModal();
-              else if (id === "themeModal") closeThemeModal(null);
-              else if (id === "confirmationModal") closeConfirmationModal();
-              else if (id === "presetEditorModal") closePresetEditorModal();
-          }
-      });
+    Object.entries(modalCloseHandlers).forEach(([id, handler]) => {
+      const modalEl = document.getElementById(id);
+      if (modalEl && !modalEl.classList.contains("hidden") && e.target === modalEl) {
+        handler();
+      }
+    });
   });
   document.body.addEventListener('touchend', e => {
       const touchEndX = e.changedTouches[0].clientX;
-      if (touchStartX < 50 && touchEndX > touchStartX + 50) { // Swipe right from left edge
-           if (!document.getElementById("menu").classList.contains("show")) toggleMenu(e); // Open if closed
-      } else if (document.getElementById("menu").classList.contains("show") && touchEndX < touchStartX - 50) { // Swipe left when menu open
-           if (document.getElementById("menu").classList.contains("show")) toggleMenu(e); // Close if open
+      const menu = document.getElementById("menu");
+      if (!menu) return;
+      const menuOpen = menu.classList.contains("show");
+      if (touchStartX < 50 && touchEndX > touchStartX + 50 && !menuOpen) {
+        toggleMenu(e);
+      } else if (menuOpen && touchEndX < touchStartX - 50) {
+        toggleMenu(e);
       }
   }, { passive: true });
-});
-
-// SAFETY-NET: make sure the app starts with pointer-events ON
-document.addEventListener('DOMContentLoaded', () => {
-  document.body.classList.remove('modal-open');          // scrolling again
-  document.getElementById('app')?.classList.remove('modal-active');
-  // also be sure every .modal starts hidden
-  document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 });
 
 if ('serviceWorker' in navigator) {
@@ -3757,3 +3814,23 @@ function handleTeamSelectionCancel() {
     document.addEventListener("touchmove", onTouchMove, { passive: false });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
 })();
+
+// Expose selected helpers when running in a Node/CommonJS environment (e.g. tests)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    sanitizePlayerName,
+    ensurePlayersArray,
+    canonicalizePlayers,
+    formatTeamDisplay,
+    buildTeamKey,
+    parseLegacyTeamName,
+    deriveTeamDisplay,
+    getGameTeamDisplay,
+    playersEqual,
+    bucketScore,
+    buildProbabilityIndex,
+    calculateWinProbabilitySimple,
+    calculateWinProbabilityComplex,
+    calculateWinProbability,
+  };
+}
