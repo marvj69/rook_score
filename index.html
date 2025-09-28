@@ -637,17 +637,42 @@
       <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800">
         <div class="p-6">
           <h2 id="teamSelectionModalTitle" class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Enter Team Names</h2>
-          <form id="teamSelectionForm" class="space-y-4">
-            <div>
-              <label for="selectUsTeam" class="block text-sm font-medium text-gray-700 dark:text-white">Team "Us"</label>
-              <select id="selectUsTeam" name="selectUsTeam" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white"></select>
-              <input type="text" id="newUsTeamName" name="newUsTeamName" class="mt-2 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white hidden" placeholder="New Name for Us" />
-            </div>
-            <div>
-              <label for="selectDemTeam" class="block text-sm font-medium text-gray-700 dark:text-white">Team "Dem"</label>
-              <select id="selectDemTeam" name="selectDemTeam" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white"></select>
-              <input type="text" id="newDemTeamName" name="newDemTeamName" class="mt-2 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white hidden" placeholder="New Name for Dem" />
-            </div>
+          <form id="teamSelectionForm" class="space-y-6">
+            <section>
+              <div class="flex items-center justify-between">
+                <label for="selectUsTeam" class="block text-sm font-medium text-gray-700 dark:text-white">Team "Us"</label>
+                <span class="text-xs text-gray-500 dark:text-gray-400">Pick a saved pairing or enter players</span>
+              </div>
+              <select id="selectUsTeam" name="selectUsTeam" class="mt-2 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white"></select>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                <div>
+                  <label for="usPlayerOne" class="block text-sm font-medium text-gray-700 dark:text-white">Player 1</label>
+                  <input type="text" id="usPlayerOne" name="usPlayerOne" list="playerNameSuggestions" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="First teammate" autocomplete="off" />
+                </div>
+                <div>
+                  <label for="usPlayerTwo" class="block text-sm font-medium text-gray-700 dark:text-white">Player 2</label>
+                  <input type="text" id="usPlayerTwo" name="usPlayerTwo" list="playerNameSuggestions" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="Second teammate" autocomplete="off" />
+                </div>
+              </div>
+            </section>
+            <section>
+              <div class="flex items-center justify-between">
+                <label for="selectDemTeam" class="block text-sm font-medium text-gray-700 dark:text-white">Team "Dem"</label>
+                <span class="text-xs text-gray-500 dark:text-gray-400">Pick a saved pairing or enter players</span>
+              </div>
+              <select id="selectDemTeam" name="selectDemTeam" class="mt-2 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white"></select>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                <div>
+                  <label for="demPlayerOne" class="block text-sm font-medium text-gray-700 dark:text-white">Player 1</label>
+                  <input type="text" id="demPlayerOne" name="demPlayerOne" list="playerNameSuggestions" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="First teammate" autocomplete="off" />
+                </div>
+                <div>
+                  <label for="demPlayerTwo" class="block text-sm font-medium text-gray-700 dark:text-white">Player 2</label>
+                  <input type="text" id="demPlayerTwo" name="demPlayerTwo" list="playerNameSuggestions" class="mt-1 block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="Second teammate" autocomplete="off" />
+                </div>
+              </div>
+            </section>
+            <datalist id="playerNameSuggestions"></datalist>
             <div class="flex justify-end space-x-2">
               <button type="button" onclick="handleTeamSelectionCancel();" class="bg-gray-400 text-white px-4 py-2 rounded-xl hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-400 dark:hover:bg-gray-600 dark:focus:ring-blue-400">Cancel</button>
               <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400">Confirm</button>
@@ -956,6 +981,7 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
         });
         
         // Re-initialize state from potentially merged localStorage
+        if (typeof performTeamPlayerMigration === 'function') performTeamPlayerMigration();
         if (window.loadCurrentGameState) window.loadCurrentGameState(); 
         if (window.renderApp) window.renderApp();
       }
@@ -1063,14 +1089,72 @@ role="dialog" aria-modal="true" aria-labelledby="zeroPointsModalTitle">
       const THEME_KEY = "rookSelectedTheme";
       const PRESET_BIDS_KEY = 'customPresetBids';
       const PROB_CACHE = new Map();   // memoise across calls
+      const TEAM_STORAGE_VERSION = 2;
+      const TEAM_KEY_SEPARATOR = "||";
       const DEFAULT_STATE = {
         rounds: [], undoneRounds: [], biddingTeam: "", bidAmount: "",
         customBidValue: "", showCustomBid: false, enterBidderPoints: false,
         error: "", gameOver: false, winner: null, victoryMethod: null,
         savedScoreInputStates: { us: null, dem: null }, lastBidAmount: null,
-        lastBidTeam: null, usTeamName: "", demTeamName: "", startTime: null,
+        lastBidTeam: null,
+        usTeamName: "", demTeamName: "",
+        usPlayers: ["", ""], demPlayers: ["", ""],
+        startTime: null,
         accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
       };
+
+      function sanitizePlayerName(name) {
+        return (typeof name === "string" ? name : "").trim().replace(/\s+/g, " ");
+      }
+
+      function ensurePlayersArray(input) {
+        const arr = Array.isArray(input) ? input : [];
+        return [sanitizePlayerName(arr[0] ?? ""), sanitizePlayerName(arr[1] ?? "")];
+      }
+
+      function formatTeamDisplay(players) {
+        const cleaned = ensurePlayersArray(players).filter(Boolean);
+        return cleaned.join(" & ");
+      }
+
+      function buildTeamKey(players) {
+        const cleaned = ensurePlayersArray(players)
+          .filter(Boolean)
+          .map(name => name.toLowerCase());
+        return cleaned.sort().join(TEAM_KEY_SEPARATOR);
+      }
+
+      function parseLegacyTeamName(teamName) {
+        const raw = sanitizePlayerName(teamName);
+        if (!raw) return ["", ""];
+        const separators = [/\s*&\s*/i, /\s+and\s+/i, /\s*\+\s*/i, /\s*\/\s*/, /\s*,\s*/];
+        for (const sep of separators) {
+          if (sep.test(raw)) {
+            const parts = raw.split(sep).map(sanitizePlayerName).filter(Boolean);
+            if (parts.length >= 2) return [parts[0], parts[1]];
+          }
+        }
+        return [raw, ""];
+      }
+
+      function deriveTeamDisplay(players, fallback = "") {
+        const display = formatTeamDisplay(players);
+        return display || fallback;
+      }
+
+      function getGameTeamDisplay(game, side) {
+        const fallback = side === 'us' ? 'Us' : 'Dem';
+        if (!game || (side !== 'us' && side !== 'dem')) return fallback;
+        const playersField = side === 'us' ? game.usPlayers || game.usTeamPlayers || game.usTeam : game.demPlayers || game.demTeamPlayers || game.demTeam;
+        const nameField = side === 'us' ? (game.usTeamName || game.usName) : (game.demTeamName || game.demName);
+        return deriveTeamDisplay(playersField, nameField || fallback) || fallback;
+      }
+
+      function playersEqual(a, b) {
+        const [a1, a2] = ensurePlayersArray(a);
+        const [b1, b2] = ensurePlayersArray(b);
+        return a1 === b1 && a2 === b2;
+      }
 
       // --- Global State ---
       let state = { ...DEFAULT_STATE };
@@ -1697,7 +1781,33 @@ function initializeCustomThemeColors() {
 
       // --- Game State Management ---
       function updateState(newState) {
-        state = { ...state, ...newState };
+        const nextState = { ...newState };
+
+        const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+        if (has(nextState, 'usPlayers')) {
+          nextState.usPlayers = ensurePlayersArray(nextState.usPlayers);
+          if (!has(nextState, 'usTeamName')) {
+            nextState.usTeamName = deriveTeamDisplay(nextState.usPlayers);
+          }
+        } else if (has(nextState, 'usTeamName')) {
+          const parsed = parseLegacyTeamName(nextState.usTeamName);
+          nextState.usPlayers = ensurePlayersArray(parsed);
+          nextState.usTeamName = deriveTeamDisplay(parsed, nextState.usTeamName);
+        }
+
+        if (has(nextState, 'demPlayers')) {
+          nextState.demPlayers = ensurePlayersArray(nextState.demPlayers);
+          if (!has(nextState, 'demTeamName')) {
+            nextState.demTeamName = deriveTeamDisplay(nextState.demPlayers);
+          }
+        } else if (has(nextState, 'demTeamName')) {
+          const parsed = parseLegacyTeamName(nextState.demTeamName);
+          nextState.demPlayers = ensurePlayersArray(parsed);
+          nextState.demTeamName = deriveTeamDisplay(parsed, nextState.demTeamName);
+        }
+
+        state = { ...state, ...nextState };
         renderApp();
       }
       function resetGame() {
@@ -1765,25 +1875,142 @@ function initializeCustomThemeColors() {
       }
 
       // --- Team Stats Helpers ---
-      function getTeamsObject() { return getLocalStorage("teams") || {}; }
-      function setTeamsObject(obj) { setLocalStorage("teams", obj); }
+      function normalizeTeamsStorage(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          return { data: {}, changed: Boolean(raw && raw !== null) };
+        }
+
+        const working = { ...raw };
+        delete working.__storageVersion;
+
+        const entries = Object.entries(working);
+        if (!entries.length) {
+          return { data: {}, changed: raw.__storageVersion !== TEAM_STORAGE_VERSION };
+        }
+
+        const isAlreadyNew = entries.every(([, value]) => value && typeof value === 'object' && Array.isArray(value.players));
+        if (raw.__storageVersion === TEAM_STORAGE_VERSION && isAlreadyNew) {
+          const cleaned = {};
+          entries.forEach(([key, value]) => {
+            cleaned[key] = {
+              players: ensurePlayersArray(value.players),
+              displayName: deriveTeamDisplay(value.players, value.displayName || ''),
+              wins: Number(value.wins) || 0,
+              losses: Number(value.losses) || 0,
+              gamesPlayed: Number(value.gamesPlayed) || 0,
+            };
+          });
+          return { data: cleaned, changed: false };
+        }
+
+        const converted = {};
+        entries.forEach(([legacyName, payload]) => {
+          let players = [];
+          let stats = { wins: 0, losses: 0, gamesPlayed: 0 };
+
+          if (payload && typeof payload === 'object' && !Array.isArray(payload) && Array.isArray(payload.players)) {
+            players = ensurePlayersArray(payload.players);
+            stats = {
+              wins: Number(payload.wins) || 0,
+              losses: Number(payload.losses) || 0,
+              gamesPlayed: Number(payload.gamesPlayed) || 0,
+            };
+          } else {
+            players = parseLegacyTeamName(legacyName);
+            if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+              stats = {
+                wins: Number(payload.wins) || 0,
+                losses: Number(payload.losses) || 0,
+                gamesPlayed: Number(payload.gamesPlayed) || 0,
+              };
+            }
+          }
+
+          const key = buildTeamKey(players);
+          const displayName = deriveTeamDisplay(players, legacyName);
+          if (!converted[key]) {
+            converted[key] = { players: ensurePlayersArray(players), displayName, wins: 0, losses: 0, gamesPlayed: 0 };
+          }
+          converted[key].wins += stats.wins;
+          converted[key].losses += stats.losses;
+          converted[key].gamesPlayed += stats.gamesPlayed;
+          if (!converted[key].displayName) converted[key].displayName = displayName;
+        });
+
+        return { data: converted, changed: true };
+      }
+
+      function getTeamsObject() {
+        const raw = getLocalStorage("teams") || {};
+        const { data, changed } = normalizeTeamsStorage(raw);
+        if (changed) setTeamsObject(data);
+        return data;
+      }
+
+      function setTeamsObject(obj) {
+        const entries = {};
+        Object.entries(obj || {}).forEach(([key, value]) => {
+          if (!key || !value) return;
+          entries[key] = {
+            players: ensurePlayersArray(value.players),
+            displayName: deriveTeamDisplay(value.players, value.displayName || ''),
+            wins: Number(value.wins) || 0,
+            losses: Number(value.losses) || 0,
+            gamesPlayed: Number(value.gamesPlayed) || 0,
+          };
+        });
+        setLocalStorage("teams", { __storageVersion: TEAM_STORAGE_VERSION, ...entries });
+      }
+
+      function ensureTeamEntry(teamsObj, players, fallbackDisplay = '') {
+        const normalizedPlayers = ensurePlayersArray(players);
+        const key = buildTeamKey(normalizedPlayers);
+        if (!key) return { teams: teamsObj, key: null };
+        if (!teamsObj[key]) {
+          teamsObj[key] = {
+            players: normalizedPlayers,
+            displayName: deriveTeamDisplay(normalizedPlayers, fallbackDisplay || 'Unnamed Team'),
+            wins: 0,
+            losses: 0,
+            gamesPlayed: 0,
+          };
+        } else {
+          teamsObj[key].players = ensurePlayersArray(teamsObj[key].players);
+          if (!teamsObj[key].displayName) {
+            teamsObj[key].displayName = deriveTeamDisplay(normalizedPlayers, fallbackDisplay || 'Unnamed Team');
+          }
+        }
+        return { teams: teamsObj, key };
+      }
+
       function updateTeamsStatsOnGameEnd(winner) {
-        if (!state.usTeamName || !state.demTeamName) return;
+        const usPlayers = ensurePlayersArray(state.usPlayers);
+        const demPlayers = ensurePlayersArray(state.demPlayers);
+        const usKeyRaw = buildTeamKey(usPlayers);
+        const demKeyRaw = buildTeamKey(demPlayers);
+        if (!usKeyRaw || !demKeyRaw) return;
+
         const teams = getTeamsObject();
-        const usKey = state.usTeamName.trim(), demKey = state.demTeamName.trim();
-        if (!teams[usKey]) teams[usKey] = { wins: 0, losses: 0, gamesPlayed: 0 };
-        if (!teams[demKey]) teams[demKey] = { wins: 0, losses: 0, gamesPlayed: 0 };
+        const { key: usKey } = ensureTeamEntry(teams, usPlayers, state.usTeamName || 'Us');
+        const { key: demKey } = ensureTeamEntry(teams, demPlayers, state.demTeamName || 'Dem');
+        if (!usKey || !demKey) return;
+
         teams[usKey].gamesPlayed++;
         teams[demKey].gamesPlayed++;
-        if (winner === "us") { teams[usKey].wins++; teams[demKey].losses++; }
-        else if (winner === "dem") { teams[demKey].wins++; teams[usKey].losses++; }
+        if (winner === "us") {
+          teams[usKey].wins++;
+          teams[demKey].losses++;
+        } else if (winner === "dem") {
+          teams[demKey].wins++;
+          teams[usKey].losses++;
+        }
         setTeamsObject(teams);
       }
       function recalcTeamsStats() { /* See getStatistics for actual calculation logic */ }
-      function addTeamIfNotExists(teamName) {
+      function addTeamIfNotExists(players, display = '') {
         const teams = getTeamsObject();
-        if (!teams[teamName]) teams[teamName] = { wins: 0, losses: 0, gamesPlayed: 0 };
-        setTeamsObject(teams);
+        const { key } = ensureTeamEntry(teams, players, display);
+        if (key) setTeamsObject(teams);
       }
 
       // --- Menu & Modal Toggling ---
@@ -2337,15 +2564,26 @@ function handleGameOverSaveClick(e) {
         let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
         const lastRoundTotals = state.rounds.length ? state.rounds[state.rounds.length - 1].runningTotals : { us: 0, dem: 0 };
+        const usPlayers = ensurePlayersArray(state.usPlayers);
+        const demPlayers = ensurePlayersArray(state.demPlayers);
+        const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
+        const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+        const usTeamKey = buildTeamKey(usPlayers) || null;
+        const demTeamKey = buildTeamKey(demPlayers) || null;
         const gameObj = {
-            usTeamName: state.usTeamName, demTeamName: state.demTeamName,
+            usTeamName: usDisplay,
+            demTeamName: demDisplay,
+            usPlayers,
+            demPlayers,
+            usTeamKey,
+            demTeamKey,
             rounds: state.rounds, finalScore: lastRoundTotals,
             winner: state.winner, victoryMethod: state.victoryMethod,
             timestamp: new Date().toISOString(), durationMs: finalAccumulated,
             // Simplified playerStats, more complex stats are in general statistics
             playerStats: { 
-                [state.usTeamName]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
-                [state.demTeamName]: { totalPoints: lastRoundTotals.dem, wins: state.winner === "dem" ? 1 : 0 }
+                [usDisplay]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
+                [demDisplay]: { totalPoints: lastRoundTotals.dem, wins: state.winner === "dem" ? 1 : 0 }
             }
         };
         const savedGames = getLocalStorage("savedGames", []);
@@ -2376,12 +2614,23 @@ function handleGameOverSaveClick(e) {
         let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
         const finalScore = state.rounds.length ? state.rounds[state.rounds.length-1].runningTotals : {us:0, dem:0};
         const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
+        const usPlayers = ensurePlayersArray(state.usPlayers);
+        const demPlayers = ensurePlayersArray(state.demPlayers);
+        const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
+        const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+        const usTeamKey = buildTeamKey(usPlayers) || null;
+        const demTeamKey = buildTeamKey(demPlayers) || null;
 
         const frozenGame = {
             name: `FROZEN-${new Date().toLocaleTimeString()}`, // More readable name
-            usName: state.usTeamName, demName: state.demTeamName,
+            usName: usDisplay,
+            demName: demDisplay,
+            usPlayers,
+            demPlayers,
+            usTeamKey,
+            demTeamKey,
             finalScore, // Current scores when frozen
-            lastBid: lastRound.bidAmount ? `${lastRound.bidAmount} (${lastRound.biddingTeam === "us" ? state.usTeamName : state.demTeamName})` : "N/A",
+            lastBid: lastRound.bidAmount ? `${lastRound.bidAmount} (${lastRound.biddingTeam === "us" ? usDisplay : demDisplay})` : "N/A",
             winner: null, victoryMethod: null, // Game is not over
             rounds: state.rounds, timestamp: new Date().toISOString(),
             accumulatedTime: finalAccumulated,
@@ -2405,6 +2654,10 @@ function handleGameOverSaveClick(e) {
           `Load frozen game "${chosen.name || 'Untitled'}"? Current game will be overwritten.`,
           () => {
             closeConfirmationModal();
+            const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
+            const chosenDemPlayers = ensurePlayersArray(chosen.demPlayers || parseLegacyTeamName(chosen.demName));
+            const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
+            const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
             // Restore all relevant game state aspects
             updateState({
                 rounds: chosen.rounds || [],
@@ -2418,8 +2671,10 @@ function handleGameOverSaveClick(e) {
                 error: "", // Clear any previous error
                 lastBidAmount: chosen.lastBidAmount || null,
                 lastBidTeam: chosen.lastBidTeam || null,
-                usTeamName: chosen.usName || "Us",
-                demTeamName: chosen.demName || "Dem",
+                usPlayers: chosenUsPlayers,
+                demPlayers: chosenDemPlayers,
+                usTeamName: chosenUsName,
+                demTeamName: chosenDemName,
                 accumulatedTime: Math.min(chosen.accumulatedTime || 0, MAX_GAME_TIME_MS), // Cap accumulated time
                 startTime: Date.now(), // Restart timer
                 showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
@@ -3197,48 +3452,103 @@ function handleGameOverSaveClick(e) {
       }
       function populateTeamSelects() {
         const teamsObj = getTeamsObject();
-        const sortedNames = Object.keys(teamsObj).filter(name => name !== "Us" && name !== "Dem").sort((a,b) => a.localeCompare(b));
-        const usSelect = document.getElementById("selectUsTeam");
-        const demSelect = document.getElementById("selectDemTeam");
-        [usSelect, demSelect].forEach(sel => {
-            sel.innerHTML = '<option value="">-- Select or Add --</option>'; // Default empty option
-            sortedNames.forEach(name => sel.add(new Option(name, name)));
-            sel.add(new Option("Add New Team...", "NEW_TEAM"));
-        });
-        // Set current team names if they exist and are not "Us"/"Dem"
-        if (state.usTeamName && state.usTeamName !== "Us" && sortedNames.includes(state.usTeamName)) usSelect.value = state.usTeamName;
-        if (state.demTeamName && state.demTeamName !== "Dem" && sortedNames.includes(state.demTeamName)) demSelect.value = state.demTeamName;
+        const entrySortFn = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+        const teamEntries = Object.entries(teamsObj).map(([key, value]) => ({
+          key,
+          players: ensurePlayersArray(value.players),
+          displayName: deriveTeamDisplay(value.players, value.displayName || ''),
+        })).filter(entry => entry.displayName).sort((a, b) => entrySortFn(a.displayName, b.displayName));
 
-        // Show/hide new team name input based on selection
-        const handleSelectChange = (selectEl, inputElId) => {
-            document.getElementById(inputElId).classList.toggle("hidden", selectEl.value !== "NEW_TEAM");
+        const configureTeamSection = (selectId, inputIds, currentPlayers) => {
+          const selectEl = document.getElementById(selectId);
+          if (!selectEl) return;
+          selectEl.innerHTML = '<option value="">-- Select saved pairing --</option>';
+          teamEntries.forEach(entry => {
+            const option = new Option(entry.displayName, entry.key);
+            selectEl.add(option);
+          });
+
+          const currentKey = buildTeamKey(currentPlayers);
+          if (currentKey && teamsObj[currentKey]) {
+            selectEl.value = currentKey;
+          } else {
+            selectEl.value = "";
+          }
+
+          selectEl.onchange = () => {
+            const chosen = teamsObj[selectEl.value];
+            if (!chosen) return;
+            const chosenPlayers = ensurePlayersArray(chosen.players);
+            inputIds.forEach((id, idx) => {
+              const inputEl = document.getElementById(id);
+              if (inputEl) inputEl.value = chosenPlayers[idx] || "";
+            });
+          };
+
+          inputIds.forEach((id, idx) => {
+            const inputEl = document.getElementById(id);
+            if (inputEl) inputEl.value = sanitizePlayerName(currentPlayers[idx] || "");
+          });
         };
-        usSelect.onchange = () => handleSelectChange(usSelect, "newUsTeamName");
-        demSelect.onchange = () => handleSelectChange(demSelect, "newDemTeamName");
-        // Initial visibility check
-        handleSelectChange(usSelect, "newUsTeamName");
-        handleSelectChange(demSelect, "newDemTeamName");
+
+        configureTeamSection("selectUsTeam", ["usPlayerOne", "usPlayerTwo"], ensurePlayersArray(state.usPlayers));
+        configureTeamSection("selectDemTeam", ["demPlayerOne", "demPlayerTwo"], ensurePlayersArray(state.demPlayers));
+
+        const playerSuggestions = new Set();
+        teamEntries.forEach(entry => entry.players.forEach(name => { if (name) playerSuggestions.add(name); }));
+        ensurePlayersArray(state.usPlayers).forEach(name => { if (name) playerSuggestions.add(name); });
+        ensurePlayersArray(state.demPlayers).forEach(name => { if (name) playerSuggestions.add(name); });
+        const datalist = document.getElementById("playerNameSuggestions");
+        if (datalist) {
+          datalist.innerHTML = Array.from(playerSuggestions)
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+            .map(name => `<option value="${name.replace(/"/g, '&quot;')}"></option>`)
+            .join("\n");
+        }
       }
       function handleTeamSelectionSubmit(e) {
         e.preventDefault();
-        const getTeamName = (selId, inputId) => {
-            const selVal = document.getElementById(selId).value;
-            return selVal === "NEW_TEAM" ? document.getElementById(inputId).value.trim() : selVal;
-        };
-        let finalUs = getTeamName("selectUsTeam", "newUsTeamName");
-        let finalDem = getTeamName("selectDemTeam", "newDemTeamName");
 
-        if (!finalUs && !finalDem && (state.usTeamName && state.demTeamName)) { // If user cancels with existing names, keep them
-            finalUs = state.usTeamName;
-            finalDem = state.demTeamName;
-        } else { // Validate new/selected names
-            if (!finalUs || finalUs === "NEW_TEAM") { alert("Please provide a name for Team 'Us'."); return; }
-            if (!finalDem || finalDem === "NEW_TEAM") { alert("Please provide a name for Team 'Dem'."); return; }
-            if (finalUs === finalDem) { alert("Team names must be different."); return; }
+        const usPlayers = ensurePlayersArray([
+          document.getElementById("usPlayerOne")?.value,
+          document.getElementById("usPlayerTwo")?.value,
+        ]);
+        const demPlayers = ensurePlayersArray([
+          document.getElementById("demPlayerOne")?.value,
+          document.getElementById("demPlayerTwo")?.value,
+        ]);
+
+        if (!usPlayers[0] || !usPlayers[1]) {
+          alert("Please enter both player names for Team 'Us'.");
+          return;
+        }
+        if (!demPlayers[0] || !demPlayers[1]) {
+          alert("Please enter both player names for Team 'Dem'.");
+          return;
+        }
+        if (usPlayers[0].toLowerCase() === usPlayers[1].toLowerCase()) {
+          alert("Team 'Us' needs two different players.");
+          return;
+        }
+        if (demPlayers[0].toLowerCase() === demPlayers[1].toLowerCase()) {
+          alert("Team 'Dem' needs two different players.");
+          return;
         }
 
-        addTeamIfNotExists(finalUs); addTeamIfNotExists(finalDem);
-        updateState({ usTeamName: finalUs, demTeamName: finalDem });
+        const usKey = buildTeamKey(usPlayers);
+        const demKey = buildTeamKey(demPlayers);
+        if (!usKey || !demKey) {
+          alert("Problem building team combinations. Please check the names and try again.");
+          return;
+        }
+        if (usKey === demKey) {
+          alert("Both teams cannot have the same two players.");
+          return;
+        }
+
+        addTeamIfNotExists(usPlayers, formatTeamDisplay(usPlayers));
+        addTeamIfNotExists(demPlayers, formatTeamDisplay(demPlayers));
+        updateState({ usPlayers, demPlayers });
         saveCurrentGameState();
         closeTeamSelectionModal();
         if (pendingGameAction === "freeze") { confirmFreeze(); }
@@ -3645,8 +3955,8 @@ function handleGameOverSaveClick(e) {
         let games = getLocalStorage("savedGames", []);
         if (searchTerm) {
             games = games.filter(g => 
-                (g.usTeamName || "Us").toLowerCase().includes(searchTerm) || 
-                (g.demTeamName || "Dem").toLowerCase().includes(searchTerm) ||
+                getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
+                getGameTeamDisplay(g, 'dem').toLowerCase().includes(searchTerm) ||
                 new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
             );
         }
@@ -3655,17 +3965,19 @@ function handleGameOverSaveClick(e) {
         document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', games.length > 0);
         container.innerHTML = games.map((g, idx) => { // Use original index for deletion/viewing
             const originalIndex = getLocalStorage("savedGames", []).findIndex(sg => sg.timestamp === g.timestamp); // Find original index
+            const usDisplay = getGameTeamDisplay(g, 'us');
+            const demDisplay = getGameTeamDisplay(g, 'dem');
             const usS = g.finalScore.us, demS = g.finalScore.dem;
             const usW = g.winner === "us", demW = g.winner === "dem";
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
             return `
             <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
-              ${usW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${g.usTeamName || "Us"}</div>` : ''}
-              ${demW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${g.demTeamName || "Dem"}</div>` : ''}
+              ${usW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplay}</div>` : ''}
+              ${demW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplay}</div>` : ''}
               <div class="p-5">
                 <div class="flex justify-between items-start mb-2">
                   <div>
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${g.usTeamName || "Us"} vs ${g.demTeamName || "Dem"}</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
                     <div class="text-sm text-gray-500 dark:text-gray-400">${dateStr}</div>
                   </div>
                   <div class="flex space-x-1">
@@ -3674,8 +3986,8 @@ function handleGameOverSaveClick(e) {
                   </div>
                 </div>
                 <div class="text-sm">
-                  <span class="${usW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${g.usTeamName || "Us"}: ${usS}</span> | 
-                  <span class="${demW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${g.demTeamName || "Dem"}: ${demS}</span>
+                  <span class="${usW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplay}: ${usS}</span> | 
+                  <span class="${demW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplay}: ${demS}</span>
                 </div>
                 <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
                   ${g.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${g.victoryMethod}</span>` : ''}
@@ -3689,8 +4001,8 @@ function handleGameOverSaveClick(e) {
         let games = getLocalStorage("freezerGames", []);
         if (searchTerm) {
             games = games.filter(g => 
-                (g.usName || "Us").toLowerCase().includes(searchTerm) || 
-                (g.demName || "Dem").toLowerCase().includes(searchTerm) ||
+                getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
+                getGameTeamDisplay(g, 'dem').toLowerCase().includes(searchTerm) ||
                 new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
             );
         }
@@ -3699,16 +4011,18 @@ function handleGameOverSaveClick(e) {
         document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', games.length > 0);
         container.innerHTML = games.map((g, idx) => {
             const originalIndex = getLocalStorage("freezerGames", []).findIndex(fg => fg.timestamp === g.timestamp);
+            const usDisplay = getGameTeamDisplay(g, 'us');
+            const demDisplay = getGameTeamDisplay(g, 'dem');
             const usS = g.finalScore.us, demS = g.finalScore.dem;
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
-            const leadInfo = usS > demS ? `${g.usName || "Us"} leads by ${usS - demS}` : (demS > usS ? `${g.demName || "Dem"} leads by ${demS - usS}` : "Tied");
+            const leadInfo = usS > demS ? `${usDisplay} leads by ${usS - demS}` : (demS > usS ? `${demDisplay} leads by ${demS - usS}` : "Tied");
             return `
             <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
               <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfo}</div>
               <div class="p-5">
                 <div class="flex justify-between items-start mb-2">
                   <div>
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${g.usName || "Us"} vs ${g.demName || "Dem"}</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
                     <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${dateStr}</div>
                   </div>
                   <div class="flex space-x-1">
@@ -3717,7 +4031,7 @@ function handleGameOverSaveClick(e) {
                   </div>
                 </div>
                 <div class="text-sm text-gray-700 dark:text-gray-300">
-                  <span>${g.usName || "Us"}: ${usS}</span> | <span>${g.demName || "Dem"}: ${demS}</span>
+                  <span>${usDisplay}: ${usS}</span> | <span>${demDisplay}: ${demS}</span>
                 </div>
                 <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
                   ${g.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${g.lastBid}</span>` : ''}
@@ -3781,7 +4095,9 @@ function handleGameOverSaveClick(e) {
 
         savedGames.forEach(game => {
             totalGameDuration += game.durationMs || 0;
-            const teamsInGame = [game.usTeamName || "Us", game.demTeamName || "Dem"];
+            const usDisplay = getGameTeamDisplay(game, 'us');
+            const demDisplay = getGameTeamDisplay(game, 'dem');
+            const teamsInGame = [usDisplay, demDisplay];
             teamsInGame.forEach(teamName => {
                 if (!teamData[teamName]) {
                     teamData[teamName] = { name: teamName, gamesPlayed: 0, wins: 0, totalBidAmount: 0, bidsMade: 0, bidsSucceeded: 0, handsPlayed: 0, handsWon: 0, sandbagGames: 0, perfect360s: 0, lastPlayed: 0 };
@@ -3792,16 +4108,16 @@ function handleGameOverSaveClick(e) {
                 }
             });
 
-            if (game.winner === "us") teamData[game.usTeamName || "Us"].wins++;
-            else if (game.winner === "dem") teamData[game.demTeamName || "Dem"].wins++;
+            if (game.winner === "us") teamData[usDisplay].wins++;
+            else if (game.winner === "dem") teamData[demDisplay].wins++;
             
-            if (isGameSandbagForTeam(game, game.usTeamName || "Us")) teamData[game.usTeamName || "Us"].sandbagGames++;
-            if (isGameSandbagForTeam(game, game.demTeamName || "Dem")) teamData[game.demTeamName || "Dem"].sandbagGames++;
+            if (isGameSandbagForTeam(game, usDisplay)) teamData[usDisplay].sandbagGames++;
+            if (isGameSandbagForTeam(game, demDisplay)) teamData[demDisplay].sandbagGames++;
 
             game.rounds.forEach(round => {
                 sumOfBids += round.bidAmount; totalBids++;
-                const biddingTeamName = round.biddingTeam === "us" ? (game.usTeamName || "Us") : (game.demTeamName || "Dem");
-                const nonBiddingTeamName = round.biddingTeam === "us" ? (game.demTeamName || "Dem") : (game.usTeamName || "Us");
+                const biddingTeamName = round.biddingTeam === "us" ? usDisplay : demDisplay;
+                const nonBiddingTeamName = round.biddingTeam === "us" ? demDisplay : usDisplay;
 
                 teamData[biddingTeamName].handsPlayed++;
                 teamData[nonBiddingTeamName].handsPlayed++;
@@ -3811,11 +4127,11 @@ function handleGameOverSaveClick(e) {
                 if ((round.biddingTeam === "us" && round.usPoints >= round.bidAmount) || (round.biddingTeam === "dem" && round.demPoints >= round.bidAmount)) {
                     teamData[biddingTeamName].bidsSucceeded++;
                 }
-                if (round.usPoints > round.demPoints) teamData[game.usTeamName || "Us"].handsWon++;
-                else if (round.demPoints > round.usPoints) teamData[game.demTeamName || "Dem"].handsWon++;
+                if (round.usPoints > round.demPoints) teamData[usDisplay].handsWon++;
+                else if (round.demPoints > round.usPoints) teamData[demDisplay].handsWon++;
                 
-                if (round.usPoints === 360) teamData[game.usTeamName || "Us"].perfect360s++;
-                if (round.demPoints === 360) teamData[game.demTeamName || "Dem"].perfect360s++;
+                if (round.usPoints === 360) teamData[usDisplay].perfect360s++;
+                if (round.demPoints === 360) teamData[demDisplay].perfect360s++;
             });
         });
 
@@ -3884,13 +4200,37 @@ let statVal = lookup[additionalStatKey] ?? '0';
       }
       function handleDeleteTeam(teamName) {
         openConfirmationModal(`Delete team "${teamName}" and all game data? This is irreversible.`, () => {
-            const teams = getTeamsObject(); delete teams[teamName]; setTeamsObject(teams);
+            const teams = getTeamsObject();
+            let keyToDelete = null;
+            Object.entries(teams).forEach(([key, value]) => {
+              const display = deriveTeamDisplay(value.players, value.displayName || '');
+              if (!keyToDelete && display === teamName) keyToDelete = key;
+            });
+            if (keyToDelete) {
+              delete teams[keyToDelete];
+              setTeamsObject(teams);
+            }
+
             let savedGames = getLocalStorage("savedGames");
-            savedGames = savedGames.filter(g => (g.usTeamName || "Us") !== teamName && (g.demTeamName || "Dem") !== teamName);
+            savedGames = savedGames.filter(g => {
+              const usDisplay = g.usTeamName || "Us";
+              const demDisplay = g.demTeamName || "Dem";
+              const sameDisplay = usDisplay === teamName || demDisplay === teamName;
+              const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
+              return !(sameDisplay || sameKey);
+            });
             setLocalStorage("savedGames", savedGames);
+
             let freezerGames = getLocalStorage("freezerGames");
-            freezerGames = freezerGames.filter(g => (g.usName || "Us") !== teamName && (g.demName || "Dem") !== teamName);
+            freezerGames = freezerGames.filter(g => {
+              const usDisplay = g.usName || "Us";
+              const demDisplay = g.demName || "Dem";
+              const sameDisplay = usDisplay === teamName || demDisplay === teamName;
+              const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
+              return !(sameDisplay || sameKey);
+            });
             setLocalStorage("freezerGames", freezerGames);
+
             closeConfirmationModal();
             renderStatisticsContent(); // Refresh stats modal
         }, closeConfirmationModal);
@@ -3935,9 +4275,123 @@ let statVal = lookup[additionalStatKey] ?? '0';
         console.log("Settings loading completed");
       }
 
+      function migrateTeamsCollection() {
+        const raw = getLocalStorage("teams") || {};
+        const { data, changed } = normalizeTeamsStorage(raw);
+        if (changed || raw.__storageVersion !== TEAM_STORAGE_VERSION) {
+          setTeamsObject(data);
+        }
+      }
+
+      function migrateSavedGamesTeamData() {
+        const savedGames = getLocalStorage("savedGames", []);
+        if (!Array.isArray(savedGames) || !savedGames.length) return;
+        let changed = false;
+        const migrated = savedGames.map(game => {
+          if (!game || typeof game !== 'object') return game;
+          const usPlayers = ensurePlayersArray(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
+          const demPlayers = ensurePlayersArray(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
+          const usDisplay = deriveTeamDisplay(usPlayers, game.usTeamName || game.usName || 'Us') || 'Us';
+          const demDisplay = deriveTeamDisplay(demPlayers, game.demTeamName || game.demName || 'Dem') || 'Dem';
+          const usTeamKey = buildTeamKey(usPlayers) || null;
+          const demTeamKey = buildTeamKey(demPlayers) || null;
+
+          if (!playersEqual(game.usPlayers, usPlayers) || !playersEqual(game.demPlayers, demPlayers) ||
+              (game.usTeamName || '') !== usDisplay || (game.demTeamName || '') !== demDisplay ||
+              (game.usTeamKey || null) !== usTeamKey || (game.demTeamKey || null) !== demTeamKey) {
+            changed = true;
+          }
+
+          return {
+            ...game,
+            usPlayers,
+            demPlayers,
+            usTeamName: usDisplay,
+            demTeamName: demDisplay,
+            usTeamKey,
+            demTeamKey,
+          };
+        });
+        if (changed) setLocalStorage("savedGames", migrated);
+      }
+
+      function migrateFreezerGamesTeamData() {
+        const freezerGames = getLocalStorage("freezerGames", []);
+        if (!Array.isArray(freezerGames) || !freezerGames.length) return;
+        let changed = false;
+        const migrated = freezerGames.map(game => {
+          if (!game || typeof game !== 'object') return game;
+          const usPlayers = ensurePlayersArray(game.usPlayers || parseLegacyTeamName(game.usName));
+          const demPlayers = ensurePlayersArray(game.demPlayers || parseLegacyTeamName(game.demName));
+          const usDisplay = deriveTeamDisplay(usPlayers, game.usName || 'Us') || 'Us';
+          const demDisplay = deriveTeamDisplay(demPlayers, game.demName || 'Dem') || 'Dem';
+          const usTeamKey = buildTeamKey(usPlayers) || null;
+          const demTeamKey = buildTeamKey(demPlayers) || null;
+
+          if (!playersEqual(game.usPlayers, usPlayers) || !playersEqual(game.demPlayers, demPlayers) ||
+              (game.usName || '') !== usDisplay || (game.demName || '') !== demDisplay ||
+              (game.usTeamKey || null) !== usTeamKey || (game.demTeamKey || null) !== demTeamKey) {
+            changed = true;
+          }
+
+          return {
+            ...game,
+            usPlayers,
+            demPlayers,
+            usName: usDisplay,
+            demName: demDisplay,
+            usTeamKey,
+            demTeamKey,
+          };
+        });
+        if (changed) setLocalStorage("freezerGames", migrated);
+      }
+
+      function migrateActiveGameStateTeams() {
+        let rawState = null;
+        try {
+          const stored = localStorage.getItem(ACTIVE_GAME_KEY);
+          if (stored) rawState = JSON.parse(stored);
+        } catch (err) {
+          console.warn('Active game state migration skipped due to parse error.', err);
+          return;
+        }
+        if (!rawState || typeof rawState !== 'object') return;
+
+        const usPlayers = ensurePlayersArray(rawState.usPlayers || parseLegacyTeamName(rawState.usTeamName));
+        const demPlayers = ensurePlayersArray(rawState.demPlayers || parseLegacyTeamName(rawState.demTeamName));
+        const usDisplay = deriveTeamDisplay(usPlayers, rawState.usTeamName || 'Us') || 'Us';
+        const demDisplay = deriveTeamDisplay(demPlayers, rawState.demTeamName || 'Dem') || 'Dem';
+
+        if (playersEqual(rawState.usPlayers, usPlayers) && playersEqual(rawState.demPlayers, demPlayers) &&
+            (rawState.usTeamName || 'Us') === usDisplay && (rawState.demTeamName || 'Dem') === demDisplay) {
+          return;
+        }
+
+        const updatedState = {
+          ...rawState,
+          usPlayers,
+          demPlayers,
+          usTeamName: usDisplay,
+          demTeamName: demDisplay,
+        };
+        setLocalStorage(ACTIVE_GAME_KEY, updatedState);
+      }
+
+      function performTeamPlayerMigration() {
+        try {
+          migrateTeamsCollection();
+          migrateSavedGamesTeamData();
+          migrateFreezerGamesTeamData();
+          migrateActiveGameStateTeams();
+        } catch (err) {
+          console.error('Team/player migration encountered an issue:', err);
+        }
+      }
+
       // --- Initialization ---
       document.addEventListener("DOMContentLoaded", () => {
-        // Removed performDataMigration();
+        performTeamPlayerMigration();
         initializeDarkMode();
         initializeTheme(); // Predefined themes
         initializeCustomThemeColors(); // Custom primary/accent
