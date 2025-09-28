@@ -218,329 +218,38 @@
       }
 
       /* Modal Styling */
-      :root {
-        --modal-ease: cubic-bezier(0.4, 0, 0.2, 1);
-        --modal-duration: 0.32s;
-      }
       .modal {
         opacity: 0;
-        pointer-events: none;
-        transition: opacity var(--modal-duration) var(--modal-ease);
+        transform: scale(0.95);
+        transition:
+          transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+          opacity 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
       }
       .modal.hidden {
         display: none;
       }
-      .modal.modal-visible {
+      .modal:not(.hidden) {
         opacity: 1;
-        pointer-events: auto;
+        transform: scale(1);
       }
-      .modal.modal-closing {
-        pointer-events: none;
+      .modal > div { /* Styling for the direct child (content box) of a modal */
+        margin: 1rem auto; /* Centering and spacing */
+        max-height: calc(100vh - 2rem); /* Prevent overflow */
       }
-      .modal > div { /* Direct child panel */
-        margin: 1rem auto;
-        max-height: calc(100vh - 2rem);
-      }
-      .modal .modal-panel {
-        opacity: 0;
-        transform: translateY(16px) scale(0.98);
-        transition:
-          opacity var(--modal-duration) var(--modal-ease),
-          transform var(--modal-duration) var(--modal-ease);
-      }
-      .modal.modal-visible .modal-panel {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-      .modal.modal-closing .modal-panel {
-        opacity: 0;
-        transform: translateY(12px) scale(0.985);
-      }
-      #confirmationModal {
+      #confirmationModal { /* Ensure confirmation modal is on top */
         z-index: 9999;
       }
-      #savedGamesModal {
-        z-index: 9990;
+      #savedGamesModal { /* Ensure saved games modal z-index for backdrop-blur */
+         z-index: 9990; /* Slightly lower than confirmation, but above others */
       }
-      #themeModal {
-        z-index: 9995;
+       #themeModal {
+        z-index: 9995; /* Above savedGames, below confirmation */
       }
       #teamSelectionModal {
-        z-index: 9998;
+        z-index: 9998;   /* anything > 49 is fine; keep it below #confirmationModal (9999) */
       }
       #viewSavedGameModal {
-        z-index: 9996;
-      }
-
-      /* Saved Games Modal Enhancements */
-      .games-modal-panel {
-        backdrop-filter: blur(0.5px);
-      }
-      .games-modal-header {
-        gap: 1.25rem;
-      }
-      .games-tablist {
-        position: relative;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.5rem;
-        padding: 0.5rem;
-        margin: 0 1.5rem 0.5rem;
-        border-radius: 9999px;
-        background: rgba(59, 130, 246, 0.12);
-      }
-      html.dark .games-tablist {
-        background: rgba(37, 99, 235, 0.22);
-      }
-      .games-tab-indicator {
-        position: absolute;
-        top: 0.5rem;
-        left: 0.5rem;
-        height: calc(100% - 1rem);
-        width: calc(50% - 0.5rem);
-        border-radius: 9999px;
-        background: linear-gradient(135deg, var(--primary-color), #2563eb);
-        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
-        transition: transform 0.32s var(--modal-ease), width 0.32s var(--modal-ease);
-        pointer-events: none;
-        z-index: 0;
-      }
-      html.dark .games-tab-indicator {
-        background: linear-gradient(135deg, #2563eb, #60a5fa);
-        box-shadow: 0 12px 26px rgba(96, 165, 250, 0.28);
-      }
-      .games-tab-button {
-        position: relative;
-        z-index: 1;
-        border-radius: 9999px;
-        padding: 0.65rem 1.25rem;
-        font-weight: 600;
-        font-size: 0.95rem;
-        letter-spacing: 0.01em;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        color: #334155;
-        transition: color 0.25s var(--modal-ease), transform 0.25s var(--modal-ease);
-      }
-      .games-tab-button:hover {
-        color: #1d4ed8;
-        transform: translateY(-1px);
-      }
-      html.dark .games-tab-button {
-        color: #cbd5f5;
-      }
-      .games-tab-button.is-active {
-        color: #0f172a;
-      }
-      html.dark .games-tab-button.is-active {
-        color: #e0ecff;
-      }
-      .games-tab-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 1.5rem;
-        height: 1.5rem;
-        padding: 0 0.4rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        background: rgba(15, 23, 42, 0.08);
-      }
-      html.dark .games-tab-badge {
-        background: rgba(148, 163, 184, 0.22);
-      }
-
-      .games-toolbar {
-        display: grid;
-        gap: 0.75rem;
-        padding: 1rem 1.5rem;
-        background: rgba(15, 23, 42, 0.02);
-        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-      }
-      html.dark .games-toolbar {
-        background: rgba(30, 41, 59, 0.55);
-        border-color: rgba(148, 163, 184, 0.24);
-      }
-      @media (min-width: 640px) {
-        .games-toolbar {
-          grid-template-columns: 1fr minmax(0, 220px);
-          align-items: center;
-        }
-      }
-      .games-search {
-        position: relative;
-      }
-      .games-search input {
-        width: 100%;
-        border-radius: 0.85rem;
-        padding: 0.75rem 1rem 0.75rem 2.75rem;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(255, 255, 255, 0.85);
-        transition: border-color 0.25s var(--modal-ease), box-shadow 0.25s var(--modal-ease);
-      }
-      .games-search svg {
-        position: absolute;
-        top: 50%;
-        left: 1rem;
-        transform: translateY(-50%);
-        width: 1.1rem;
-        height: 1.1rem;
-        color: #64748b;
-        pointer-events: none;
-      }
-      .games-search input:focus {
-        border-color: rgba(37, 99, 235, 0.45);
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
-        outline: none;
-      }
-      html.dark .games-search input {
-        background: rgba(30, 41, 59, 0.7);
-        border-color: rgba(148, 163, 184, 0.35);
-        color: #f8fafc;
-      }
-      html.dark .games-search svg {
-        color: #cbd5f5;
-      }
-      .modern-select {
-        appearance: none;
-        width: 100%;
-        border-radius: 0.85rem;
-        padding: 0.75rem 1rem;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(255, 255, 255, 0.9);
-        font-weight: 500;
-        color: #1f2937;
-        transition: border-color 0.25s var(--modal-ease), box-shadow 0.25s var(--modal-ease);
-        background-image: linear-gradient(45deg, transparent 50%, rgba(99, 102, 241, 0.6) 50%),
-          linear-gradient(135deg, rgba(99, 102, 241, 0.6) 50%, transparent 50%);
-        background-position: calc(100% - 1.25rem) calc(50% + 0.35rem), calc(100% - 0.9rem) calc(50% + 0.35rem);
-        background-size: 6px 6px;
-        background-repeat: no-repeat;
-      }
-      .modern-select:focus {
-        border-color: rgba(37, 99, 235, 0.5);
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
-        outline: none;
-      }
-      html.dark .modern-select {
-        background: rgba(30, 41, 59, 0.7);
-        border-color: rgba(148, 163, 184, 0.35);
-        color: #f8fafc;
-        background-image: linear-gradient(45deg, transparent 50%, rgba(96, 165, 250, 0.7) 50%),
-          linear-gradient(135deg, rgba(96, 165, 250, 0.7) 50%, transparent 50%);
-      }
-
-      .games-tab-container {
-        position: relative;
-        flex: 1 1 auto;
-        min-height: 320px;
-        background: inherit;
-        overflow: hidden;
-      }
-      .games-tab-section {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 1.25rem;
-        padding: 1.5rem;
-        overflow-y: auto;
-        opacity: 0;
-        transform: translateY(14px);
-        pointer-events: none;
-        transition: opacity 0.28s var(--modal-ease), transform 0.32s var(--modal-ease);
-      }
-      .games-tab-section.is-active {
-        opacity: 1;
-        transform: translateY(0);
-        pointer-events: auto;
-        position: relative;
-      }
-      .games-tab-section::-webkit-scrollbar {
-        width: 6px;
-      }
-      .games-tab-section::-webkit-scrollbar-thumb {
-        border-radius: 9999px;
-        background: rgba(148, 163, 184, 0.5);
-      }
-      html.dark .games-tab-section::-webkit-scrollbar-thumb {
-        background: rgba(226, 232, 240, 0.4);
-      }
-
-      .games-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1.25rem;
-      }
-      .games-card {
-        position: relative;
-        border-radius: 1rem;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: rgba(255, 255, 255, 0.92);
-        padding: 1.25rem;
-        transition: transform 0.28s var(--modal-ease), box-shadow 0.28s var(--modal-ease);
-        overflow: hidden;
-      }
-      .games-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.14);
-      }
-      html.dark .games-card {
-        background: rgba(30, 41, 59, 0.75);
-        border-color: rgba(148, 163, 184, 0.28);
-      }
-      .games-card::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(14, 165, 233, 0.08));
-        opacity: 0;
-        transition: opacity 0.28s var(--modal-ease);
-        pointer-events: none;
-      }
-      .games-card:hover::after {
-        opacity: 1;
-      }
-      .games-card[data-animate] {
-        opacity: 0;
-        transform: translateY(12px);
-        animation: games-card-enter 0.36s var(--modal-ease) forwards;
-      }
-      @keyframes games-card-enter {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .games-empty {
-        text-align: center;
-        padding: 3rem 1rem;
-        border-radius: 1rem;
-        background: rgba(241, 245, 249, 0.6);
-        border: 1px dashed rgba(148, 163, 184, 0.4);
-      }
-      html.dark .games-empty {
-        background: rgba(30, 41, 59, 0.6);
-        border-color: rgba(148, 163, 184, 0.3);
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .modal,
-        .modal .modal-panel,
-        .games-tab-section,
-        .games-card[data-animate],
-        .games-tab-indicator,
-        .games-tab-button,
-        .games-toolbar,
-        .modern-select {
-          animation: none !important;
-          transition: none !important;
-        }
+        z-index: 9996; /* Above savedGamesModal and themeModal, below teamSelection and confirmation */
       }
 
 
@@ -752,54 +461,51 @@
 
     <!-- Saved Games Modal -->
     <div id="savedGamesModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="savedGamesTitle">
-      <div class="modal-panel games-modal-panel bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden dark:bg-gray-800 flex flex-col" style="max-height: 85vh;">
-        <header class="games-modal-header border-b border-gray-200 dark:border-gray-700 px-6 pt-5 pb-4">
-          <div class="flex items-center justify-between">
+      <div class="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden dark:bg-gray-800 flex flex-col" style="max-height: 85vh;">
+        <header class="border-b border-gray-200 dark:border-gray-700">
+          <div class="flex justify-between items-center px-6 pt-5 pb-2">
             <h3 id="savedGamesTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Game Library</h3>
             <button id="closeSavedGamesModalBtn" class="text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1 transition-colors dark:text-gray-400 dark:hover:text-white" aria-label="Close Saved Games Modal" type="button">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
-          <div class="games-tablist" role="tablist" aria-label="Saved games">
-            <span class="games-tab-indicator" aria-hidden="true"></span>
-            <button type="button" id="completedGamesTab" class="games-tab-button is-active" onclick="switchGamesTab('completed')" role="tab" aria-selected="true" aria-controls="completedGamesSection">
-              <span>Completed Games</span>
-              <span class="games-tab-badge" id="completedGamesCount">0</span>
+          <div class="flex px-6">
+            <button id="completedGamesTab" class="py-3 px-4 border-b-2 border-blue-600 text-blue-600 font-medium dark:text-blue-400 dark:border-blue-400 relative" onclick="switchGamesTab('completed')">
+              Completed Games
+              <span class="absolute top-0 right-0 transform translate-x-1/3 -translate-y-1/2 bg-blue-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" id="completedGamesCount">0</span>
             </button>
-            <button type="button" id="freezerGamesTab" class="games-tab-button" onclick="switchGamesTab('freezer')" role="tab" aria-selected="false" aria-controls="freezerGamesSection">
-              <span>Freezer Games</span>
-              <span class="games-tab-badge" id="freezerGamesCount">0</span>
+            <button id="freezerGamesTab" class="py-3 px-4 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium dark:text-gray-400 dark:hover:text-gray-300 relative" onclick="switchGamesTab('freezer')">
+              Freezer Games
+              <span class="absolute top-0 right-0 transform translate-x-1/3 -translate-y-1/2 bg-gray-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" id="freezerGamesCount">0</span>
             </button>
           </div>
         </header>
-        <div class="games-toolbar">
-          <div class="games-search">
-            <label class="sr-only" for="gameSearchInput">Search saved games</label>
-            <input type="text" id="gameSearchInput" placeholder="Search games..." oninput="filterGames()" />
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-grow">
+            <input type="text" id="gameSearchInput" placeholder="Search games..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:border-gray-500 dark:text-white dark:focus:ring-blue-400" oninput="filterGames()" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
-          <div>
-            <label class="sr-only" for="gameSortSelect">Sort saved games</label>
-            <select id="gameSortSelect" class="modern-select" onchange="sortGames()">
+          <div class="sm:w-40">
+            <select id="gameSortSelect" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:border-gray-500 dark:text-white dark:focus:ring-blue-400" onchange="sortGames()">
               <option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="highest">Highest Score</option><option value="lowest">Lowest Score</option>
             </select>
           </div>
         </div>
-        <div class="games-tab-container bg-white dark:bg-gray-800">
-          <section id="completedGamesSection" class="games-tab-section is-active" role="tabpanel" aria-labelledby="completedGamesTab">
-            <div id="savedGamesList" class="games-list"></div>
-            <div id="noCompletedGamesMessage" class="games-empty hidden">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-              <p class="mt-3 text-gray-600 dark:text-gray-300 text-base">No completed games yet. Time to log a victory!</p>
-              <button onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="mt-5 inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">Start a New Game</button>
+        <div class="flex-grow overflow-y-auto min-h-0 p-6 bg-white dark:bg-gray-800">
+          <section id="completedGamesSection" class="space-y-4">
+            <div id="savedGamesList" class="grid grid-cols-1 gap-4"></div>
+            <div id="noCompletedGamesMessage" class="hidden py-8 text-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+              <p class="mt-2 text-gray-600 dark:text-gray-400">No completed games found</p>
+              <button onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Start a New Game</button>
             </div>
           </section>
-          <section id="freezerGamesSection" class="games-tab-section" role="tabpanel" aria-labelledby="freezerGamesTab" aria-hidden="true">
-            <div id="freezerGamesList" class="games-list"></div>
-            <div id="noFreezerGamesMessage" class="games-empty hidden">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-              <p class="mt-3 text-gray-600 dark:text-gray-300 text-base">No games on ice. Freeze one to return later.</p>
-              <button onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="mt-5 inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">Start a New Game</button>
+          <section id="freezerGamesSection" class="space-y-4 hidden">
+            <div id="freezerGamesList" class="grid grid-cols-1 gap-4"></div>
+            <div id="noFreezerGamesMessage" class="hidden py-8 text-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+              <p class="mt-2 text-gray-600 dark:text-gray-400">No freezer games found</p>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-500">Freeze a game to continue it later</p>
             </div>
           </section>
         </div>
@@ -827,7 +533,7 @@
 
     <!-- View Saved Game Modal -->
     <div id="viewSavedGameModal" class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm hidden flex items-center justify-center p-2 sm:p-4 modal" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle">
-      <div class="modal-panel bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-hidden dark:bg-gray-800 max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+      <div class="bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-hidden dark:bg-gray-800 max-h-[95vh] sm:max-h-[90vh] flex flex-col">
         <header class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
           <h3 id="viewSavedGameTitle" class="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">Game Details</h3>
           <button id="closeViewSavedGameModalBtn" class="text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 p-1 rounded-lg dark:text-white dark:hover:text-gray-300" aria-label="Close View Saved Game Modal" type="button">
@@ -2332,69 +2038,21 @@ function initializeCustomThemeColors() {
       function closeMenuOverlay() { toggleMenu(null); } // Simplified close
 
       function openModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (!modal) return;
-        const panel = modal.querySelector('.modal-panel');
-
-        modal.classList.remove('hidden', 'modal-closing');
-        // Force reflow before adding the visible class for smooth transition
-        void modal.offsetWidth;
-        modal.classList.add('modal-visible');
-
-        document.body.classList.add('modal-open');
+        document.getElementById(modalId)?.classList.remove("hidden");
+        document.body.classList.add("modal-open");
         document.getElementById("app")?.classList.add("modal-active");
-
-        if (panel) panel.setAttribute('aria-hidden', 'false');
-        requestAnimationFrame(() => modal.focus?.());
+        document.getElementById(modalId)?.focus(); // For accessibility
       }
       function closeModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (!modal) return;
-        if (modal.classList.contains('hidden')) return;
-
-        const panel = modal.querySelector('.modal-panel') || modal;
-
-        const finalizeClose = () => {
-          modal.classList.add('hidden');
-          modal.classList.remove('modal-closing');
-          if (panel !== modal) panel.setAttribute('aria-hidden', 'true');
-          if (!document.querySelector('.modal.modal-visible')) {
-            document.body.classList.remove('modal-open');
-            document.getElementById("app")?.classList.remove("modal-active");
-          }
-        };
-
-        const handleTransitionEnd = (event) => {
-          if (event.target !== panel) return;
-          panel.removeEventListener('transitionend', handleTransitionEnd);
-          panel.removeEventListener('animationend', handleTransitionEnd);
-          finalizeClose();
-        };
-
-        panel.addEventListener('transitionend', handleTransitionEnd);
-        panel.addEventListener('animationend', handleTransitionEnd);
-
-        modal.classList.add('modal-closing');
-        modal.classList.remove('modal-visible');
-
-        // Fallback in case transition events do not fire
-        setTimeout(() => {
-          panel.removeEventListener('transitionend', handleTransitionEnd);
-          panel.removeEventListener('animationend', handleTransitionEnd);
-          if (!modal.classList.contains('hidden')) finalizeClose();
-        }, 400);
+        document.getElementById(modalId)?.classList.add("hidden");
+        document.body.classList.remove("modal-open");
+        document.getElementById("app")?.classList.remove("modal-active");
       }
       function openSavedGamesModal() {
-        const searchInput = document.getElementById('gameSearchInput');
-        const sortSelect = document.getElementById('gameSortSelect');
-        if (searchInput) searchInput.value = '';
-        if (sortSelect) sortSelect.value = 'newest';
-
         updateGamesCount();
-        switchGamesTab('completed', { skipRender: true });
-        renderGamesWithFilter();
+        switchGamesTab('completed'); // Default to completed games
+        renderGamesWithFilter(); // Render based on default filter/sort
         openModal("savedGamesModal");
-        requestAnimationFrame(() => positionGamesTabIndicator());
       }
       function closeSavedGamesModal() { closeModal("savedGamesModal"); }
       function openConfirmationModal(message, yesCb, noCb) {
@@ -4268,81 +3926,46 @@ function handleGameOverSaveClick(e) {
           </div>`;
       }
       // --- Saved Games Modal (New Functions) ---
-      function switchGamesTab(tabType, { skipRender = false } = {}) {
+      function switchGamesTab(tabType) {
         const completedTab = document.getElementById('completedGamesTab');
         const freezerTab = document.getElementById('freezerGamesTab');
         const completedSection = document.getElementById('completedGamesSection');
         const freezerSection = document.getElementById('freezerGamesSection');
+        
+        const activeClasses = ['border-blue-600', 'text-blue-600', 'dark:text-blue-400', 'dark:border-blue-400'];
+        const inactiveClasses = ['border-transparent', 'text-gray-500', 'hover:text-gray-700', 'dark:text-gray-400', 'dark:hover:text-gray-300'];
 
-        if (!completedTab || !freezerTab || !completedSection || !freezerSection) return;
-
-        const showCompleted = tabType === 'completed';
-
-        completedTab.classList.toggle('is-active', showCompleted);
-        completedTab.setAttribute('aria-selected', showCompleted ? 'true' : 'false');
-        freezerTab.classList.toggle('is-active', !showCompleted);
-        freezerTab.setAttribute('aria-selected', !showCompleted ? 'true' : 'false');
-
-        completedSection.classList.toggle('is-active', showCompleted);
-        completedSection.setAttribute('aria-hidden', showCompleted ? 'false' : 'true');
-        freezerSection.classList.toggle('is-active', !showCompleted);
-        freezerSection.setAttribute('aria-hidden', !showCompleted ? 'false' : 'true');
-
-        requestAnimationFrame(() => positionGamesTabIndicator());
-
-        if (!skipRender) renderGamesWithFilter();
+        if (tabType === 'completed') {
+            completedTab.classList.add(...activeClasses); completedTab.classList.remove(...inactiveClasses);
+            freezerTab.classList.add(...inactiveClasses); freezerTab.classList.remove(...activeClasses);
+            completedSection.classList.remove('hidden'); freezerSection.classList.add('hidden');
+        } else {
+            freezerTab.classList.add(...activeClasses); freezerTab.classList.remove(...inactiveClasses);
+            completedTab.classList.add(...inactiveClasses); completedTab.classList.remove(...activeClasses);
+            freezerSection.classList.remove('hidden'); completedSection.classList.add('hidden');
+        }
+        document.getElementById('gameSearchInput').value = '';
+        document.getElementById('gameSortSelect').value = 'newest';
+        renderGamesWithFilter();
       }
       function updateGamesCount() {
         const savedGames = getLocalStorage("savedGames", []);
         const freezerGames = getLocalStorage("freezerGames", []);
-        const completedBadge = document.getElementById('completedGamesCount');
-        const freezerBadge = document.getElementById('freezerGamesCount');
-        if (completedBadge) completedBadge.textContent = savedGames.length;
-        if (freezerBadge) freezerBadge.textContent = freezerGames.length;
-
-        const noCompletedMessage = document.getElementById('noCompletedGamesMessage');
-        const noFreezerMessage = document.getElementById('noFreezerGamesMessage');
-        const hasCompletedGames = savedGames.length > 0;
-        const hasFreezerGames = freezerGames.length > 0;
-        if (noCompletedMessage) {
-          noCompletedMessage.classList.toggle('hidden', hasCompletedGames);
-          noCompletedMessage.setAttribute('aria-hidden', hasCompletedGames ? 'true' : 'false');
-        }
-        if (noFreezerMessage) {
-          noFreezerMessage.classList.toggle('hidden', hasFreezerGames);
-          noFreezerMessage.setAttribute('aria-hidden', hasFreezerGames ? 'true' : 'false');
-        }
-
-        requestAnimationFrame(() => positionGamesTabIndicator());
+        document.getElementById('completedGamesCount').textContent = savedGames.length;
+        document.getElementById('freezerGamesCount').textContent = freezerGames.length;
+        document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', savedGames.length > 0);
+        document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', freezerGames.length > 0);
       }
       function filterGames() { renderGamesWithFilter(); }
       function sortGames() { renderGamesWithFilter(); }
-      function positionGamesTabIndicator() {
-        const savedModal = document.getElementById('savedGamesModal');
-        if (!savedModal || savedModal.classList.contains('hidden')) return;
-        const tablist = savedModal.querySelector('.games-tablist');
-        if (!tablist) return;
-        const indicator = tablist.querySelector('.games-tab-indicator');
-        const activeButton = tablist.querySelector('.games-tab-button.is-active');
-        if (!indicator || !activeButton) return;
-        const tabRect = activeButton.getBoundingClientRect();
-        const listRect = tablist.getBoundingClientRect();
-        const offset = tabRect.left - listRect.left;
-        indicator.style.width = `${tabRect.width}px`;
-        indicator.style.transform = `translateX(${offset}px)`;
-      }
       function renderGamesWithFilter() {
-        const searchInput = document.getElementById('gameSearchInput');
-        const sortSelect = document.getElementById('gameSortSelect');
-        const searchTerm = (searchInput ? searchInput.value : '').toLowerCase();
-        const sortOption = sortSelect ? sortSelect.value : 'newest';
-        const completedSection = document.getElementById('completedGamesSection');
-        const isCompletedTabActive = completedSection ? completedSection.classList.contains('is-active') : true;
-        (isCompletedTabActive ? renderSavedGamesList : renderFreezerGamesList)(searchTerm, sortOption);
+        const searchTerm = document.getElementById('gameSearchInput').value.toLowerCase();
+        const sortOption = document.getElementById('gameSortSelect').value;
+        const isCompletedTabActive = !document.getElementById('completedGamesSection').classList.contains('hidden');
+        isCompletedTabActive ? renderSavedGamesList(searchTerm, sortOption) : renderFreezerGamesList(searchTerm, sortOption);
       }
       function renderSavedGamesList(searchTerm = '', sortOption = 'newest') {
-        const allSavedGames = getLocalStorage("savedGames", []);
-        let games = [...allSavedGames];
+        let games = getLocalStorage("savedGames", []);
         if (searchTerm) {
             games = games.filter(g => 
                 getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
@@ -4350,67 +3973,45 @@ function handleGameOverSaveClick(e) {
                 new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
             );
         }
-        games = sortGamesBy(games, sortOption, true);
+        games = sortGamesBy(games, sortOption, true); // true for completed games
         const container = document.getElementById("savedGamesList");
-        if (!container) return;
-
-        const cardsHtml = games.map((g, idx) => {
-            const originalIndex = allSavedGames.findIndex(sg => sg.timestamp === g.timestamp);
-            if (originalIndex === -1) return '';
+        document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', games.length > 0);
+        container.innerHTML = games.map((g, idx) => { // Use original index for deletion/viewing
+            const originalIndex = getLocalStorage("savedGames", []).findIndex(sg => sg.timestamp === g.timestamp); // Find original index
             const usDisplay = getGameTeamDisplay(g, 'us');
             const demDisplay = getGameTeamDisplay(g, 'dem');
-            const usScore = g.finalScore.us;
-            const demScore = g.finalScore.dem;
-            const usWinner = g.winner === "us";
-            const demWinner = g.winner === "dem";
+            const usS = g.finalScore.us, demS = g.finalScore.dem;
+            const usW = g.winner === "us", demW = g.winner === "dem";
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
-            const delay = Math.min(idx, 12) * 45;
             return `
-            <article class="games-card cursor-pointer" data-animate style="animation-delay:${delay}ms" onclick="viewSavedGame(${originalIndex})">
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${dateStr}</p>
-                  <h3 class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">${usDisplay} <span class="text-slate-400 dark:text-slate-500">vs</span> ${demDisplay}</h3>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 text-slate-500 transition hover:border-blue-500/60 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:border-slate-600 dark:text-slate-300 dark:hover:text-blue-300 dark:hover:border-blue-400" aria-label="View game details">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                  </button>
-                  <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 text-slate-500 transition hover:border-red-500/60 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/40 dark:border-slate-600 dark:text-slate-300 dark:hover:text-red-300 dark:hover:border-red-400" aria-label="Delete saved game">${Icons.Trash}</button>
-                </div>
-              </div>
-              <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="rounded-xl bg-slate-100/80 dark:bg-slate-800/70 px-3 py-2 ${usWinner ? 'ring-2 ring-emerald-400/80 shadow-sm' : ''}">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${usDisplay}</span>
-                    ${usWinner ? '<span class="text-xs font-semibold text-emerald-600 dark:text-emerald-300">Winner</span>' : ''}
+            <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
+              ${usW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplay}</div>` : ''}
+              ${demW ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplay}</div>` : ''}
+              <div class="p-5">
+                <div class="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">${dateStr}</div>
                   </div>
-                  <p class="mt-1 text-xl font-bold text-slate-900 dark:text-white">${usScore}</p>
-                </div>
-                <div class="rounded-xl bg-slate-100/80 dark:bg-slate-800/70 px-3 py-2 ${demWinner ? 'ring-2 ring-emerald-400/80 shadow-sm' : ''}">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${demDisplay}</span>
-                    ${demWinner ? '<span class="text-xs font-semibold text-emerald-600 dark:text-emerald-300">Winner</span>' : ''}
+                  <div class="flex space-x-1">
+                    <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
+                    <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
                   </div>
-                  <p class="mt-1 text-xl font-bold text-slate-900 dark:text-white">${demScore}</p>
+                </div>
+                <div class="text-sm">
+                  <span class="${usW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplay}: ${usS}</span> | 
+                  <span class="${demW ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplay}: ${demS}</span>
+                </div>
+                <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
+                  ${g.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${g.victoryMethod}</span>` : ''}
+                  ${g.durationMs ? `<span>${formatDuration(g.durationMs)}</span>` : ''}
                 </div>
               </div>
-              <div class="mt-4 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300">
-                ${g.victoryMethod ? `<span class=\"inline-flex items-center rounded-full bg-purple-100/80 px-3 py-1 font-medium text-purple-700 dark:bg-purple-900/50 dark:text-purple-200\">${g.victoryMethod}</span>` : ''}
-                ${g.durationMs ? `<span class=\"inline-flex items-center rounded-full bg-slate-200/70 px-3 py-1 font-medium text-slate-600 dark:bg-slate-700/60 dark:text-slate-300\">${formatDuration(g.durationMs)}</span>` : ''}
-              </div>
-            </article>`;
-        }).filter(Boolean).join("");
-
-        const searchFeedback = searchTerm
-          ? '<p class="col-span-full text-center text-sm text-slate-500 dark:text-slate-300">No completed games match your search.</p>'
-          : '';
-
-        container.innerHTML = cardsHtml || searchFeedback;
+            </div>`;
+        }).join("") || (!searchTerm ? "" : `<p class="text-gray-500 col-span-full text-center">No completed games match "${searchTerm}".</p>`);
       }
       function renderFreezerGamesList(searchTerm = '', sortOption = 'newest') {
-        const allFreezerGames = getLocalStorage("freezerGames", []);
-        let games = [...allFreezerGames];
+        let games = getLocalStorage("freezerGames", []);
         if (searchTerm) {
             games = games.filter(g => 
                 getGameTeamDisplay(g, 'us').toLowerCase().includes(searchTerm) || 
@@ -4418,64 +4019,40 @@ function handleGameOverSaveClick(e) {
                 new Date(g.timestamp).toLocaleString().toLowerCase().includes(searchTerm)
             );
         }
-        games = sortGamesBy(games, sortOption, false);
+        games = sortGamesBy(games, sortOption, false); // false for freezer games
         const container = document.getElementById("freezerGamesList");
-        if (!container) return;
-
-        const cardsHtml = games.map((g, idx) => {
-            const originalIndex = allFreezerGames.findIndex(fg => fg.timestamp === g.timestamp);
-            if (originalIndex === -1) return '';
+        document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', games.length > 0);
+        container.innerHTML = games.map((g, idx) => {
+            const originalIndex = getLocalStorage("freezerGames", []).findIndex(fg => fg.timestamp === g.timestamp);
             const usDisplay = getGameTeamDisplay(g, 'us');
             const demDisplay = getGameTeamDisplay(g, 'dem');
-            const usScore = g.finalScore.us;
-            const demScore = g.finalScore.dem;
+            const usS = g.finalScore.us, demS = g.finalScore.dem;
             const dateStr = new Date(g.timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
-            const usLead = usScore > demScore;
-            const demLead = demScore > usScore;
-            const isTied = usScore === demScore;
-            const delay = Math.min(idx, 12) * 45;
-            const leadSummary = isTied ? 'All squared' : `${usLead ? usDisplay : demDisplay} leads by ${Math.abs(usScore - demScore)}`;
+            const leadInfo = usS > demS ? `${usDisplay} leads by ${usS - demS}` : (demS > usS ? `${demDisplay} leads by ${demS - usS}` : "Tied");
             return `
-            <article class="games-card cursor-pointer" data-animate style="animation-delay:${delay}ms" onclick="loadFreezerGame(${originalIndex})">
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Frozen ${dateStr}</p>
-                  <h3 class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">${usDisplay} <span class="text-slate-400 dark:text-slate-500">vs</span> ${demDisplay}</h3>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 text-slate-500 transition hover:border-blue-500/60 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:border-slate-600 dark:text-slate-300 dark:hover:text-blue-300 dark:hover:border-blue-400" aria-label="Resume game">${Icons.Load}</button>
-                  <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/70 text-slate-500 transition hover:border-red-500/60 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/40 dark:border-slate-600 dark:text-slate-300 dark:hover:text-red-300 dark:hover:border-red-400" aria-label="Delete frozen game">${Icons.Trash}</button>
-                </div>
-              </div>
-              <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="rounded-xl bg-slate-100/80 dark:bg-slate-800/70 px-3 py-2 ${usLead ? 'ring-2 ring-amber-400/80 shadow-sm' : ''}">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${usDisplay}</span>
-                    ${usLead ? '<span class="text-xs font-semibold text-amber-600 dark:text-amber-300">Ahead</span>' : ''}
+            <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
+              <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfo}</div>
+              <div class="p-5">
+                <div class="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${dateStr}</div>
                   </div>
-                  <p class="mt-1 text-xl font-bold text-slate-900 dark:text-white">${usScore}</p>
-                </div>
-                <div class="rounded-xl bg-slate-100/80 dark:bg-slate-800/70 px-3 py-2 ${demLead ? 'ring-2 ring-amber-400/80 shadow-sm' : ''}">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${demDisplay}</span>
-                    ${demLead ? '<span class="text-xs font-semibold text-amber-600 dark:text-amber-300">Ahead</span>' : ''}
+                  <div class="flex space-x-1">
+                    <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
+                    <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
                   </div>
-                  <p class="mt-1 text-xl font-bold text-slate-900 dark:text-white">${demScore}</p>
+                </div>
+                <div class="text-sm text-gray-700 dark:text-gray-300">
+                  <span>${usDisplay}: ${usS}</span> | <span>${demDisplay}: ${demS}</span>
+                </div>
+                <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
+                  ${g.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${g.lastBid}</span>` : ''}
+                  ${g.accumulatedTime ? `<span>Played: ${formatDuration(g.accumulatedTime)}</span>` : ''}
                 </div>
               </div>
-              <div class="mt-4 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300">
-                <span class="inline-flex items-center rounded-full bg-amber-100/80 px-3 py-1 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">${leadSummary}</span>
-                ${g.lastBid ? `<span class=\"inline-flex items-center rounded-full bg-indigo-100/80 px-3 py-1 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200\">Last Bid: ${g.lastBid}</span>` : ''}
-                ${g.accumulatedTime ? `<span class=\"inline-flex items-center rounded-full bg-slate-200/70 px-3 py-1 font-medium text-slate-600 dark:bg-slate-700/60 dark:text-slate-300\">Played: ${formatDuration(g.accumulatedTime)}</span>` : ''}
-              </div>
-            </article>`;
-        }).filter(Boolean).join("");
-
-        const searchFeedback = searchTerm
-          ? '<p class="col-span-full text-center text-sm text-slate-500 dark:text-slate-300">No frozen games match your search.</p>'
-          : '';
-
-        container.innerHTML = cardsHtml || searchFeedback;
+            </div>`;
+        }).join("") || (!searchTerm ? "" : `<p class="text-gray-500 col-span-full text-center">No frozen games match "${searchTerm}".</p>`);
       }
       function sortGamesBy(games, sortOption, isCompletedGameType) {
         const sorted = [...games]; // Create a mutable copy
@@ -5059,13 +4636,6 @@ function handleGameOverSaveClick(e) {
         document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
         document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
         document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
-
-        window.addEventListener('resize', () => {
-            const savedModal = document.getElementById('savedGamesModal');
-            if (savedModal && savedModal.classList.contains('modal-visible')) {
-                positionGamesTabIndicator();
-            }
-        });
 
         // Close modals on outside click (simplified)
         const allModals = ["savedGamesModal", "viewSavedGameModal", "aboutModal", "statisticsModal", "teamSelectionModal", "settingsModal", "themeModal", "confirmationModal", "presetEditorModal"];
