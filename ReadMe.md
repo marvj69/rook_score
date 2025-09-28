@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Rook Score!** is a modern, feature-packed web application designed to make score-keeping for the card game Rook effortless and enjoyable. Built with HTML, Tailwind CSS, and vanilla JavaScript, it leverages Firebase for cloud synchronization and offers a Progressive Web App (PWA) experience.
+**Rook Score!** is a modern, feature-packed web application designed to make score-keeping for the card game Rook effortless and enjoyable. Built with HTML, Tailwind CSS, and vanilla JavaScript, it ships with an optional secure Node.js backend for cloud synchronization and offers a Progressive Web App (PWA) experience.
 
 ## ✨ Features
 
@@ -16,10 +16,10 @@
     *   **Game Library:** Browse completed games with search and sort functionality.
     *   **View Game Details:** Review full round-by-round history, duration, and winner for saved games.
     *   **Freezer Games:** Pause an ongoing game to "freeze" it and resume later.
-*   **Cloud Synchronization (Firebase):**
-    *   Sign in with Google to securely back up your game data (active game, saved games, freezer games, settings) to the cloud.
-    *   Access your data across multiple devices.
-    *   Anonymous sign-in is supported for local play, with an option to upgrade to a Google account and merge data.
+*   **Secure Cloud Sync (Optional):**
+    *   Sign in with Google to back up active games, saved games, freezer games, and settings to the bundled backend service.
+    *   All communication happens through a self-hosted API, so no Firebase credentials are exposed on the client.
+    *   Continue playing locally without signing in—your data stays on the device until you choose to sync.
 *   **Team Management & Statistics:**
     *   Use default "Us" & "Dem" or set custom team names.
     *   Track team statistics: wins, losses, games played, average bid, bid success percentage, 360s, and sandbagger detection.
@@ -66,9 +66,8 @@
     *   CSS3 (Tailwind CSS for utility-first styling, custom CSS for theming and animations)
     *   Vanilla JavaScript (ES6+ Modules)
 *   **Backend & Services:**
-    *   Firebase
-        *   Firebase Authentication (Google Sign-In, Anonymous Sign-In)
-        *   Firestore (Cloud database for game data synchronization)
+    *   Node.js + Express REST API (included in `/server`)
+    *   Google Identity Services for verifying Google Sign-In tokens on the server
 *   **Libraries:**
     *   Canvas Confetti (for win celebrations)
 *   **PWA Features:**
@@ -136,7 +135,7 @@ Accessible via the hamburger icon (☰) in the top-left:
 *   **About:** Shows information about the app, features, and a bug report option.
 *   **Statistics:** Displays overall and team-specific statistics.
 *   **Dark Mode:** Toggles between light and dark themes.
-*   **Sign in/out with Google:** Manages Firebase cloud synchronization.
+*   **Sign in/out with Google:** Triggers secure cloud synchronization via the bundled backend (if configured).
 
 ### Key Modals
 
@@ -164,20 +163,43 @@ Access these via **Menu -> Settings**:
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
 
-## 🔥 Firebase Cloud Sync
+## 🔐 Secure Cloud Sync Backend
 
-*   **Sign In:** Use the "Sign in with Google" option in the menu.
+*   **Sign In:** Use the "Sign in with Google" option in the menu to authenticate through Google Identity Services.
+*   **What Happens:** The frontend sends the Google credential to the bundled Express backend, which verifies it server-side, issues a short-lived JWT session, and persists your game data on disk. No API keys or secrets are exposed in the browser.
 *   **Benefits:**
-    *   Your active game state, saved games, freezer games, team names, and settings (dark mode, pro mode, custom theme, bid presets) are automatically backed up to Firebase.
-    *   Access your data seamlessly across different devices by signing in with the same Google account.
-*   **Anonymous Users:** If you don't sign in, the app will use anonymous Firebase authentication. Your data is still saved locally. If you later sign in with Google, your local data will be merged with any existing cloud data.
-*   **Data Merging:** When signing in or switching accounts, the app attempts to intelligently merge local and cloud data, prioritizing local data for the active game to prevent overwriting unsaved changes and merging arrays of games.
+    *   Active games, saved games, freezer games, and preferences are synchronised to the server so you can pick up where you left off on another device.
+    *   Local-first by default—if you never sign in, everything remains on the device.
+    *   Smart merge logic keeps unsaved local progress, combines stored game libraries, and stamps updates with the latest timestamp.
+*   **Offline Use:** The app continues to function without a network connection. When connectivity returns, background saves resume and the backend reconciles the data set.
+
+### Backend Setup
+
+1.  Create Google OAuth 2.0 credentials of type **Web application** in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+    *   Add your development origins (for example `http://localhost:4000`) to **Authorized JavaScript origins**.
+    *   Copy the generated **Client ID**.
+2.  Copy the example environment file and fill in the required values:
+    ```bash
+    cd server
+    cp .env.example .env
+    ```
+    *   `SESSION_SECRET`: a long random string used to sign JWT sessions.
+    *   `GOOGLE_CLIENT_ID`: the Client ID you created above.
+    *   `ALLOWED_ORIGINS`: comma-separated list of allowed web origins (e.g. `http://localhost:4000,http://localhost:5173`).
+    *   `DATA_DIRECTORY` (optional): where per-user JSON snapshots are stored. Defaults to `../secure-data`.
+3.  Install dependencies and start the backend:
+    ```bash
+    npm install
+    npm start
+    ```
+4.  Serve the frontend from the same origin or, if you load `index.html` directly from disk, point the client at the backend by setting `window.APP_CONFIG.apiBaseUrl` (in `index.html`) to the server origin. For convenience the client automatically falls back to `http://localhost:4000` when running from `file://`.
+5.  Visit `http://localhost:4000/config` to verify the backend is responding, then open the app and sign in.
 
 ## 📱 Progressive Web App (PWA)
 
 Rook Score! is a PWA, offering:
 *   **Installability:** Add it to your home screen on mobile or desktop for quick access.
-*   **Offline Access:** Once the app and its assets are cached by the service worker, you can use it even without an internet connection (Firebase sync will resume when connectivity is restored).
+*   **Offline Access:** Once the app and its assets are cached by the service worker, you can use it even without an internet connection (cloud sync resumes automatically when connectivity returns).
 *   **App-like Experience:** Runs in its own window, providing a more focused experience.
 
 ## 🔧 Development
@@ -187,41 +209,8 @@ A modern web browser. No complex build steps are required for local development 
 
 ### Running Locally
 1.  Clone or download this repository.
-2.  Simply open the `index.html` file in your web browser.
-
-### Firebase Setup (If forking or self-hosting with cloud sync)
-If you want to use your own Firebase backend:
-1.  Go to the [Firebase Console](https://console.firebase.google.com/).
-2.  Create a new Firebase project.
-3.  Add a Web app to your project.
-4.  Copy the Firebase configuration object provided.
-5.  In `index.html`, find the `firebaseConfig` object (around line 700) and replace it with your project's configuration.
-    ```javascript
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-    ```
-6.  **Enable Firebase Services:**
-    *   **Authentication:** Enable "Google" and "Anonymous" sign-in methods in the Firebase Authentication section.
-    *   **Firestore:** Create a Firestore database in "Production mode".
-        *   **Security Rules:** For basic functionality, you can start with rules that allow authenticated users to read/write their own data. A common pattern is:
-            ```json
-            rules_version = '2';
-            service cloud.firestore {
-              match /databases/{database}/documents {
-                // Allow users to read and write only their own data in the 'rookData' collection
-                match /rookData/{userId} {
-                  allow read, write: if request.auth != null && request.auth.uid == userId;
-                }
-              }
-            }
-            ```
-            Apply these rules in the "Rules" tab of your Firestore database.
+2.  Open `index.html` in your browser for an offline/local-only experience.
+3.  To enable cloud sync, follow the [Backend Setup](#backend-setup) instructions and either serve the frontend from the same origin or point `APP_CONFIG.apiBaseUrl` to your backend.
 
 ## Contributing
 
