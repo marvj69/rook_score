@@ -1,0 +1,374 @@
+:root {
+  --primary-color: #3b82f6;
+  --accent-color: #ef4444;
+}
+body.modal-open {
+  overflow: hidden;
+}
+.modal-open .hamburger-menu {
+  display: none;
+}
+
+/* Custom Input Type Color Styling */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 2px solid #ccc;
+  width: 80px; /* Maintained from original */
+  height: 50px; /* Maintained from original */
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 6px; /* Match outer radius */
+}
+input[type="color"]:hover,
+input[type="color"]:focus {
+  border-color: var(--primary-color); /* Use theme color */
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Animations */
+@keyframes fadeInElement {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOutElement {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(5px); }
+}
+.animate-fadeIn {
+  animation: fadeInElement 0.1s ease-in-out forwards;
+}
+.animate-fadeOut {
+  animation: fadeOutElement 0.15s ease-in-out forwards;
+}
+
+.score-input-container {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition:
+    max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.4s cubic-bezier(0.25, 0.8, 0.25, 1),
+    transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.score-input-container.show {
+  max-height: 1000px; /* Ensure enough space */
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Tailwind Overrides / Custom Utilities - Keep if they are intentional overrides */
+.rounded-xl { border-radius: 0.75rem !important; }
+.shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important; }
+.shadow { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important; }
+.shadow-md { box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important; }
+.shadow-lg { box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2) !important; }
+.dark .text-gray-800 { color: #ffffff !important; }
+
+/* Hamburger Menu */
+.hamburger-menu {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 30px;
+  height: 24px;
+  cursor: pointer;
+  z-index: 1300;
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.hamburger-menu:hover {
+  transform: scale(1.1);
+}
+.hamburger-menu:focus-visible { /* Standard focus outline for accessibility */
+  outline: 2px solid #3b82f6; /* Tailwind's blue-500 */
+  outline-offset: 2px;
+}
+.bar {
+  position: absolute;
+  width: 30px;
+  height: 3px;
+  background-color: #333; /* Default bar color */
+  transition:
+    transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+    background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transform-origin: center;
+}
+.bar:nth-child(1) { top: 0; }
+.bar:nth-child(2) { top: 10px; }
+.bar:nth-child(3) { top: 20px; }
+html.dark .bar {
+  background-color: #fff; /* Bar color in dark mode */
+}
+.hamburger-menu.open .bar:nth-child(1) { transform: rotate(45deg) translate(5px, 9px); }
+.hamburger-menu.open .bar:nth-child(2) { transform: rotate(45deg) translate(-2px, 2px); }
+.hamburger-menu.open .bar:nth-child(3) { transform: rotate(-45deg) translate(5px, -9px); }
+
+/* Navigation Menu */
+nav {
+  position: fixed;
+  top: 0;
+  left: -300px; /* Hidden by default */
+  width: 280px;
+  height: 100%;
+  background-color: #fff;
+  z-index: 1200;
+  transition: left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+  border-top-right-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+nav.show {
+  left: 0; /* Shown */
+}
+html.dark nav {
+  background-color: #2d3748; /* dark:bg-gray-700 equivalent */
+}
+nav ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  margin-top: 60px; /* Space for hamburger icon */
+}
+nav ul li {
+  margin: 0;
+  border-bottom: 1px solid #e0e0e0; /* Light mode border */
+}
+html.dark nav ul li {
+  border-bottom: 1px solid #4a5568; /* Dark mode border, dark:border-gray-600 */
+}
+nav ul li:last-child {
+  border-bottom: none;
+}
+nav ul li a,
+nav ul li button,
+nav ul li label { /* Added label for dark mode toggle consistency */
+  color: #333;
+  text-decoration: none;
+  font-size: 20px;
+  padding: 15px 20px;
+  display: block;
+  transition: background-color 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+nav ul li a:hover,
+nav ul li button:hover,
+nav ul li label:hover { /* Added label for dark mode toggle consistency */
+  background-color: #f5f5f5; /* Light mode hover */
+  filter: brightness(0.97);
+}
+html.dark nav ul li a,
+html.dark nav ul li button,
+html.dark nav ul li label { /* Added label for dark mode toggle consistency */
+  color: #fff;
+}
+html.dark nav ul li a:hover,
+html.dark nav ul li button:hover,
+html.dark nav ul li label:hover { /* Added label for dark mode toggle consistency */
+  background-color: #4a5568; /* Dark mode hover, dark:bg-gray-600 */
+  filter: brightness(0.95);
+}
+/* Removed .close-menu as it wasn't in the markup */
+.menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1150;
+  display: none;
+}
+.menu-overlay.show {
+  display: block;
+}
+
+/* Modal Styling */
+.modal {
+  opacity: 0;
+  transform: scale(0.95);
+  transition:
+    transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.modal.hidden {
+  display: none;
+}
+.modal:not(.hidden) {
+  opacity: 1;
+  transform: scale(1);
+}
+.modal > div { /* Styling for the direct child (content box) of a modal */
+  margin: 1rem auto; /* Centering and spacing */
+  max-height: calc(100vh - 2rem); /* Prevent overflow */
+}
+#confirmationModal { /* Ensure confirmation modal is on top */
+  z-index: 9999;
+}
+#savedGamesModal { /* Ensure saved games modal z-index for backdrop-blur */
+   z-index: 9990; /* Slightly lower than confirmation, but above others */
+}
+ #themeModal {
+  z-index: 9995; /* Above savedGames, below confirmation */
+}
+#teamSelectionModal {
+  z-index: 9998;   /* anything > 49 is fine; keep it below #confirmationModal (9999) */
+}
+#viewSavedGameModal {
+  z-index: 9996; /* Above savedGamesModal and themeModal, below teamSelection and confirmation */
+}
+
+
+/* Scrollbar Hiding */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Save Indicator */
+#saveIndicator {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background-color: rgba(16, 185, 129, 0.7); /* Tailwind green-500 with opacity */
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem; /* rounded-xl */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* shadow-md */
+  opacity: 0;
+  transform: translateY(20px) scale(0.9);
+  transition:
+    opacity 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+    transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  pointer-events: none;
+  z-index: 1000;
+  font-size: 0.875rem; /* text-sm */
+}
+#saveIndicator.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* 3D Button Effect & Sunken Selection */
+.threed {
+  transition:
+    box-shadow 0.2s cubic-bezier(0.25, 0.8, 0.25, 1),
+    transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.threed:hover,
+.threed:focus { /* Combined hover and focus */
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+.threed:active {
+  transform: scale(0.97);
+}
+.sunken-selected {
+  border-radius: inherit; /* Use parent's border-radius */
+  position: relative;
+  box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.6) !important; /* Ensure this shadow applies */
+}
+.sunken-selected::after {
+  border-radius: inherit;
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.414);
+  pointer-events: none;
+  z-index: auto; /* Let browser decide or set explicitly if needed */
+}
+.sunken-selected > * { /* Ensure children are above the overlay */
+  border-radius: inherit;
+  position: relative;
+  z-index: 1;
+}
+
+/* Theming with CSS Variables */
+.bg-primary {
+  background-color: var(--primary-color) !important;
+  transition:
+    background-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+    filter 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.bg-primary:hover { filter: brightness(0.95); }
+.bg-accent {
+  background-color: var(--accent-color) !important;
+  transition:
+    background-color 0.25s cubic-bezier(0.25, 0.8, 0.25, 1),
+    filter 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.bg-accent:hover { filter: brightness(0.95); }
+.text-primary { color: var(--primary-color) !important; }
+.text-accent { color: var(--accent-color) !important; }
+
+/* Input Focus Styling */
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  transition: outline 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+button:focus-visible { /* More specific for buttons to avoid overriding all focus */
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+/* Dark mode inputs */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #4a5568; /* dark:bg-gray-600 equivalent */
+  color: #fff;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+    color: #a0aec0; /* dark:placeholder-gray-400 */
+}
+
+
+/* Typography */
+h1 {
+  font-size: clamp(1.75rem, 5vw, 3rem); /* Responsive H1 */
+}
+#app.modal-active {
+  filter: blur(3px) grayscale(0.2) brightness(0.7);
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.2s;
+}
+html, body {height:100%; overflow:hidden; overscroll-behavior:none;}
+
+/* Probability Modal Styling */
+.probability-modal {
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+.probability-modal-content {
+  animation: slideIn 0.3s ease-out;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
