@@ -1243,6 +1243,13 @@ function handleResumeGameSubmit(event) {
   saveCurrentGameState();
   showSaveIndicator("Starting scores set!");
 }
+
+// Ensure resume modal helpers are available to inline handlers
+if (typeof window !== "undefined") {
+  window.openResumeGameModal = openResumeGameModal;
+  window.closeResumeGameModal = closeResumeGameModal;
+  window.handleResumeGameSubmit = handleResumeGameSubmit;
+}
 function saveWinProbMethod() {
   const select = document.getElementById("winProbMethodSelect");
   if (select) {
