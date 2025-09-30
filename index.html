@@ -27,6 +27,7 @@
         <li><button type="button" onclick="openSavedGamesModal(); toggleMenu(event);">View Games</button></li>
         <li><button type="button" onclick="handleNewGame(); toggleMenu(event);">New Game</button></li>
         <li><button type="button" onclick="handleFreezerGame(); toggleMenu(event);">Freeze Game</button></li>
+        <li><button type="button" onclick="openResumeGameModal(); toggleMenu(event);">Resume Paper Game</button></li>
         <li><button type="button" onclick="openSettingsModal(); toggleMenu(event);">Settings</button></li>
         <li><button type="button" onclick="openAboutModal(); toggleMenu(event);">About</button></li>
         <li><button type="button" onclick="openStatisticsModal(); toggleMenu(event);">Statistics</button></li>
@@ -297,6 +298,60 @@
             <div class="flex justify-end space-x-2">
               <button type="button" onclick="handleTeamSelectionCancel();" class="bg-gray-400 text-white px-4 py-2 rounded-xl hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-400 dark:hover:bg-gray-600 dark:focus:ring-blue-400">Cancel</button>
               <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400">Confirm</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resume Game Modal -->
+    <div id="resumeGameModal" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="resumeGameTitle">
+      <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800">
+        <div class="p-6 space-y-6">
+          <div class="flex items-start justify-between">
+            <div>
+              <h2 id="resumeGameTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Resume Paper Game</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Set each team's current score to pick up where you left off.</p>
+            </div>
+            <button type="button" onclick="closeResumeGameModal()" class="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <form id="resumeGameForm" class="space-y-5" onsubmit="handleResumeGameSubmit(event)">
+            <div class="space-y-4">
+              <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Team Us</h3>
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <label for="resumeUsName" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Team name (optional)</label>
+                    <input type="text" id="resumeUsName" name="resumeUsName" class="mt-1 block w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="Us" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="resumeUsScore" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Current score</label>
+                    <input type="number" inputmode="numeric" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeUsScore" name="resumeUsScore" required class="mt-1 block w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="0" />
+                  </div>
+                </div>
+              </div>
+              <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Team Dem</h3>
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <label for="resumeDemName" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Team name (optional)</label>
+                    <input type="text" id="resumeDemName" name="resumeDemName" class="mt-1 block w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="Dem" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label for="resumeDemScore" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Current score</label>
+                    <input type="number" inputmode="numeric" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeDemScore" name="resumeDemScore" required class="mt-1 block w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" placeholder="0" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p id="resumeGameError" class="hidden text-sm text-red-600 dark:text-red-400"></p>
+            <div class="flex justify-end space-x-3">
+              <button type="button" onclick="closeResumeGameModal()" class="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">Cancel</button>
+              <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600">Start Tracking</button>
             </div>
           </form>
         </div>

@@ -13,6 +13,14 @@ const PRESET_BIDS_KEY = 'customPresetBids';
 const PROB_CACHE = new Map();   // memoise across calls
 const TEAM_STORAGE_VERSION = 2;
 const TEAM_KEY_SEPARATOR = "||";
+function sanitizeTotals(input) {
+  if (!input || typeof input !== 'object') return { us: 0, dem: 0 };
+  const parse = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  };
+  return { us: parse(input.us), dem: parse(input.dem) };
+}
 const DEFAULT_STATE = {
   rounds: [], undoneRounds: [], biddingTeam: "", bidAmount: "",
   customBidValue: "", showCustomBid: false, enterBidderPoints: false,
@@ -24,6 +32,7 @@ const DEFAULT_STATE = {
   startTime: null,
   accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
   timerLastSavedAt: null,
+  startingTotals: { us: 0, dem: 0 },
 };
 
 function sanitizePlayerName(name) {
@@ -98,6 +107,29 @@ let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first
 let statsViewMode = 'teams';
 let statsMetricKey = 'games';
+
+function getBaseTotals() {
+  return sanitizeTotals(state.startingTotals);
+}
+
+function getCurrentTotals() {
+  const base = getBaseTotals();
+  return state.rounds.reduce((acc, round) => {
+    const usPoints = Number(round.usPoints);
+    const demPoints = Number(round.demPoints);
+    return {
+      us: acc.us + (Number.isFinite(usPoints) ? usPoints : 0),
+      dem: acc.dem + (Number.isFinite(demPoints) ? demPoints : 0),
+    };
+  }, { ...base });
+}
+
+function getLastRunningTotals() {
+  if (state.rounds.length) {
+    return sanitizeTotals(state.rounds[state.rounds.length - 1].runningTotals);
+  }
+  return getBaseTotals();
+}
 
 let presetBids;
   try {
@@ -741,6 +773,10 @@ function updateState(newState) {
     nextState.demTeamName = deriveTeamDisplay(parsed, nextState.demTeamName);
   }
 
+  if (has(nextState, 'startingTotals')) {
+    nextState.startingTotals = sanitizeTotals(nextState.startingTotals);
+  }
+
   state = { ...state, ...nextState };
   renderApp();
 }
@@ -800,6 +836,7 @@ completeLoadedState.startTime = null;
     completeLoadedState.timerLastSavedAt = now;
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
     completeLoadedState.showWinProbability = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"); // Add try-catch for this too
+    completeLoadedState.startingTotals = sanitizeTotals(completeLoadedState.startingTotals);
     updateState(completeLoadedState);
   } else {
     if (loadedState) { // If it was parsed but didn't meet structure checks
@@ -834,6 +871,7 @@ function saveCurrentGameState() {
       accumulatedTime: finalAccumulated,
       startTime: timerRunning ? now : null,
       timerLastSavedAt: now,
+      startingTotals: sanitizeTotals(state.startingTotals),
     };
     state.timerLastSavedAt = now;
     setLocalStorage(ACTIVE_GAME_KEY, snapshot); // This now handles Firestore sync too
@@ -1088,6 +1126,123 @@ function openConfirmationModal(message, yesCb, noCb) {
 function closeConfirmationModal() { closeModal("confirmationModal"); confirmationCallback = null; noCallback = null; }
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
 function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
+function openResumeGameModal() {
+  const form = document.getElementById("resumeGameForm");
+  const errorEl = document.getElementById("resumeGameError");
+  if (errorEl) {
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+  }
+  if (form) form.reset();
+
+  const totals = getCurrentTotals();
+  const baseNames = {
+    us: state.usTeamName || "",
+    dem: state.demTeamName || "",
+  };
+
+  const usNameInput = document.getElementById("resumeUsName");
+  const demNameInput = document.getElementById("resumeDemName");
+  const usScoreInput = document.getElementById("resumeUsScore");
+  const demScoreInput = document.getElementById("resumeDemScore");
+
+  if (usNameInput) usNameInput.value = baseNames.us;
+  if (demNameInput) demNameInput.value = baseNames.dem;
+  if (usScoreInput) usScoreInput.value = totals.us;
+  if (demScoreInput) demScoreInput.value = totals.dem;
+
+  openModal("resumeGameModal");
+}
+function closeResumeGameModal() {
+  const errorEl = document.getElementById("resumeGameError");
+  if (errorEl) {
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+  }
+  closeModal("resumeGameModal");
+}
+function handleResumeGameSubmit(event) {
+  event.preventDefault();
+  const errorEl = document.getElementById("resumeGameError");
+  const showError = (message) => {
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.classList.remove("hidden");
+    } else {
+      alert(message);
+    }
+  };
+
+  const usScoreInput = document.getElementById("resumeUsScore");
+  const demScoreInput = document.getElementById("resumeDemScore");
+
+  if (!usScoreInput || !demScoreInput) {
+    closeResumeGameModal();
+    return;
+  }
+
+  const usScore = Number(usScoreInput.value);
+  const demScore = Number(demScoreInput.value);
+
+  const scoresAreNumbers = Number.isFinite(usScore) && Number.isFinite(demScore);
+  if (!scoresAreNumbers) {
+    showError("Scores must be numbers.");
+    return;
+  }
+
+  const withinBounds = Math.abs(usScore) <= 1000 && Math.abs(demScore) <= 1000;
+  if (!withinBounds) {
+    showError("Scores should stay between -1000 and 1000.");
+    return;
+  }
+
+  const isMultipleOfFive = (value) => Math.abs(value % 5) < 1e-9;
+  if (!isMultipleOfFive(usScore) || !isMultipleOfFive(demScore)) {
+    showError("Scores must be in increments of 5.");
+    return;
+  }
+
+  if (errorEl) {
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+  }
+
+  const usName = (document.getElementById("resumeUsName")?.value || "").trim();
+  const demName = (document.getElementById("resumeDemName")?.value || "").trim();
+
+  const startingTotals = sanitizeTotals({ us: usScore, dem: demScore });
+  const updates = {
+    rounds: [],
+    undoneRounds: [],
+    startingTotals,
+    gameOver: false,
+    winner: null,
+    victoryMethod: null,
+    lastBidAmount: null,
+    lastBidTeam: null,
+    biddingTeam: "",
+    bidAmount: "",
+    showCustomBid: false,
+    customBidValue: "",
+    enterBidderPoints: false,
+    error: "",
+    startTime: null,
+    accumulatedTime: 0,
+    timerLastSavedAt: null,
+    pendingPenalty: null,
+    savedScoreInputStates: { us: null, dem: null },
+  };
+
+  if (usName) updates.usTeamName = usName;
+  if (demName) updates.demTeamName = demName;
+
+  updateState(updates);
+  confettiTriggered = false;
+  pendingGameAction = null;
+  closeResumeGameModal();
+  saveCurrentGameState();
+  showSaveIndicator("Starting scores set!");
+}
 function saveWinProbMethod() {
   const select = document.getElementById("winProbMethodSelect");
   if (select) {
@@ -1262,7 +1417,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   const { biddingTeam, bidAmount, rounds, usTeamName, demTeamName } = state;
   if (!biddingTeam || !bidAmount) return;
   const numericBid = Number(bidAmount);
-  const lastTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, dem: 0 };
+  const lastTotals = getLastRunningTotals();
 
   // Get penalty type and calculate penalty amount
   const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
@@ -1471,7 +1626,7 @@ function handleFormSubmit(e, skipZeroCheck = false) {
       else if (biddingTeam === "dem" && demEarned < numericBid) demEarned = -numericBid;
   }
 
-  const lastTotals = rounds.length ? rounds[rounds.length - 1].runningTotals : { us: 0, dem: 0 };
+  const lastTotals = getLastRunningTotals();
   const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
   const newRound = { biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
   const updatedRounds = [...rounds, newRound];
@@ -1612,7 +1767,7 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
 
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
-  const lastRoundTotals = state.rounds.length ? state.rounds[state.rounds.length - 1].runningTotals : { us: 0, dem: 0 };
+  const lastRoundTotals = getCurrentTotals();
   const usPlayers = ensurePlayersArray(state.usPlayers);
   const demPlayers = ensurePlayersArray(state.demPlayers);
   const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
@@ -1626,7 +1781,9 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
       demPlayers,
       usTeamKey,
       demTeamKey,
-      rounds: state.rounds, finalScore: lastRoundTotals,
+      rounds: state.rounds,
+      finalScore: lastRoundTotals,
+      startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
       // Simplified playerStats, more complex stats are in general statistics
@@ -1661,7 +1818,7 @@ function confirmFreeze() {
 }
 function freezeCurrentGame() {
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
-  const finalScore = state.rounds.length ? state.rounds[state.rounds.length-1].runningTotals : {us:0, dem:0};
+  const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
   const usPlayers = ensurePlayersArray(state.usPlayers);
   const demPlayers = ensurePlayersArray(state.demPlayers);
@@ -1681,7 +1838,9 @@ function freezeCurrentGame() {
       finalScore, // Current scores when frozen
       lastBid: lastRound.bidAmount ? `${lastRound.bidAmount} (${lastRound.biddingTeam === "us" ? usDisplay : demDisplay})` : "N/A",
       winner: null, victoryMethod: null, // Game is not over
-      rounds: state.rounds, timestamp: new Date().toISOString(),
+      rounds: state.rounds,
+      startingTotals: sanitizeTotals(state.startingTotals),
+      timestamp: new Date().toISOString(),
       accumulatedTime: finalAccumulated,
       // Store necessary state to resume
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
@@ -1710,6 +1869,7 @@ function loadFreezerGame(index) {
       // Restore all relevant game state aspects
       updateState({
           rounds: chosen.rounds || [],
+          startingTotals: sanitizeTotals(chosen.startingTotals),
           gameOver: false, // Frozen games are not over
           winner: null, victoryMethod: null,
           biddingTeam: chosen.biddingTeam || "",
@@ -2653,7 +2813,7 @@ function handleBugReportClick() {
 // These are substantial and involve generating HTML. They are defined below.
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver, lastBidAmount, lastBidTeam } = state;
-  const totals = rounds.reduce((acc, r) => ({ us: acc.us + (r.usPoints || 0), dem: acc.dem + (r.demPoints || 0) }), { us: 0, dem: 0 });
+  const totals = getCurrentTotals();
   const roundNumber = rounds.length + 1;
 
   const shouldShowWinProbability = state.showWinProbability && !gameOver && rounds.length > 0;
@@ -3744,6 +3904,7 @@ document.addEventListener("DOMContentLoaded", () => {
     aboutModal: closeAboutModal,
     statisticsModal: closeStatisticsModal,
     teamSelectionModal: closeTeamSelectionModal,
+    resumeGameModal: closeResumeGameModal,
     settingsModal: closeSettingsModal,
     themeModal: () => closeThemeModal(null),
     confirmationModal: closeConfirmationModal,
