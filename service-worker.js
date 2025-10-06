@@ -22,6 +22,13 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.url.endsWith(".map")) {
+    event.respondWith(
+      Promise.resolve(new Response("", { status: 204, headers: { "Content-Type": "application/json" } }))
+    );
+    return;
+  }
+
   // Handle navigation requests
   if (event.request.mode === "navigate") {
     event.respondWith(
