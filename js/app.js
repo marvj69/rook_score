@@ -3904,6 +3904,14 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
 
+  const resumePaperGameButton = document.getElementById("resumePaperGameButton");
+  if (resumePaperGameButton) {
+    resumePaperGameButton.addEventListener("click", (event) => {
+      openResumeGameModal();
+      toggleMenu(event);
+    });
+  }
+
   // Close modals on outside click (simplified)
   const modalCloseHandlers = {
     savedGamesModal: closeSavedGamesModal,
