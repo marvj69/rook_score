@@ -811,9 +811,11 @@ loadedState = JSON.parse(storedStateString);
     // loadedState remains null, so it will fall through to using DEFAULT_STATE
   }
 
-  if (loadedState && typeof loadedState === 'object' && loadedState !== null && Array.isArray(loadedState.rounds)) {
+  if (loadedState && typeof loadedState === 'object' && loadedState !== null) {
     // Ensure all DEFAULT_STATE keys are present, preferring loaded values
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
+    completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds : [];
+    completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
     const now = Date.now();
     const hasRounds = Array.isArray(completeLoadedState.rounds) && completeLoadedState.rounds.length > 0;
     const timerWasRunning = typeof completeLoadedState.startTime === 'number' && !completeLoadedState.gameOver && hasRounds;
@@ -839,9 +841,8 @@ completeLoadedState.startTime = null;
     completeLoadedState.startingTotals = sanitizeTotals(completeLoadedState.startingTotals);
     updateState(completeLoadedState);
   } else {
-    if (loadedState) { // If it was parsed but didn't meet structure checks
-  console.warn("Loaded activeGameState has invalid structure. Resetting to default state.");
-  localStorage.removeItem(ACTIVE_GAME_KEY); // Remove invalid structure
+    if (loadedState) {
+      localStorage.removeItem(ACTIVE_GAME_KEY); // Remove invalid structure
     }
     // Fallback to default state
     updateState({

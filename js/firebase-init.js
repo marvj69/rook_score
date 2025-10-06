@@ -25,6 +25,31 @@ window.firestoreSetDoc = setDoc; // Make Firestore 'setDoc' function globally av
 window.firestoreGetDoc = getDoc;
 window.googleProvider = googleProvider;
 
+function shouldAttemptJsonParse(raw) {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  const first = trimmed[0];
+  if ((first >= '0' && first <= '9') || first === '-') return true;
+  return first === '{' || first === '[' || first === '"' || first === 't' || first === 'f' || first === 'n';
+}
+
+function deserializeLocalStorageValue(key, raw) {
+  if (raw === null || raw === undefined) return undefined;
+  if (!shouldAttemptJsonParse(raw)) return raw;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(`Could not parse localStorage key ${key}:`, error);
+    return raw;
+  }
+}
+
+function serializeForLocalStorage(value) {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 function updateAuthUI(user) {
   const authLabel = document.getElementById("authLabel");
   if (!authLabel) return;
@@ -47,15 +72,11 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   const localData = {};
 
   for (let i = 0; i < localStorage.length; i++) {
-const key = localStorage.key(i);
-if (!key.startsWith('firebase')) { // Avoid Firebase's own keys
-    try {
-        localData[key] = JSON.parse(localStorage.getItem(key));
-    } catch (e) {
-        console.warn(`Could not parse localStorage key ${key}:`, e);
-        localData[key] = localStorage.getItem(key); // Store as raw string if parse fails
+    const key = localStorage.key(i);
+    if (!key.startsWith('firebase')) { // Avoid Firebase's own keys
+      const rawValue = localStorage.getItem(key);
+      localData[key] = deserializeLocalStorageValue(key, rawValue);
     }
-}
   }
 
   const mergedData = {};
@@ -104,9 +125,14 @@ if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
 
   // Update localStorage with merged data
   Object.entries(mergedData).forEach(([key, value]) => {
-if (key !== "timestamp") {
-    localStorage.setItem(key, JSON.stringify(value));
-}
+    if (key !== "timestamp") {
+      const serialized = serializeForLocalStorage(value);
+      if (serialized === null) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, serialized);
+      }
+    }
   });
 
   // Re-initialize state from potentially merged localStorage
