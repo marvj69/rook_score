@@ -3903,6 +3903,14 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
+  const resumePaperGameButton = document.getElementById("resumePaperGameButton");
+  if (resumePaperGameButton) {
+    resumePaperGameButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      openResumeGameModal();
+      toggleMenu(event);
+    });
+  }
 
   // Close modals on outside click (simplified)
   const modalCloseHandlers = {
