@@ -639,50 +639,79 @@ function isValidHexColor(colorString) {
   return /^#([0-9A-F]{3}){1,2}$/i.test(colorString);
 }
 
+function sanitizeHexColor(colorString) {
+  if (typeof colorString !== 'string') return '';
+  const trimmed = colorString.trim();
+  if (!trimmed) return '';
+  const withoutQuotes = trimmed.replace(/^['"]+|['"]+$/g, '');
+  if (!withoutQuotes) return '';
+  const candidate = withoutQuotes.startsWith('#') ? withoutQuotes : `#${withoutQuotes}`;
+  return isValidHexColor(candidate) ? candidate : '';
+}
+
 function initializeCustomThemeColors() {
   const rootStyles = getComputedStyle(document.documentElement);
   const defaultUsColor = rootStyles.getPropertyValue('--primary-color').trim() || "#3b82f6";
   const defaultDemColor = rootStyles.getPropertyValue('--accent-color').trim() || "#ef4444";
 
-  let usColor = localStorage.getItem('customUsColor');
-  let demColor = localStorage.getItem('customDemColor');
+  const storedUsColor = localStorage.getItem('customUsColor');
+  const storedDemColor = localStorage.getItem('customDemColor');
 
   const body = document.getElementById('bodyRoot');
   const usPicker = document.getElementById('usColorPicker');
   const demPicker = document.getElementById('demColorPicker');
 
-  if (isValidHexColor(usColor)) {
-    body.style.setProperty('--primary-color', usColor);
+  const usColor = sanitizeHexColor(storedUsColor);
+  if (usColor) {
+    if (storedUsColor !== usColor) localStorage.setItem('customUsColor', usColor);
+    if (body) body.style.setProperty('--primary-color', usColor);
     if (usPicker) usPicker.value = usColor;
   } else {
-    if (usColor !== null) { // Only warn if there was an attempt to set an invalid color
-  console.warn(`Invalid customUsColor ("${usColor}") in localStorage. Using default.`);
-  // localStorage.removeItem('customUsColor'); // Optionally remove invalid item
+    if (storedUsColor !== null) { // Warn only when a value existed
+      console.warn(`Invalid customUsColor ("${storedUsColor}") in localStorage. Using default.`);
+      localStorage.removeItem('customUsColor');
     }
-    body.style.setProperty('--primary-color', defaultUsColor);
+    if (body) body.style.setProperty('--primary-color', defaultUsColor);
     if (usPicker) usPicker.value = defaultUsColor;
   }
 
-  if (isValidHexColor(demColor)) {
-    body.style.setProperty('--accent-color', demColor);
+  const demColor = sanitizeHexColor(storedDemColor);
+  if (demColor) {
+    if (storedDemColor !== demColor) localStorage.setItem('customDemColor', demColor);
+    if (body) body.style.setProperty('--accent-color', demColor);
     if (demPicker) demPicker.value = demColor;
   } else {
-    if (demColor !== null) {
-  console.warn(`Invalid customDemColor ("${demColor}") in localStorage. Using default.`);
-  // localStorage.removeItem('customDemColor');
+    if (storedDemColor !== null) {
+      console.warn(`Invalid customDemColor ("${storedDemColor}") in localStorage. Using default.`);
+      localStorage.removeItem('customDemColor');
     }
-    body.style.setProperty('--accent-color', defaultDemColor);
+    if (body) body.style.setProperty('--accent-color', defaultDemColor);
     if (demPicker) demPicker.value = defaultDemColor;
   }
   updatePreview(); // Ensure preview matches
 }
 function applyCustomThemeColors() {
-  const usColor = document.getElementById('usColorPicker').value;
-  const demColor = document.getElementById('demColorPicker').value;
-  document.getElementById('bodyRoot').style.setProperty('--primary-color', usColor);
-  document.getElementById('bodyRoot').style.setProperty('--accent-color', demColor);
-  localStorage.setItem('customUsColor', usColor);
-  localStorage.setItem('customDemColor', demColor);
+  const body = document.getElementById('bodyRoot');
+  const usPicker = document.getElementById('usColorPicker');
+  const demPicker = document.getElementById('demColorPicker');
+
+  const usColor = sanitizeHexColor(usPicker ? usPicker.value : '');
+  const demColor = sanitizeHexColor(demPicker ? demPicker.value : '');
+
+  if (usColor) {
+    if (body) body.style.setProperty('--primary-color', usColor);
+    localStorage.setItem('customUsColor', usColor);
+  } else {
+    localStorage.removeItem('customUsColor');
+  }
+
+  if (demColor) {
+    if (body) body.style.setProperty('--accent-color', demColor);
+    localStorage.setItem('customDemColor', demColor);
+  } else {
+    localStorage.removeItem('customDemColor');
+  }
+
   closeThemeModal(null); // Pass null if event is not available or needed
 }
 function resetThemeColors() {
