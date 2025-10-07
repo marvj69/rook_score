@@ -180,6 +180,27 @@ const {
   calculateWinProbability,
 } = require('../js/app.js');
 
+const LOGISTIC_PARAMS = {
+  intercept: 0.2084586876141831,
+  coeffDiff: 0.00421107,
+  coeffRound: -0.09520921,
+  coeffMomentum: 0.00149416,
+};
+
+const computeLogisticPercentage = (diff, roundIndex, momentum) => {
+  const { intercept, coeffDiff, coeffRound, coeffMomentum } = LOGISTIC_PARAMS;
+  const z =
+    intercept +
+    coeffDiff * diff +
+    coeffRound * roundIndex +
+    coeffMomentum * momentum;
+  const probUs = 1 / (1 + Math.exp(-z));
+  return {
+    us: +(probUs * 100).toFixed(1),
+    dem: +((1 - probUs) * 100).toFixed(1),
+  };
+};
+
 const resetState = () => {
   localStorage.clear();
 };
@@ -199,6 +220,11 @@ test('ensurePlayersArray always returns two sanitized names', () => {
 
   const fallback = ensurePlayersArray(null);
   assert.deepEqual(fallback, ['', '']);
+});
+
+test('sanitizePlayerName returns empty string for non-string values', () => {
+  assert.equal(sanitizePlayerName(123), '');
+  assert.equal(sanitizePlayerName({ name: 'Alice' }), '');
 });
 
 test('canonicalizePlayers sorts names case-insensitively', () => {
@@ -242,6 +268,22 @@ test('getGameTeamDisplay canonicalizes player names and falls back as needed', (
   assert.equal(getGameTeamDisplay({}, 'us'), 'Us');
 });
 
+test('getGameTeamDisplay uses legacy fields and guards invalid input', () => {
+  const game = {
+    usPlayers: null,
+    usTeamPlayers: ['Zoe', 'Alan'],
+    usTeamName: 'Legacy Us',
+    demPlayers: ['', ''],
+    demTeamName: 'Defenders',
+    demName: 'Fallback Dem',
+  };
+
+  assert.equal(getGameTeamDisplay(game, 'us'), 'Alan & Zoe');
+  assert.equal(getGameTeamDisplay(game, 'dem'), 'Defenders');
+  assert.equal(getGameTeamDisplay(null, 'us'), 'Us');
+  assert.equal(getGameTeamDisplay(game, 'invalid'), 'Dem');
+});
+
 test('playersEqual ignores ordering but respects exact casing', () => {
   assert.equal(playersEqual(['Alice', 'Bob'], ['Bob', 'Alice']), true);
   assert.equal(playersEqual(['Alice', ''], ['', 'Alice']), true);
@@ -254,6 +296,14 @@ test('bucketScore groups differences into twenty point buckets with caps', () =>
   assert.equal(bucketScore(20), 20);
   assert.equal(bucketScore(-37), -20);
   assert.equal(bucketScore(999), 180);
+});
+
+test('bucketScore returns zero for ties and caps large negative swings', () => {
+  assert.equal(bucketScore(0), 0);
+  const smallNegative = bucketScore(-5);
+  assert.ok(smallNegative === 0);
+  assert.ok(Object.is(smallNegative, -0));
+  assert.equal(bucketScore(-999), -180);
 });
 
 test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
@@ -285,6 +335,51 @@ test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
     assert.deepEqual(table['0|80'], { us: 2, dem: 1 });
     assert.deepEqual(table['1|100'], { us: 2, dem: 1 });
     assert.deepEqual(table['0|-60'], { us: 1, dem: 2 });
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('buildProbabilityIndex applies recency weighting and skips invalid games', () => {
+  resetState();
+  const fixedNow = new Date('2025-01-15T00:00:00Z').valueOf();
+  const originalNow = Date.now;
+  Date.now = () => fixedNow;
+  try {
+    const fourteenDays = 14 * 86_400_000;
+    const historicalGames = [
+      {
+        finalScore: { us: 400, dem: 320 },
+        rounds: [{ runningTotals: { us: 140, dem: 80 } }],
+        timestamp: new Date(fixedNow).toISOString(),
+      },
+      {
+        finalScore: { us: 410, dem: 360 },
+        rounds: [
+          { runningTotals: { us: 160, dem: 100 } },
+          {},
+        ],
+        timestamp: new Date(fixedNow - fourteenDays).toISOString(),
+      },
+      {
+        // Missing finalScore should be ignored entirely
+        rounds: [{ runningTotals: { us: 100, dem: 40 } }],
+        timestamp: new Date(fixedNow).toISOString(),
+      },
+      {
+        finalScore: { us: 330, dem: 420 },
+        rounds: [{}],
+        timestamp: new Date(fixedNow).toISOString(),
+      },
+    ];
+
+    const table = buildProbabilityIndex(historicalGames);
+    const key = '0|60';
+    assert.ok(table[key]);
+    assert.ok(Math.abs(table[key].us - 2.8) < 1e-9);
+    assert.ok(Math.abs(table[key].dem - 1) < 1e-9);
+    // Missing or empty runningTotals entries should not create additional buckets
+    assert.equal(table['1|0'], undefined);
   } finally {
     Date.now = originalNow;
   }
@@ -337,4 +432,52 @@ test('calculateWinProbabilityComplex blends empirical and model probabilities', 
   } finally {
     Date.now = originalNow;
   }
+});
+
+test('calculateWinProbabilityComplex returns even odds with no rounds', () => {
+  const result = calculateWinProbabilityComplex({ rounds: [] }, []);
+  assert.deepEqual(result, { us: 50, dem: 50 });
+});
+
+test('calculateWinProbabilityComplex falls back to logistic model without history', () => {
+  const state = {
+    rounds: [
+      { runningTotals: { us: 40, dem: 20 } },
+      { runningTotals: { us: 110, dem: 60 } },
+    ],
+  };
+  const roundIndex = state.rounds.length - 1;
+  const currentDiff = 110 - 60;
+  const prevDiff = 40 - 20;
+  const momentum = currentDiff - prevDiff;
+
+  const expected = computeLogisticPercentage(currentDiff, roundIndex, momentum);
+  const result = calculateWinProbabilityComplex(state, []);
+
+  assert.equal(result.us, expected.us);
+  assert.equal(result.dem, expected.dem);
+});
+
+test('calculateWinProbabilityComplex favors opponent when trailing with no data', () => {
+  const state = {
+    rounds: [
+      { runningTotals: { us: 80, dem: 120 } },
+    ],
+  };
+  const result = calculateWinProbabilityComplex(state, []);
+  assert.ok(result.dem > result.us);
+  assert.equal(result.us + result.dem, 100);
+});
+
+test('calculateWinProbability proxies to calculateWinProbabilityComplex', () => {
+  const state = {
+    rounds: [
+      { runningTotals: { us: 120, dem: 60 } },
+    ],
+  };
+  const historicalGames = [];
+  assert.deepEqual(
+    calculateWinProbability(state, historicalGames),
+    calculateWinProbabilityComplex(state, historicalGames),
+  );
 });
