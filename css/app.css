@@ -148,17 +148,17 @@ body.liquid-glass #saveIndicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.6rem 0.85rem;
-  min-height: 2.75rem; /* Ensure tappable touch target */
-  min-width: 3.5rem;
-  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  min-height: 2.25rem; /* Still maintains a comfortable tap target */
+  min-width: 2.9rem;
+  border-radius: 0.6rem;
   z-index: 1500;
   gap: 0.25rem;
   touch-action: manipulation;
   background: rgba(15, 23, 42, 0.52);
   border: 1px solid rgba(148, 163, 184, 0.28);
   color: #ffffff;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.015em;
   cursor: pointer;
@@ -206,9 +206,9 @@ body.liquid-glass .version-badge:hover {
   .version-badge {
     top: 0.75rem;
     right: 0.75rem;
-    width: 30px;
-    height: 24px;
-    font-size: 0.6rem;
+    width: 26px;
+    height: 22px;
+    font-size: 0.58rem;
   }
 }
 body.liquid-glass .bg-primary,
@@ -303,12 +303,12 @@ body.liquid-glass table tbody tr:nth-child(even) {
   background: color-mix(in srgb, var(--glass-layer) 50%, transparent 50%);
 }
 body.liquid-glass .hamburger-menu {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: 0 12px 30px -18px rgba(15, 23, 42, 0.45);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 body.liquid-glass .hamburger-menu .bar {
   width: 100%;
@@ -316,8 +316,8 @@ body.liquid-glass .hamburger-menu .bar {
   border-radius: 9999px;
 }
 html.dark body.liquid-glass .hamburger-menu {
-  background: rgba(15, 23, 42, 0.38);
-  box-shadow: 0 12px 30px -18px rgba(8, 47, 73, 0.55);
+  background: transparent;
+  box-shadow: none;
 }
 body.liquid-glass .menu-overlay {
   background: transparent;
@@ -583,6 +583,9 @@ html.dark nav ul li label:hover { /* Added label for dark mode toggle consistenc
 }
 #viewSavedGameModal {
   z-index: 9996; /* Above savedGamesModal and themeModal, below teamSelection and confirmation */
+}
+#presetEditorModal {
+  z-index: 9997; /* Ensures bid preset editor overlays the settings modal */
 }
 
 

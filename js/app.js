@@ -344,6 +344,12 @@ const Icons = { // SVG strings for icons to avoid multiple DOM elements
 function savePresetBids() { setLocalStorage(PRESET_BIDS_KEY, presetBids); }
 function openPresetEditorModal() {
   // No longer restrict to Pro Mode
+  const settingsModal = document.getElementById("settingsModal");
+  settingsModal?.classList.add("hidden");
+
+  const existingModal = document.getElementById("presetEditorModal");
+  if (existingModal) existingModal.remove();
+
   const modalHtml = `
       <div id="presetEditorModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="presetEditorTitle">
           <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all">
@@ -375,14 +381,24 @@ function openPresetEditorModal() {
           </div>
       </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
+  const modalEl = document.getElementById("presetEditorModal");
+  if (modalEl) {
+    modalEl.addEventListener("click", (event) => {
+      if (event.target === modalEl) closePresetEditorModal();
+    });
+    const content = modalEl.querySelector(".bg-white, .dark\\:bg-gray-800");
+    if (content) content.addEventListener("click", (event) => event.stopPropagation());
+  }
   activateModalEnvironment();
 }
 function closePresetEditorModal() {
   const modal = document.getElementById('presetEditorModal');
   if (modal) {
     modal.remove();
-    deactivateModalEnvironment();
   }
+  const settingsModal = document.getElementById("settingsModal");
+  if (settingsModal) settingsModal.classList.remove("hidden");
+  deactivateModalEnvironment();
 }
 
 function validatePresetInput(inputEl) {
@@ -1712,6 +1728,15 @@ function handleGameOverSaveClick(e) {
   pendingGameAction = "save";
   openTeamSelectionModal();
 }
+function handleGameOverFixClick(e) {
+  if (e) e.preventDefault();
+  if (!state.rounds.length) {
+      hideGameOverOverlay();
+      return;
+  }
+  hideGameOverOverlay();
+  handleUndo();
+}
 
 function handleManualSaveGame() { // Called after team names confirmed or if already set
   if (!state.usTeamName || !state.demTeamName) {
@@ -2751,6 +2776,7 @@ function renderGameOverOverlay() {
           <p class="text-xl mb-1 animate-fadeIn text-gray-700 dark:text-white">${winnerLabel} Wins!</p>
           <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400">(${state.victoryMethod || 'Game Ended'})</p>
           <div class="flex space-x-4 justify-center">
+            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-6 py-3 rounded-xl shadow hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed" type="button">Fix Score</button>
             <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-6 py-3 rounded-xl shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed" type="button">Save Game</button>
             <button onclick="handleNewGame()" class="bg-blue-600 text-white px-6 py-3 rounded-xl shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed" type="button">New Game</button>
           </div>
