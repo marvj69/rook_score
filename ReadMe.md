@@ -45,7 +45,7 @@
 *   **Bug Reporting:** Easy "Create Bug Report Email" option with pre-filled device and app state info.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New in v1.4.5
+## 🚀 What's New in v1.5.0 (Build 1)
 
 *   **Improved 0-Point Handling:** Added a smart popup to confirm if a 0-point team should trigger a 180 or 360-point bonus to the bidding team.
 *   **Table-Talk Feature:** New "Table-Talk" button lets you penalize the offending team by removing their bid for the current hand.

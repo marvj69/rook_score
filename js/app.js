@@ -4,7 +4,6 @@
 const MUST_WIN_BY_BID_KEY = "rookMustWinByBid";
 const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
-const WIN_PROB_CALC_METHOD_KEY = "winProbCalcMethod";
 const ACTIVE_GAME_KEY = "activeGameState";
 const PRO_MODE_KEY = "proModeEnabled";
 const THEME_KEY = "rookSelectedTheme";
@@ -224,116 +223,6 @@ add(key, winner, w);
   return table;
 }
 
-function calculateWinProbabilitySimple(currentGame, historicalGames) {
-  const { rounds } = currentGame;
-
-  if (!rounds || rounds.length === 0) {
-    console.log("Win Probabilities: US=50%, DEM=50%");
-    console.log("Factors: None - No rounds played");
-    return { us: 50, dem: 50, factors: [] };
-  }
-
-  // Get current scores
-  const lastRound = rounds[rounds.length - 1];
-  const currentScores = lastRound.runningTotals || { us: 0, dem: 0 };
-  const scoreDiff = currentScores.us - currentScores.dem;
-  const roundsPlayed = rounds.length;
-
-  // Base probability calculation from score difference
-  let baseProb = 50 + (scoreDiff / 15);  // Each 12 points is worth 1% advantage
-
-  // Adjust for tendency to come back from behind
-  let comebackFactor = 0;
-
-  // Find similar historical games based on completion status and rounds
-  const relevantGames = historicalGames.filter(game => {
-    return game.rounds && 
-     game.rounds.length > 0 && 
-     game.rounds.length >= roundsPlayed && 
-     game.finalScore && 
-     (game.finalScore.us !== undefined || game.finalScore.dem !== undefined);
-  });
-
-  // Analyze comebacks in historical games
-  if (relevantGames.length > 0) {
-    let comebackCount = 0;
-    let totalSimilarSituations = 0;
-
-    relevantGames.forEach(game => {
-if (!game.rounds || game.rounds.length <= roundsPlayed) return;
-
-const historicalRound = game.rounds[roundsPlayed - 1];
-const finalScores = game.finalScore;
-
-if (!historicalRound || !finalScores) return;
-
-const historicalScores = historicalRound.runningTotals;
-if (!historicalScores) return;
-
-const historicalLeader = historicalScores.us > historicalScores.dem ? "us" : "dem";
-const finalWinner = finalScores.us > finalScores.dem ? "us" : "dem";
-
-if (historicalLeader !== finalWinner) {
-  comebackCount++;
-}
-
-totalSimilarSituations++;
-    });
-
-    if (totalSimilarSituations > 0) {
-const comebackRate = comebackCount / totalSimilarSituations;
-comebackFactor = Math.round(comebackRate * 10); // Max 10% adjustment
-    }
-  }
-
-  // Momentum factor based on recent rounds
-  let momentumFactor = 0;
-  if (rounds.length >= 3) {
-    let recentUsPoints = 0;
-    let recentDemPoints = 0;
-
-    for (let i = rounds.length - 3; i < rounds.length; i++) {
-if (i >= 0) {
-  recentUsPoints += rounds[i].usPoints || 0;
-  recentDemPoints += rounds[i].demPoints || 0;
-}
-    }
-
-    if (recentUsPoints > recentDemPoints) {
-momentumFactor = 2;
-    } else if (recentDemPoints > recentUsPoints) {
-momentumFactor = -2;
-    }
-  }
-
-  // Bid strength factor
-  let bidStrengthFactor = 0;
-  const usHighBids = rounds.filter(r => r.biddingTeam === "us" && r.bidAmount >= 140).length;
-  const demHighBids = rounds.filter(r => r.biddingTeam === "dem" && r.bidAmount >= 140).length;
-
-  if (usHighBids > demHighBids) {
-    bidStrengthFactor = 2;
-  } else if (demHighBids > usHighBids) {
-    bidStrengthFactor = -2;
-  }
-
-  // Calculate final probability
-  const adjustedProb = Math.min(Math.max(baseProb + momentumFactor + comebackFactor + bidStrengthFactor, 1), 99);
-
-  // Factors for explanation
-  const factors = [
-    { name: "Score Difference", value: Math.round((scoreDiff / 20)), description: `${Math.abs(scoreDiff)} point difference` },
-    { name: "Momentum", value: momentumFactor, description: momentumFactor !== 0 ? `Recent rounds trend` : "No clear momentum" },
-    { name: "Comeback Tendency", value: comebackFactor, description: `Based on ${relevantGames.length} completed games` },
-    { name: "Bid Strength", value: bidStrengthFactor, description: `High bids: us (${usHighBids}), dem (${demHighBids})` }
-  ];
-
-  return {
-    us: adjustedProb,
-    dem: 100 - adjustedProb,
-    factors: factors
-  };
-}
 // --- Calibrated logistic (trained 2025-06-20 on 44 games) -------------
 const L_INTERCEPT   =  0.2084586876141831;
 const L_COEFF_DIFF  =  0.00421107;
@@ -407,15 +296,7 @@ function calculateWinProbabilityComplex(state, historicalGames) {
 }
 
 function calculateWinProbability(state, historicalGames) {
-  // Get the user's preference for calculation method
-  // Change default from 'complex' to 'simple'
-  const method = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
-
-  if (method === "simple") {
-    return calculateWinProbabilitySimple(state, historicalGames);
-  } else {
-    return calculateWinProbabilityComplex(state, historicalGames);
-  }
+  return calculateWinProbabilityComplex(state, historicalGames);
 }
 
 
@@ -1195,18 +1076,30 @@ function openResumeGameModal() {
   if (form) form.reset();
 
   const totals = getCurrentTotals();
-  const baseNames = {
-    us: state.usTeamName || "",
-    dem: state.demTeamName || "",
+  const basePlayers = {
+    us: (() => {
+      const players = ensurePlayersArray(state.usPlayers);
+      if (players.some(Boolean)) return players;
+      return ensurePlayersArray(parseLegacyTeamName(state.usTeamName || ""));
+    })(),
+    dem: (() => {
+      const players = ensurePlayersArray(state.demPlayers);
+      if (players.some(Boolean)) return players;
+      return ensurePlayersArray(parseLegacyTeamName(state.demTeamName || ""));
+    })(),
   };
 
-  const usNameInput = document.getElementById("resumeUsName");
-  const demNameInput = document.getElementById("resumeDemName");
+  const usPlayerOneInput = document.getElementById("resumeUsPlayerOne");
+  const usPlayerTwoInput = document.getElementById("resumeUsPlayerTwo");
+  const demPlayerOneInput = document.getElementById("resumeDemPlayerOne");
+  const demPlayerTwoInput = document.getElementById("resumeDemPlayerTwo");
   const usScoreInput = document.getElementById("resumeUsScore");
   const demScoreInput = document.getElementById("resumeDemScore");
 
-  if (usNameInput) usNameInput.value = baseNames.us;
-  if (demNameInput) demNameInput.value = baseNames.dem;
+  if (usPlayerOneInput) usPlayerOneInput.value = basePlayers.us[0] || "";
+  if (usPlayerTwoInput) usPlayerTwoInput.value = basePlayers.us[1] || "";
+  if (demPlayerOneInput) demPlayerOneInput.value = basePlayers.dem[0] || "";
+  if (demPlayerTwoInput) demPlayerTwoInput.value = basePlayers.dem[1] || "";
   if (usScoreInput) usScoreInput.value = totals.us;
   if (demScoreInput) demScoreInput.value = totals.dem;
 
@@ -1266,8 +1159,14 @@ function handleResumeGameSubmit(event) {
     errorEl.classList.add("hidden");
   }
 
-  const usName = (document.getElementById("resumeUsName")?.value || "").trim();
-  const demName = (document.getElementById("resumeDemName")?.value || "").trim();
+  const usPlayers = ensurePlayersArray([
+    sanitizePlayerName(document.getElementById("resumeUsPlayerOne")?.value || ""),
+    sanitizePlayerName(document.getElementById("resumeUsPlayerTwo")?.value || ""),
+  ]);
+  const demPlayers = ensurePlayersArray([
+    sanitizePlayerName(document.getElementById("resumeDemPlayerOne")?.value || ""),
+    sanitizePlayerName(document.getElementById("resumeDemPlayerTwo")?.value || ""),
+  ]);
 
   const startingTotals = sanitizeTotals({ us: usScore, dem: demScore });
   const updates = {
@@ -1292,8 +1191,8 @@ function handleResumeGameSubmit(event) {
     savedScoreInputStates: { us: null, dem: null },
   };
 
-  if (usName) updates.usTeamName = usName;
-  if (demName) updates.demTeamName = demName;
+  updates.usPlayers = usPlayers;
+  updates.demPlayers = demPlayers;
 
   updateState(updates);
   confettiTriggered = false;
@@ -1309,17 +1208,6 @@ if (typeof window !== "undefined") {
   window.closeResumeGameModal = closeResumeGameModal;
   window.handleResumeGameSubmit = handleResumeGameSubmit;
 }
-function saveWinProbMethod() {
-  const select = document.getElementById("winProbMethodSelect");
-  if (select) {
-    setLocalStorage(WIN_PROB_CALC_METHOD_KEY, select.value);
-    // Refresh the display if win probability is currently shown
-    if (state.showWinProbability) {
-      renderApp();
-    }
-  }
-}
-
 function openSettingsModal() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
   if (mustWinToggle) mustWinToggle.checked = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
@@ -2017,16 +1905,6 @@ function saveSettings() {
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points);
   }
 
-  // Save win probability calculation method
-  const winProbMethodSelect = document.getElementById("winProbMethodSelect");
-  if (winProbMethodSelect) {
-    setLocalStorage(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
-    // Refresh the display if win probability is currently shown
-    if (state.showWinProbability) {
-      renderApp();
-    }
-  }
-
   showSaveIndicator("Settings Saved");
 }
 function updateProModeUI(isProMode) {
@@ -2056,20 +1934,6 @@ function handleTableTalkPenaltyChange() {
     // Save the penalty type setting
     console.log("Saving Table Talk Penalty Type:", penaltySelect.value);
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
-  }
-}
-
-function handleWinProbMethodChange() {
-  const winProbMethodSelect = document.getElementById("winProbMethodSelect");
-  if (winProbMethodSelect) {
-    // Save the win probability method setting
-    console.log("Saving Win Prob Method:", winProbMethodSelect.value);
-    setLocalStorage(WIN_PROB_CALC_METHOD_KEY, winProbMethodSelect.value);
-
-    // Update any currently displayed probability calculations
-    if (state.showWinProbability && state.rounds && state.rounds.length > 0) {
-      renderApp(); // Re-render to update probability display
-    }
   }
 }
 
@@ -2116,7 +1980,7 @@ function validatePoints(pointsStr) {
 
 // --- Misc UI & Utility ---
 function showVersionNum() {
-  alert("Version 1.4.6 adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
+  alert("Version 1.5.0 (Build 1) adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
 }
 // Time protection constants
 const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
@@ -2236,255 +2100,7 @@ function generateProbabilityBreakdown() {
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
 
-  // Detect which calculation method is being used
-  const method = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
-  const isComplex = method === "complex";
-
-  if (isComplex) {
-    return generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores);
-  } else {
-    return generateSimpleProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores);
-  }
-}
-
-function generateSimpleProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores) {
-  // Score Analysis
-  const scoreAnalysis = (() => {
-    const margin = Math.abs(scoreDiff);
-    const leader = scoreDiff > 0 ? labelUs : scoreDiff < 0 ? labelDem : "Neither";
-    let impact = "";
-    let explanation = "";
-
-    if (margin === 0) {
-      impact = "Minimal impact (+0%)";
-      explanation = "Tied games have equal probability to start";
-    } else if (margin <= 130) {
-      impact = `Close game advantage (${Math.round(margin / 15)}%)`;
-      explanation = "Close game - either team can still win";
-    } else if (margin <= 180) {
-      impact = `Large lead advantage (${Math.round(margin / 15)}%)`;
-      explanation = "Significant lead, but comeback still possible";
-    } else {
-      impact = `Dominant position (${Math.round(margin / 15)}%)`;
-      explanation = "Very large lead, comeback highly unlikely";
-    }
-
-    return { margin, leader, impact, explanation };
-  })();
-
-  // Momentum analysis with more detail
-  const momentumAnalysis = (() => {
-    if (state.rounds.length < 3) {
-      return {
-        text: "Not enough rounds",
-        impact: "No momentum factor",
-        explanation: "Need at least 3 rounds to analyze momentum"
-      };
-    }
-
-    let recentUsPoints = 0;
-    let recentDemPoints = 0;
-
-    for (let i = state.rounds.length - 3; i < state.rounds.length; i++) {
-      if (i >= 0) {
-        recentUsPoints += state.rounds[i].usPoints || 0;
-        recentDemPoints += state.rounds[i].demPoints || 0;
-      }
-    }
-
-    const diff = recentUsPoints - recentDemPoints;
-    let text, impact, explanation;
-
-    if (Math.abs(diff) <= 10) {
-      text = "Balanced recent performance";
-      impact = "Neutral (0%)";
-      explanation = "Both teams scoring similarly in recent rounds";
-    } else if (diff > 10) {
-      text = `${labelUs} gaining momentum`;
-      impact = "Slight boost (+2%)";
-      explanation = `${labelUs} outscored ${labelDem} ${recentUsPoints} to ${recentDemPoints} in last 3 rounds`;
-    } else {
-      text = `${labelDem} gaining momentum`;
-      impact = "Slight disadvantage (-2%)";
-      explanation = `${labelDem} outscored ${labelUs} ${recentDemPoints} to ${recentUsPoints} in last 3 rounds`;
-    }
-
-    return { text, impact, explanation };
-  })();
-
-  // Bid strength analysis with detailed explanation
-  const bidAnalysis = (() => {
-    const usHighBids = state.rounds.filter(r => r.biddingTeam === "us" && r.bidAmount >= 140).length;
-    const demHighBids = state.rounds.filter(r => r.biddingTeam === "dem" && r.bidAmount >= 140).length;
-    const usBids = state.rounds.filter(r => r.biddingTeam === "us").length;
-    const demBids = state.rounds.filter(r => r.biddingTeam === "dem").length;
-
-    let text, impact, explanation;
-
-    if (usHighBids === demHighBids) {
-      text = "Equal aggressive bidding";
-      impact = "Neutral (0%)";
-      explanation = `Both teams made ${usHighBids} high bids (140+)`;
-    } else if (usHighBids > demHighBids) {
-      text = `${labelUs} more aggressive`;
-      impact = "Confidence boost (+2%)";
-      explanation = `${labelUs} made ${usHighBids} high bids vs ${labelDem}'s ${demHighBids}. Aggressive bidding often indicates confidence and card strength.`;
-    } else {
-      text = `${labelDem} more aggressive`;
-      impact = "Confidence disadvantage (-2%)";
-      explanation = `${labelDem} made ${demHighBids} high bids vs ${labelUs}'s ${usHighBids}. Aggressive bidding often indicates confidence and card strength.`;
-    }
-
-    return { text, impact, explanation, usHighBids, demHighBids, usBids, demBids };
-  })();
-
-  // Historical context analysis
-  const historicalAnalysis = (() => {
-    const relevantGames = historicalGames.filter(game => {
-      return game.rounds && game.rounds.length > 0 && game.finalScore;
-    });
-
-    if (relevantGames.length === 0) {
-      return {
-        text: "No historical data",
-        explanation: "Predictions based on general scoring patterns only"
-      };
-    }
-
-    // Find similar game states
-    const similarSituations = relevantGames.filter(game => {
-      if (game.rounds.length < roundsPlayed) return false;
-      const historicalRound = game.rounds[roundsPlayed - 1];
-      if (!historicalRound?.runningTotals) return false;
-
-      const historicalDiff = historicalRound.runningTotals.us - historicalRound.runningTotals.dem;
-      const diffSimilarity = Math.abs(historicalDiff - scoreDiff);
-      return diffSimilarity <= 30; // Within 30 points
-    });
-
-    let explanation = `Drawing from ${relevantGames.length} completed games`;
-    if (similarSituations.length > 0) {
-      explanation += `. Found ${similarSituations.length} games with similar score positions at this stage.`;
-    }
-
-    return {
-      text: `${relevantGames.length} games analyzed`,
-      explanation,
-      totalGames: relevantGames.length,
-      similarSituations: similarSituations.length
-    };
-  })();
-
-  // Calculate confidence level
-  const confidenceLevel = (() => {
-    const dataPoints = historicalAnalysis.totalGames;
-    if (dataPoints === 0) return "Low";
-    if (dataPoints < 5) return "Low";
-    if (dataPoints < 15) return "Medium";
-    if (dataPoints < 30) return "High";
-    return "Very High";
-  })();
-
-  return `
-    <div class="space-y-4">
-      <!-- Header -->
-      <div class="text-center border-b border-gray-200 dark:border-gray-700 pb-3">
-        <div class="text-xl font-bold text-gray-800 dark:text-white mb-1">
-          Win Probability Analysis
-        </div>
-        <div class="flex items-center justify-center gap-6 text-lg">
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-primary"></div>
-            <span class="font-semibold">${labelUs}: ${winProb.us.toFixed(1)}%</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-accent"></div>
-            <span class="font-semibold">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
-          </div>
-        </div>
-        <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Method: Simple Analysis • Confidence: ${confidenceLevel}
-        </div>
-      </div>
-
-      <!-- Current Game State -->
-      <div class="space-y-3">
-        <h3 class="font-semibold text-gray-800 dark:text-white">Current Game State</h3>
-
-        <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
-          <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Score Impact</div>
-            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${scoreAnalysis.impact}</div>
-          </div>
-          <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
-            ${scoreAnalysis.margin > 0 ? `(${scoreAnalysis.leader} ahead by ${scoreAnalysis.margin})` : '(Tied)'}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${scoreAnalysis.explanation}
-          </div>
-        </div>
-
-        <div class="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-lg p-3">
-          <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Momentum Factor</div>
-            <div class="text-sm text-green-700 dark:text-green-300 font-medium">${momentumAnalysis.impact}</div>
-          </div>
-          <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Recent Trend:</strong> ${momentumAnalysis.text}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${momentumAnalysis.explanation}
-          </div>
-        </div>
-
-        <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
-          <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Bidding Confidence</div>
-            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${bidAnalysis.impact}</div>
-          </div>
-          <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Pattern:</strong> ${bidAnalysis.text}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${bidAnalysis.explanation}
-          </div>
-        </div>
-      </div>
-
-      <!-- Historical Context -->
-      <div class="space-y-3">
-        <h3 class="font-semibold text-gray-800 dark:text-white">Historical Context</h3>
-
-        <div class="bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 rounded-lg p-3">
-          <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Data Foundation</div>
-            <div class="text-sm text-yellow-700 dark:text-yellow-300 font-medium">${historicalAnalysis.text}</div>
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400">
-            ${historicalAnalysis.explanation}
-          </div>
-        </div>
-      </div>
-
-      <!-- How It Works -->
-      <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
-        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-          <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Calculation Works (Simple Method)</h4>
-          <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-            <p>• <strong>Score Difference:</strong> Each 15-point lead adds roughly 1% win probability</p>
-            <p>• <strong>Momentum:</strong> Recent performance trends can add ±2% adjustment</p>
-            <p>• <strong>Bidding Patterns:</strong> Aggressive bidding (140+ bids) suggests confidence and strong cards</p>
-            <p>• <strong>Historical Data:</strong> Past games with similar situations inform the baseline probability</p>
-            <p>• <strong>Comeback Factor:</strong> Analysis of how often trailing teams recover in similar situations</p>
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-            Remember: Rook is a game of skill and luck. These probabilities are educated estimates based on patterns, not guarantees!
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+  return generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores);
 }
 
 function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores) {
@@ -2616,11 +2232,11 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         <div class="flex items-center justify-center gap-6 text-lg">
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded-full bg-primary"></div>
-            <span class="font-semibold">${labelUs}: ${winProb.us.toFixed(1)}%</span>
+            <span class="font-semibold text-white">${labelUs}: ${winProb.us.toFixed(1)}%</span>
           </div>
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded-full bg-accent"></div>
-            <span class="font-semibold">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+            <span class="font-semibold text-white">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -3062,12 +2678,30 @@ function renderHistoryCard() {
 
   // Check if we should show the probability dropdown button
   const showProbabilityButton = state.showWinProbability && !state.gameOver && rounds.length > 0;
+  const currentTotals = getLastRunningTotals();
+  const pointDiffRaw = currentTotals.us - currentTotals.dem;
+  const pointDiffDisplay = pointDiffRaw > 0
+    ? `${labelUs} +${pointDiffRaw}`
+    : pointDiffRaw < 0
+      ? `${labelDem} +${Math.abs(pointDiffRaw)}`
+      : "Tied";
+  const pointDiffColorClass = pointDiffRaw > 0
+    ? "text-primary"
+    : pointDiffRaw < 0
+      ? "text-accent"
+      : "text-gray-800 dark:text-white";
 
   return `
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
       <div class="border-b border-gray-200 p-4 dark:border-gray-700">
-        <h2 class="text-lg font-bold text-gray-800 dark:text-white">History</h2>
-        <div class="grid grid-cols-3 gap-2 pt-3 font-medium text-gray-600 dark:text-white text-sm sm:text-base">
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-lg font-bold text-gray-800 dark:text-white">History</h2>
+          <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+            Point Difference:
+            <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>
+          </p>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-3 font-medium text-gray-600 dark:text-white text-sm sm:text-base">
           <div class="text-left truncate">${labelUs}</div>
           <div class="text-center">Bid</div>
           <div class="text-right truncate">${labelDem}</div>
@@ -3404,10 +3038,12 @@ function renderStatisticsContent() {
           timePlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
           gamesPlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>'
       };
-      let statCardsHtml = stats.totalGames > 0 ? `<div class="grid grid-cols-3 gap-2 mt-6">
-          ${statCard("Avg Bid", stats.overallAverageBid, icons.avgBid, "blue")}
-          ${statCard("Time Played", formatDuration(stats.totalTimePlayedMs), icons.timePlayed, "purple")}
-          ${statCard("Games Played", stats.totalGames, icons.gamesPlayed, "green")}
+      let statCardsHtml = stats.totalGames > 0 ? `<div class="sticky bottom-0 z-30 -mx-4 sm:mx-0 pt-4 pb-5 mt-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <div class="grid grid-cols-3 gap-2">
+            ${statCard("Avg Bid", stats.overallAverageBid, icons.avgBid, "blue")}
+            ${statCard("Time Played", formatDuration(stats.totalTimePlayedMs), icons.timePlayed, "purple")}
+            ${statCard("Games Played", stats.totalGames, icons.gamesPlayed, "green")}
+          </div>
       </div>` : "";
       const viewSelector = `<div class="mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
 
@@ -3419,8 +3055,8 @@ function renderStatisticsContent() {
 
       const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
       const statsTableHtml = renderStatsTable(statsViewMode, statsDataForMode, statsMetricKey);
-      const controlsBlock = `<div class="sticky top-0 z-10 bg-white dark:bg-gray-800 pt-1 pb-3 border-b border-gray-200 dark:border-gray-700">${viewSelector}${statSelector}</div>`;
-      content = `${controlsBlock}<div id="teamStatsTableWrapper">${statsTableHtml}</div>${statCardsHtml}`;
+      const controlsBlock = `<div class="stats-controls bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">${viewSelector}${statSelector}</div>`;
+      content = `${controlsBlock}<div id="teamStatsTableWrapper" class="pb-28">${statsTableHtml}</div>${statCardsHtml}`;
   }
   document.getElementById("statisticsModalContent").innerHTML = content;
   const viewModeSelect = document.getElementById('statsViewModeSelect');
@@ -3783,16 +3419,6 @@ function handleDeleteTeam(teamKey, displayName = '') {
 function loadSettings() {
   console.log("Loading settings from localStorage...");
 
-  // Load win probability method setting
-  const winProbMethodSelect = document.getElementById("winProbMethodSelect");
-  if (winProbMethodSelect) {
-    const savedMethod = getLocalStorage(WIN_PROB_CALC_METHOD_KEY, "simple");
-    console.log("Loading Win Prob Method:", savedMethod);
-    winProbMethodSelect.value = savedMethod;
-  } else {
-    console.warn("winProbMethodSelect element not found");
-  }
-
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
@@ -4137,7 +3763,6 @@ if (typeof module !== 'undefined' && module.exports) {
     playersEqual,
     bucketScore,
     buildProbabilityIndex,
-    calculateWinProbabilitySimple,
     calculateWinProbabilityComplex,
     calculateWinProbability,
   };

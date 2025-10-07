@@ -176,12 +176,9 @@ const {
   playersEqual,
   bucketScore,
   buildProbabilityIndex,
-  calculateWinProbabilitySimple,
   calculateWinProbabilityComplex,
   calculateWinProbability,
 } = require('../js/app.js');
-
-const WIN_METHOD_KEY = 'winProbCalcMethod';
 
 const resetState = () => {
   localStorage.clear();
@@ -293,31 +290,6 @@ test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
   }
 });
 
-test('calculateWinProbabilitySimple reacts to score difference and bids', () => {
-  resetState();
-  const state = {
-    rounds: [
-      {
-        runningTotals: { us: 160, dem: 100 },
-        usPoints: 160,
-        demPoints: 100,
-        biddingTeam: 'us',
-        bidAmount: 150,
-      },
-    ],
-  };
-
-  const result = calculateWinProbabilitySimple(state, []);
-  assert.equal(result.us, 56);
-  assert.equal(result.dem, 44);
-});
-
-test('calculateWinProbabilitySimple handles early game with no rounds', () => {
-  const result = calculateWinProbabilitySimple({ rounds: [] }, []);
-  assert.equal(result.us, 50);
-  assert.equal(result.dem, 50);
-});
-
 test('calculateWinProbabilityComplex blends empirical and model probabilities', () => {
   resetState();
   const fixedNow = Date.now();
@@ -362,39 +334,6 @@ test('calculateWinProbabilityComplex blends empirical and model probabilities', 
     assert.ok(result.us > result.dem);
     assert.ok(result.us >= 50);
     assert.equal(Number(result.us.toFixed(1)) + Number(result.dem.toFixed(1)), 100);
-  } finally {
-    Date.now = originalNow;
-  }
-});
-
- test('calculateWinProbability respects stored method preference', () => {
-  resetState();
-  const state = {
-    rounds: [
-      { runningTotals: { us: 200, dem: 140 }, biddingTeam: 'us', bidAmount: 150 },
-    ],
-  };
-
-  const simpleResult = calculateWinProbability(state, []);
-  assert.equal(simpleResult.us, 56);
-
-  localStorage.setItem(WIN_METHOD_KEY, JSON.stringify('complex'));
-
-  const fixedNow = Date.now();
-  const originalNow = Date.now;
-  Date.now = () => fixedNow;
-  try {
-    const complexResult = calculateWinProbability(state, [
-      {
-        finalScore: { us: 500, dem: 450 },
-        rounds: [
-          { runningTotals: { us: 200, dem: 140 } },
-        ],
-        timestamp: new Date(fixedNow).toISOString(),
-      },
-    ]);
-    assert.ok(complexResult.us >= 50);
-    assert.ok(complexResult.us <= 100);
   } finally {
     Date.now = originalNow;
   }
