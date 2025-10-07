@@ -464,7 +464,7 @@ function savePresetBids() { setLocalStorage(PRESET_BIDS_KEY, presetBids); }
 function openPresetEditorModal() {
   // No longer restrict to Pro Mode
   const modalHtml = `
-      <div id="presetEditorModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="presetEditorTitle">
+      <div id="presetEditorModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="presetEditorTitle">
           <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all">
               <div class="flex items-center justify-between mb-4">
                   <h2 id="presetEditorTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Edit Bid Presets</h2>
@@ -494,11 +494,14 @@ function openPresetEditorModal() {
           </div>
       </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
-  document.body.classList.add('modal-open');
+  activateModalEnvironment();
 }
 function closePresetEditorModal() {
   const modal = document.getElementById('presetEditorModal');
-  if (modal) { modal.remove(); document.body.classList.remove('modal-open'); }
+  if (modal) {
+    modal.remove();
+    deactivateModalEnvironment();
+  }
 }
 
 function validatePresetInput(inputEl) {
@@ -1136,16 +1139,29 @@ function toggleMenu(e) {
 }
 function closeMenuOverlay() { toggleMenu(null); } // Simplified close
 
-function openModal(modalId) {
-  document.getElementById(modalId)?.classList.remove("hidden");
+function activateModalEnvironment() {
   document.body.classList.add("modal-open");
   document.getElementById("app")?.classList.add("modal-active");
-  document.getElementById(modalId)?.focus(); // For accessibility
+}
+
+function deactivateModalEnvironment() {
+  const anyOpenModal = Array.from(document.querySelectorAll(".modal"))
+    .some(modal => !modal.classList.contains("hidden"));
+  if (!anyOpenModal) {
+    document.body.classList.remove("modal-open");
+    document.getElementById("app")?.classList.remove("modal-active");
+  }
+}
+
+function openModal(modalId) {
+  const modal = document.getElementById(modalId);
+  modal?.classList.remove("hidden");
+  activateModalEnvironment();
+  modal?.focus(); // For accessibility
 }
 function closeModal(modalId) {
   document.getElementById(modalId)?.classList.add("hidden");
-  document.body.classList.remove("modal-open");
-  document.getElementById("app")?.classList.remove("modal-active");
+  deactivateModalEnvironment();
 }
 function openSavedGamesModal() {
   updateGamesCount();
@@ -1384,10 +1400,10 @@ function openTableTalkModal() {
   const demTeamName = state.demTeamName || "Dem";
 
   const modalHtml = `
-    <div class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50" id="tableTalkModal">
+    <div id="tableTalkModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="tableTalkModalTitle">
       <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-xl shadow-lg">
         <div class="p-6">
-          <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white text-center">Table Talk Penalty</h2>
+          <h2 id="tableTalkModalTitle" class="text-xl font-bold mb-4 text-gray-800 dark:text-white text-center">Table Talk Penalty</h2>
           <p class="text-gray-600 dark:text-gray-300 mb-6 text-center">Which team engaged in table talk during this round?</p>
           <div class="space-y-3">
             <button 
@@ -1415,14 +1431,14 @@ function openTableTalkModal() {
     </div>`;
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
-  document.body.classList.add('modal-open');
+  activateModalEnvironment();
 }
 
 function closeTableTalkModal() {
   const modal = document.getElementById('tableTalkModal');
   if (modal) {
     modal.remove();
-    document.body.classList.remove('modal-open');
+    deactivateModalEnvironment();
   }
 }
 
@@ -2176,7 +2192,7 @@ function formatDuration(ms) {
 // --- Probability Breakdown Functions ---
 function openProbabilityModal() {
   const modalHtml = `
-    <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
+    <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
       <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">
         <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 id="probabilityModalTitle" class="text-xl font-bold text-gray-800 dark:text-white">Win Probability Breakdown</h2>
@@ -2193,14 +2209,14 @@ function openProbabilityModal() {
     </div>
   `;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
-  document.body.classList.add('modal-open');
+  activateModalEnvironment();
 }
 
 function closeProbabilityModal() {
   const modal = document.getElementById('probabilityModal');
   if (modal) {
     modal.remove();
-    document.body.classList.remove('modal-open');
+    deactivateModalEnvironment();
   }
 }
 
@@ -3388,12 +3404,12 @@ function renderStatisticsContent() {
           timePlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
           gamesPlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>'
       };
-      let statCardsHtml = stats.totalGames > 0 ? `<div class="grid grid-cols-3 gap-2 mb-4">
+      let statCardsHtml = stats.totalGames > 0 ? `<div class="grid grid-cols-3 gap-2 mt-6">
           ${statCard("Avg Bid", stats.overallAverageBid, icons.avgBid, "blue")}
           ${statCard("Time Played", formatDuration(stats.totalTimePlayedMs), icons.timePlayed, "purple")}
           ${statCard("Games Played", stats.totalGames, icons.gamesPlayed, "green")}
       </div>` : "";
-      const viewSelector = `<div class="mt-6 mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
+      const viewSelector = `<div class="mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
 
       const metricOptions = ['games', 'avgBid', 'bidSuccessPct', 'sandbagger', '360s']
         .map(opt => `<option value="${opt}"${statsMetricKey === opt ? ' selected' : ''}>${opt === 'games' ? 'Games Played' : opt === 'avgBid' ? 'Avg Bid' : opt === 'bidSuccessPct' ? 'Bid Success %' : opt === 'sandbagger' ? 'Sandbagger?' : '360s'}</option>`)
@@ -3403,7 +3419,8 @@ function renderStatisticsContent() {
 
       const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
       const statsTableHtml = renderStatsTable(statsViewMode, statsDataForMode, statsMetricKey);
-      content = `${statCardsHtml}${viewSelector}${statSelector}<div id="teamStatsTableWrapper">${statsTableHtml}</div>`;
+      const controlsBlock = `<div class="sticky top-0 z-10 bg-white dark:bg-gray-800 pt-1 pb-3 border-b border-gray-200 dark:border-gray-700">${viewSelector}${statSelector}</div>`;
+      content = `${controlsBlock}<div id="teamStatsTableWrapper">${statsTableHtml}</div>${statCardsHtml}`;
   }
   document.getElementById("statisticsModalContent").innerHTML = content;
   const viewModeSelect = document.getElementById('statsViewModeSelect');
@@ -3959,6 +3976,8 @@ document.addEventListener("DOMContentLoaded", () => {
     themeModal: () => closeThemeModal(null),
     confirmationModal: closeConfirmationModal,
     presetEditorModal: closePresetEditorModal,
+    tableTalkModal: closeTableTalkModal,
+    probabilityModal: closeProbabilityModal,
   };
 
   document.addEventListener("click", (e) => {
