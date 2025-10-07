@@ -1980,7 +1980,7 @@ function validatePoints(pointsStr) {
 
 // --- Misc UI & Utility ---
 function showVersionNum() {
-  alert("Version 1.5.0 (Build 1) adds an option to select: 'must win game by taking bid', a 'redo' button, improved 0-point handling, new cheating penalty and sandbag detection features, enhanced win probability calculations and visual polish, and various bug fixes.");
+  alert("Version 1.5.0 (Build 1) Adds a new glass-like feel, point differential display, individual statistics, cleaner team handling & more bug fixes / UI improvements.");
 }
 // Time protection constants
 const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
