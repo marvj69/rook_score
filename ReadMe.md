@@ -25,7 +25,7 @@
     *   Track team statistics: wins, losses, games played, average bid, bid success percentage, 360s, and sandbagger detection.
     *   Delete team statistics and associated game data.
 *   **Customization:**
-    *   **Dark Mode:** Sleek dark theme for comfortable viewing.
+    *   **Always-On Dark Theme:** Optimized visuals for low-light environments.
     *   **Customizable Team Colors:** Personalize the "Us" and "Dem" team colors.
     *   **Editable Bid Presets:** Customize the quick bid buttons to your common bid values.
 *   **Advanced Gameplay Features:**
@@ -135,7 +135,6 @@ Accessible via the hamburger icon (☰) in the top-left:
 *   **Settings:** Opens the settings modal (see "Settings & Customization" below).
 *   **About:** Shows information about the app, features, and a bug report option.
 *   **Statistics:** Displays overall and team-specific statistics.
-*   **Dark Mode:** Toggles between light and dark themes.
 *   **Sign in/out with Google:** Manages Firebase cloud synchronization.
 
 ### Key Modals
@@ -168,7 +167,7 @@ Access these via **Menu -> Settings**:
 
 *   **Sign In:** Use the "Sign in with Google" option in the menu.
 *   **Benefits:**
-    *   Your active game state, saved games, freezer games, team names, and settings (dark mode, pro mode, custom theme, bid presets) are automatically backed up to Firebase.
+    *   Your active game state, saved games, freezer games, team names, and appearance settings (theme colors, pro mode, bid presets) are automatically backed up to Firebase.
     *   Access your data seamlessly across different devices by signing in with the same Google account.
 *   **Anonymous Users:** If you don't sign in, the app will use anonymous Firebase authentication. Your data is still saved locally. If you later sign in with Google, your local data will be merged with any existing cloud data.
 *   **Data Merging:** When signing in or switching accounts, the app attempts to intelligently merge local and cloud data, prioritizing local data for the active game to prevent overwriting unsaved changes and merging arrays of games.

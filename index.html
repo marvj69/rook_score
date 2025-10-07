@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Rook Score Taking</title>
   <link rel="manifest" href="manifest.json" /> <!-- Kept for PWA functionality -->
-  <meta name="theme-color" content="#ffffff" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <link rel="icon" href="icons/icon-192x192.png" /> <!-- Kept for PWA functionality -->
   <link rel="stylesheet" href="css/app.css" />
   <script src="vendor/tailwindcdn.js"></script>
   <script src="js/tailwind-config.js"></script>
   <script src="vendor/canvas-confetti.min.js"></script>
 </head>
-<body class="bg-white text-gray-800 min-h-screen transition-colors duration-300 dark:bg-gray-900 dark:text-white theme-blue-red" id="bodyRoot">
+<body class="bg-gray-900 text-white min-h-screen transition-colors duration-300 liquid-glass theme-blue-red" id="bodyRoot">
     <!-- Hamburger Icon -->
     <div class="hamburger-menu" onclick="toggleMenu(event)" aria-label="Open Menu" role="button" tabindex="0" id="hamburgerIcon">
       <div class="bar"></div>
@@ -22,7 +22,7 @@
     </div>
 
     <!-- Navigation Menu -->
-    <nav id="menu">
+    <nav id="menu" class="nav-transparent">
       <ul>
         <li><button type="button" onclick="openSavedGamesModal(); toggleMenu(event);">View Games</button></li>
         <li><button type="button" onclick="handleNewGame(); toggleMenu(event);">New Game</button></li>
@@ -31,21 +31,6 @@
         <li><button type="button" onclick="openSettingsModal(); toggleMenu(event);">Settings</button></li>
         <li><button type="button" onclick="openAboutModal(); toggleMenu(event);">About</button></li>
         <li><button type="button" onclick="openStatisticsModal(); toggleMenu(event);">Statistics</button></li>
-        <li>
-          <label for="darkModeToggle" class="flex items-center justify-between w-full cursor-pointer">
-            <span>Dark Mode</span>
-            <div class="relative">
-              <input type="checkbox" id="darkModeToggle" class="sr-only peer" />
-              <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700
-                          peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500
-                          peer-checked:bg-blue-600 dark:peer-checked:bg-blue-500
-                          after:content-[''] after:absolute after:top-0.5 after:left-0.5
-                          after:bg-white after:border after:border-gray-300 after:rounded-full
-                          after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer">
-              </div>
-            </div>
-          </label>
-        </li>
         <li id="authMenuItem">
             <button
               id="googleAuthBtn"
@@ -71,8 +56,8 @@
     <div id="menuOverlay" class="menu-overlay" onclick="closeMenuOverlay()" aria-hidden="true"></div>
 
     <!-- Version Number -->
-    <div class="absolute top-0 right-0 m-4 p-2 text-gray-800 font-medium text-xs bg-white bg-opacity-70 rounded shadow px-3 py-1 dark:bg-gray-800 dark:text-white cursor-pointer" onclick="showVersionNum()">
-      <p>version 1.4.7</p>
+    <div id="versionBadge" class="version-badge" onclick="showVersionNum()" role="button" aria-label="Show Version Info" tabindex="0" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showVersionNum(); }">
+      <p>1.4.7</p>
     </div>
 
     <!-- Main App Container -->

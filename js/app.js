@@ -6,7 +6,6 @@ const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
 const WIN_PROB_CALC_METHOD_KEY = "winProbCalcMethod";
 const ACTIVE_GAME_KEY = "activeGameState";
-const DARK_MODE_KEY = "darkModeEnabled";
 const PRO_MODE_KEY = "proModeEnabled";
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
@@ -588,50 +587,64 @@ function savePresets() {
 }
 
 // --- Theme & UI Helpers ---
-function initializeDarkMode() {
-  const isDark = JSON.parse(localStorage.getItem(DARK_MODE_KEY) || "false");
-  document.documentElement.classList.toggle("dark", isDark);
-  const toggle = document.getElementById("darkModeToggle");
-  if (toggle) toggle.checked = isDark;
-  updateMetaThemeColor(isDark);
+function enforceDarkMode() {
+  const root = document.documentElement;
+  if (!root.classList.contains("dark")) {
+    root.classList.add("dark");
+  }
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.setAttribute("content", "#111827");
+  // Remove legacy flag so we're not tempted to read it elsewhere.
+  localStorage.removeItem("darkModeEnabled");
 }
-function updateMetaThemeColor(isDark) {
-  document.querySelector('meta[name="theme-color"]').setAttribute("content", isDark ? "#1a202c" : "#ffffff");
-}
-
 function initializeTheme() {
   const body = document.getElementById("bodyRoot") || document.body;
 
   // Classes that must ALWAYS be present, no matter which theme is selected
   const BASE_BODY_CLASSES = [
-    "bg-white",          // light-mode background
-    "text-gray-800",     // light-mode text colour
+    "bg-gray-900",
+    "text-white",
     "min-h-screen",
     "transition-colors", "duration-300",
-    "dark:bg-gray-900",  // dark-mode background
-    "dark:text-white"    // dark-mode text colour
-  ].join(" ");
+    "liquid-glass"
+  ];
+  const baseClassString = BASE_BODY_CLASSES.join(" ");
+
+  const ensureBaseClasses = (themeString) => {
+    const tokens = new Set((themeString || "").split(/\s+/).filter(Boolean));
+    let mutated = false;
+    const deprecated = ["bg-white", "text-gray-800", "dark:bg-gray-900", "dark:text-white"];
+    for (const cls of deprecated) {
+      if (tokens.delete(cls)) mutated = true;
+    }
+    for (const cls of BASE_BODY_CLASSES) {
+      if (!tokens.has(cls)) {
+        tokens.add(cls);
+        mutated = true;
+      }
+    }
+    return { normalized: Array.from(tokens).join(" "), mutated };
+  };
 
   // ------------------------------------------------------------------
   //  One-time migration for themes stored by older app versions
   // ------------------------------------------------------------------
   let savedTheme = localStorage.getItem("rookSelectedTheme");
 
-  if (savedTheme && !savedTheme.includes("dark:bg-gray-900")) {
-    // Older value was missing the base classes → prepend them
-    savedTheme = `${BASE_BODY_CLASSES} ${savedTheme}`.trim();
-    localStorage.setItem("rookSelectedTheme", savedTheme);
+  if (savedTheme) {
+    const { normalized, mutated } = ensureBaseClasses(savedTheme);
+    if (mutated && normalized !== savedTheme) {
+      localStorage.setItem("rookSelectedTheme", normalized);
+    }
+    body.className = normalized;
+    return;
   }
 
   // ------------------------------------------------------------------
   //  Apply the theme (or fall back to default)
   // ------------------------------------------------------------------
-  if (!savedTheme) {
-    // First launch / user has never customised a theme
-    body.className = `${BASE_BODY_CLASSES} theme-blue-red`.trim();
-  } else {
-    body.className = savedTheme;
-  }
+  // First launch / user has never customised a theme
+  body.className = `${baseClassString} theme-blue-red`.trim();
 }
 function isValidHexColor(colorString) {
   if (!colorString || typeof colorString !== 'string') return false;
@@ -2865,7 +2878,7 @@ function renderApp() {
       const arrow = biddingTeam === "us" ? "←" : "→";
       const teamColor = biddingTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
       if (validateBid(currentBidDisplayAmount) === "") { // Only display if valid
-          lastBidDisplayHtml = `<div class=\"mt-1 text-xs\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidDisplayAmount} <span>${arrow}</span></span></div>`;
+          lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidDisplayAmount} <span>${arrow}</span></span></div>`;
       }
   }
   // If not, show "Last Bid" from the last completed round
@@ -2876,7 +2889,7 @@ function renderApp() {
       const teamName = lastBidTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
       const arrow = lastBidTeam === "us" ? "←" : "→";
       const teamColor = lastBidTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
-      lastBidDisplayHtml = `<div class=\"mt-1 text-xs\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmount} <span>${arrow}</span></span></div>`;
+      lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmount} <span>${arrow}</span></span></div>`;
   }
 
 
@@ -3908,19 +3921,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.body.classList.remove('modal-open');
   document.getElementById('app')?.classList.remove('modal-active');
   document.querySelectorAll('.modal').forEach(modal => modal.classList.add('hidden'));
-  initializeDarkMode();
+  enforceDarkMode();
   initializeTheme(); // Predefined themes
   initializeCustomThemeColors(); // Custom primary/accent
   loadCurrentGameState(); // Load after theme
   loadSettings(); // Load settings after game state
-
-  const darkModeToggle = document.getElementById("darkModeToggle");
-  if (darkModeToggle) darkModeToggle.addEventListener("change", (e) => {
-      const isDark = e.target.checked;
-      document.documentElement.classList.toggle("dark", isDark);
-      localStorage.setItem(DARK_MODE_KEY, isDark);
-      updateMetaThemeColor(isDark);
-  });
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
