@@ -133,9 +133,18 @@ let presetBids;
   try {
     const raw = localStorage.getItem(PRESET_BIDS_KEY);
     const parsed = JSON.parse(raw);
-    presetBids   = Array.isArray(parsed) && parsed.length ? parsed : null;
+    if (Array.isArray(parsed) && parsed.length) {
+      const numericPresets = parsed
+        .filter(value => typeof value === 'number' && Number.isFinite(value))
+        .filter(value => value > 0 && value % 5 === 0)
+        .filter(value => (value <= 180 || value === 360) && value <= 360);
+      const uniqueSorted = Array.from(new Set(numericPresets)).sort((a, b) => a - b);
+      presetBids = uniqueSorted.length ? [...uniqueSorted, "other"] : null;
+    } else {
+      presetBids = null;
+    }
    } catch (_) { presetBids = null; }
-  if (!presetBids) presetBids = [120,125,130,135,140,145,"other"]; 
+  if (!presetBids) presetBids = [120,125,130,135,140,145,"other"];
 
 let scoreCardHasAnimated  = false;
 let historyCardHasAnimated = false;
@@ -409,6 +418,7 @@ function validatePresetInput(inputEl) {
   else if (val <= 0) msg = "Must be > 0.";
   else if (val % 5 !== 0) msg = "Must be div by 5.";
   else if (val > 360) msg = "Cannot exceed 360.";
+  else if (val > 180 && val !== 360) msg = "Only 360 allowed above 180.";
   errDiv.textContent = msg;
   errDiv.classList.toggle("hidden", !msg);
   return !msg;
