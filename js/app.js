@@ -55,6 +55,19 @@ function formatTeamDisplay(players) {
   return cleaned.join(" & ");
 }
 
+function formatTimestamp(ms, fallback = "Unknown") {
+  if (ms === null || ms === undefined) return fallback;
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function buildTeamKey(players) {
   const cleaned = ensurePlayersArray(players)
     .filter(Boolean)
@@ -1253,7 +1266,11 @@ function closeSettingsModal() {
 function openAboutModal() { openModal("aboutModal"); }
 function closeAboutModal() { closeModal("aboutModal"); }
 function openStatisticsModal() { renderStatisticsContent(); openModal("statisticsModal"); }
-function closeStatisticsModal() { closeModal("statisticsModal"); document.getElementById("statisticsModalContent").innerHTML = "";}
+function closeStatisticsModal() {
+  closeModal("statisticsModal");
+  document.getElementById("statisticsModalContent").innerHTML = "";
+  closeEntityStatisticsModal();
+}
 function openViewSavedGameModal() { openModal("viewSavedGameModal"); }
 function closeViewSavedGameModal() { closeModal("viewSavedGameModal"); openModal("savedGamesModal"); } // Reopen parent
 
@@ -3135,8 +3152,118 @@ function renderStatisticsContent() {
           const latestStats = getStatistics();
           const data = statsViewMode === 'players' ? latestStats.playersData : latestStats.teamsData;
           document.getElementById("teamStatsTableWrapper").innerHTML = renderStatsTable(statsViewMode, data, statsMetricKey);
+          ensureStatisticsEntityInteraction();
       });
   }
+  ensureStatisticsEntityInteraction();
+}
+
+function ensureStatisticsEntityInteraction() {
+  const container = document.getElementById("statisticsModalContent");
+  if (!container || container.dataset.entityClickBound === 'true') return;
+  container.addEventListener('click', handleStatisticsEntityClick);
+  container.dataset.entityClickBound = 'true';
+}
+
+function handleStatisticsEntityClick(event) {
+  const trigger = event.target.closest('.stats-entity-trigger');
+  if (!trigger) return;
+  event.preventDefault();
+  const mode = trigger.getAttribute('data-entity-mode');
+  const key = trigger.getAttribute('data-entity-key');
+  if (!mode || !key) return;
+  openEntityStatisticsModal(mode, key);
+}
+
+function openEntityStatisticsModal(mode, entityKey) {
+  const normalizedMode = mode === 'players' ? 'players' : 'teams';
+  const stats = getStatistics();
+  const collection = normalizedMode === 'players' ? stats.playersData : stats.teamsData;
+  const entity = collection.find(item => item.key === entityKey);
+  if (!entity) return;
+  renderEntityStatisticsContent(normalizedMode, entity);
+  openModal('entityStatisticsModal');
+}
+
+function closeEntityStatisticsModal() {
+  closeModal('entityStatisticsModal');
+  const container = document.getElementById('entityStatisticsModalContent');
+  if (container) container.innerHTML = '';
+}
+
+function renderEntityStatisticsContent(mode, entity) {
+  const container = document.getElementById('entityStatisticsModalContent');
+  if (!container) return;
+  const titleEl = document.getElementById('entityStatisticsModalTitle');
+  if (titleEl) {
+    titleEl.textContent = mode === 'players' ? 'Player Statistics' : 'Team Statistics';
+  }
+
+  const displayName = entity.name || (mode === 'teams' ? deriveTeamDisplay(entity.players, 'Unnamed Team') : sanitizePlayerName(entity.name) || 'Unnamed Player');
+  const playersDisplay = mode === 'teams' ? formatTeamDisplay(entity.players || []) : '';
+  const helperText = mode === 'teams' && playersDisplay
+    ? `<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Players: ${playersDisplay}</p>`
+    : '';
+
+  const statEntries = [
+    { label: 'Games Played', value: entity.gamesPlayed ?? 0 },
+    { label: 'Wins', value: entity.wins ?? 0 },
+    { label: 'Losses', value: entity.losses ?? 0 },
+    { label: 'Win %', value: entity.winPercent ? `${entity.winPercent}${entity.winPercent.toString().includes('%') ? '' : '%'}` : '0%' },
+    { label: 'Average Bid', value: entity.avgBid ?? 'N/A' },
+    { label: 'Total Bid Amount', value: entity.totalBidAmount ?? 0 },
+    { label: 'Bids Made', value: entity.bidsMade ?? 0 },
+    { label: 'Bids Succeeded', value: entity.bidsSucceeded ?? 0 },
+    { label: 'Bid Success %', value: entity.bidSuccessPct === 'N/A' ? 'N/A' : `${entity.bidSuccessPct}${entity.bidSuccessPct.toString().includes('%') ? '' : '%'}` },
+    { label: 'Hands Played', value: entity.handsPlayed ?? 0 },
+    { label: 'Hands Won', value: entity.handsWon ?? 0 },
+    { label: 'Sandbag Games', value: entity.sandbagGames ?? 0 },
+    { label: 'Sandbagger Flag', value: entity.sandbagger ?? 'No' },
+    { label: 'Perfect 360s', value: entity.count360 ?? 0 },
+    { label: 'Total Time Played', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : 'N/A' },
+    { label: 'Last Played', value: entity.lastPlayed ? formatTimestamp(entity.lastPlayed) : 'Unknown' },
+  ];
+
+  const formatValue = (val) => {
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      return val.toLocaleString();
+    }
+    return val;
+  };
+
+  const detailRows = statEntries.map(entry => `
+    <div class="flex items-center justify-between py-2">
+      <dt class="text-sm font-medium text-gray-600 dark:text-gray-300">${entry.label}</dt>
+      <dd class="text-sm text-gray-900 dark:text-gray-100">${formatValue(entry.value)}</dd>
+    </div>
+  `).join('');
+
+  const quickStats = [
+    { label: 'Win %', value: statEntries[3].value },
+    { label: 'Games', value: statEntries[0].value },
+    { label: 'Total Time', value: statEntries[14].value },
+    { label: '360s', value: statEntries[13].value },
+  ].map(card => `
+    <div class="rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">${card.label}</p>
+      <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">${formatValue(card.value)}</p>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="space-y-6">
+      <div>
+        <h3 class="text-2xl font-bold text-gray-900 dark:text-white">${displayName}</h3>
+        ${helperText}
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        ${quickStats}
+      </div>
+      <dl class="divide-y divide-gray-200 dark:divide-gray-700 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        ${detailRows}
+      </dl>
+    </div>
+  `;
 }
 function getStatistics() {
   const savedGames = getLocalStorage("savedGames", []).filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
@@ -3413,9 +3540,18 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
     let statVal = lookup[additionalStatKey] ?? '0';
     if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
 
-    const displayName = mode === 'teams' ? item.name : item.name;
+    const entityKey = item.key;
+    const displayName = item.name || (mode === 'teams' ? deriveTeamDisplay(item.players, 'Unnamed Team') : sanitizePlayerName(item.name) || 'Unnamed Player');
+    const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
+    const secondaryLine = mode === 'teams' && playersDisplay && playersDisplay !== displayName
+      ? `<div class="text-xs text-gray-500 dark:text-gray-400">${playersDisplay}</div>`
+      : '';
     tableHTML += `<tr class="${rowClass}">
-      <td class="whitespace-nowrap py-3.5 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">${displayName}</td>
+      <td class="whitespace-nowrap py-3.5 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">
+        <button type="button" class="stats-entity-trigger text-left font-semibold text-blue-600 hover:text-blue-500 focus:outline-none focus:underline dark:text-blue-300 dark:hover:text-blue-200"
+          data-entity-mode="${mode}" data-entity-key="${entityKey}" aria-haspopup="dialog">${displayName}</button>
+        ${secondaryLine}
+      </td>
       <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${item.winPercent}%</td>
       <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statVal}</td>`;
     tableHTML += `</tr>`;
@@ -3605,6 +3741,7 @@ document.addEventListener("DOMContentLoaded", () => {
     viewSavedGameModal: closeViewSavedGameModal,
     aboutModal: closeAboutModal,
     statisticsModal: closeStatisticsModal,
+    entityStatisticsModal: closeEntityStatisticsModal,
     teamSelectionModal: closeTeamSelectionModal,
     resumeGameModal: closeResumeGameModal,
     settingsModal: closeSettingsModal,
