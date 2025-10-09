@@ -3085,8 +3085,30 @@ function renderStatisticsContent() {
       </div>` : "";
       const viewSelector = `<div class="mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
 
-      const metricOptions = ['games', 'avgBid', 'bidSuccessPct', 'sandbagger', '360s']
-        .map(opt => `<option value="${opt}"${statsMetricKey === opt ? ' selected' : ''}>${opt === 'games' ? 'Games Played' : opt === 'avgBid' ? 'Avg Bid' : opt === 'bidSuccessPct' ? 'Bid Success %' : opt === 'sandbagger' ? 'Sandbagger?' : '360s'}</option>`)
+      const metricOptions = ['games', 'timePlayed', 'avgBid', 'bidSuccessPct', 'sandbagger', '360s']
+        .map(opt => {
+          let label = '';
+          switch (opt) {
+            case 'games':
+              label = 'Games Played';
+              break;
+            case 'timePlayed':
+              label = 'Time Played';
+              break;
+            case 'avgBid':
+              label = 'Avg Bid';
+              break;
+            case 'bidSuccessPct':
+              label = 'Bid Success %';
+              break;
+            case 'sandbagger':
+              label = 'Sandbagger?';
+              break;
+            default:
+              label = '360s';
+          }
+          return `<option value="${opt}"${statsMetricKey === opt ? ' selected' : ''}>${label}</option>`;
+        })
         .join('');
       const metricLabel = statsViewMode === 'teams' ? 'Team statistic' : 'Individual statistic';
       const statSelector = `<div class="mb-4"><label for="additionalStatSelector" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">${metricLabel}</label><div class="relative"><select id="additionalStatSelector" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400">${metricOptions}</select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
@@ -3365,7 +3387,7 @@ function isGameSandbagForTeamKey(game, teamPlayers, threshold = 2) {
   return sandbagOpportunities >= threshold;
 }
 function renderStatsTable(mode, statsData, additionalStatKey) {
-  const headers = { games: "Games", avgBid: "Avg Bid", bidSuccessPct: "Bid Success %", sandbagger: "Sandbagger?", "360s": "360s" };
+  const headers = { games: "Games", avgBid: "Avg Bid", bidSuccessPct: "Bid Success %", sandbagger: "Sandbagger?", "360s": "360s", timePlayed: "Time Played" };
   const nameHeader = mode === 'teams' ? 'Team' : 'Player';
   if (!statsData || !statsData.length) {
     const emptyLabel = mode === 'teams' ? 'No team stats yet.' : 'No individual stats yet.';
@@ -3386,6 +3408,7 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
       avgBid: item.avgBid,
       bidSuccessPct: item.bidSuccessPct,
       sandbagger: item.sandbagger,
+      timePlayed: formatDuration(item.totalTimeMs),
     };
     let statVal = lookup[additionalStatKey] ?? '0';
     if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
