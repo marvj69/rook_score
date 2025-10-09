@@ -2080,12 +2080,14 @@ function renderTimeWarning() {
 
 function formatDuration(ms) {
   if (!ms || ms < 0) return "0:00";
-  const secs = Math.floor(ms / 1000);
-  const mins = Math.floor(secs / 60);
-  const hrs = Math.floor(mins / 60);
-  const s = secs % 60;
-  const m = mins % 60;
-  return `${hrs > 0 ? hrs + ':' : ''}${hrs > 0 && m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  const totalMinutes = Math.floor(ms / 60000);
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  const minutePart = mins.toString().padStart(2, '0');
+  if (hrs > 0) {
+    return `${hrs}h ${minutePart}m`;
+  }
+  return `${mins}m`;
 }
 
 // --- Probability Breakdown Functions ---
@@ -3374,9 +3376,6 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
       <th scope="col" class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 sticky left-0 z-10">${nameHeader}</th>
       <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Win %</th>
       <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">${headers[additionalStatKey] || 'Stat'}</th>`;
-  if (mode === 'teams') {
-    tableHTML += `<th scope="col" class="pl-3 pr-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Del</th>`;
-  }
   tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-600 bg-white dark:bg-gray-800">`;
 
   statsData.forEach((item, index) => {
@@ -3396,61 +3395,12 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
       <td class="whitespace-nowrap py-3.5 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">${displayName}</td>
       <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${item.winPercent}%</td>
       <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statVal}</td>`;
-    if (mode === 'teams') {
-      const escapedName = displayName.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      tableHTML += `<td class="whitespace-nowrap pl-3 pr-4 py-3.5 text-sm text-center"><button onclick="handleDeleteTeam('${item.key}', '${escapedName}'); event.stopPropagation();" class="text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full p-1.5 dark:text-red-400 dark:hover:text-red-300" aria-label="Delete Team">${Icons.Trash}</button></td>`;
-    }
     tableHTML += `</tr>`;
   });
 
   tableHTML += `</tbody></table></div></div></div>`;
   return tableHTML;
 }
-function handleDeleteTeam(teamKey, displayName = '') {
-  const fallbackLabel = displayName || 'this team';
-  openConfirmationModal(`Delete team "${fallbackLabel}" and all related game data? This is irreversible.`, () => {
-      const teams = getTeamsObject();
-      let keyToDelete = teamKey && teams[teamKey] ? teamKey : null;
-      if (!keyToDelete && displayName) {
-        Object.entries(teams).forEach(([key, value]) => {
-          const display = deriveTeamDisplay(value.players, value.displayName || '');
-          if (!keyToDelete && display === displayName) keyToDelete = key;
-        });
-      }
-      if (keyToDelete) {
-        delete teams[keyToDelete];
-        setTeamsObject(teams);
-      }
-
-      let savedGames = getLocalStorage("savedGames");
-      savedGames = savedGames.filter(g => {
-        const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
-        if (sameKey) return false;
-        if (!displayName) return true;
-        const usDisplay = getGameTeamDisplay(g, 'us');
-        const demDisplay = getGameTeamDisplay(g, 'dem');
-        return usDisplay !== displayName && demDisplay !== displayName;
-      });
-      setLocalStorage("savedGames", savedGames);
-
-      let freezerGames = getLocalStorage("freezerGames");
-      freezerGames = freezerGames.filter(g => {
-        const sameKey = (g.usTeamKey && g.usTeamKey === keyToDelete) || (g.demTeamKey && g.demTeamKey === keyToDelete);
-        if (sameKey) return false;
-        if (!displayName) return true;
-        const usDisplay = getGameTeamDisplay(g, 'us');
-        const demDisplay = getGameTeamDisplay(g, 'dem');
-        return usDisplay !== displayName && demDisplay !== displayName;
-      });
-      setLocalStorage("freezerGames", freezerGames);
-
-      recalcTeamsStats();
-
-      closeConfirmationModal();
-      renderStatisticsContent(); // Refresh stats modal
-  }, closeConfirmationModal);
-}
-
 // --- Settings Loading ---
 function loadSettings() {
   console.log("Loading settings from localStorage...");
