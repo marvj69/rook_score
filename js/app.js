@@ -1663,11 +1663,41 @@ victoryMethod  = "Set Other Team";
   updateState({
       rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
-      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : state.startTime, pendingPenalty: null 
+      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : state.startTime, pendingPenalty: null
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
 }
+
+function prepareSpecialRound(eventType, totals, details = {}) {
+  let finalAccumulated = state.accumulatedTime;
+  if (state.startTime !== null) {
+    finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  }
+
+  const defaultLabel = eventType === "forfeit" ? "Forfeit" : "Manual End";
+
+  return {
+    round: {
+      specialEvent: eventType,
+      specialMessage: details.message || "",
+      specialTeam: details.team ?? null,
+      specialWinner: details.winner ?? null,
+      specialVictoryMethod: details.victoryMethod || defaultLabel,
+      specialMetadata: details.metadata || null,
+      specialAccumulatedTime: finalAccumulated,
+      biddingTeam: null,
+      bidAmount: details.displayLabel || defaultLabel,
+      usPoints: 0,
+      demPoints: 0,
+      runningTotals: { us: totals.us, dem: totals.dem },
+      usTeamNameOnRound: state.usTeamName || "Us",
+      demTeamNameOnRound: state.demTeamName || "Dem",
+    },
+    finalAccumulated,
+  };
+}
+
 function handleUndo() {
   if (!state.rounds.length) return;
   const wasGameOver = state.gameOver;
@@ -1706,6 +1736,30 @@ function handleRedo() {
   const newRounds = [...state.rounds, redoRound];
   const newUndoneRounds = state.undoneRounds.slice(0, -1);
 
+  if (redoRound.specialEvent) {
+    const winner = redoRound.specialWinner ?? null;
+    const victoryMethod = redoRound.specialVictoryMethod || (redoRound.specialEvent === "forfeit" ? "Forfeit" : "Manual End");
+    updateState({
+      rounds: newRounds,
+      undoneRounds: newUndoneRounds,
+      gameOver: true,
+      winner,
+      victoryMethod,
+      biddingTeam: "",
+      bidAmount: "",
+      showCustomBid: false,
+      customBidValue: "",
+      enterBidderPoints: false,
+      error: "",
+      accumulatedTime: redoRound.specialAccumulatedTime ?? state.accumulatedTime,
+      startTime: null,
+      pendingPenalty: null,
+    });
+    if (winner) updateTeamsStatsOnGameEnd(winner);
+    saveCurrentGameState();
+    return;
+  }
+
   // Re-check game over condition based on the new last round
   const lastTotals = newRounds[newRounds.length - 1].runningTotals;
   let gameOver = false, winner = null, victoryMethod = null;
@@ -1733,6 +1787,123 @@ function handleRedo() {
   if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
   saveCurrentGameState();
 }
+
+function handleManualEndGameClick() {
+  if (state.gameOver) return;
+  const totals = getCurrentTotals();
+  const usLabel = state.usTeamName || "Us";
+  const demLabel = state.demTeamName || "Dem";
+
+  if (totals.us === totals.dem) {
+    alert("Game is currently tied. End Game requires a team to be leading.");
+    return;
+  }
+
+  const winnerKey = totals.us > totals.dem ? "us" : "dem";
+  const winnerName = winnerKey === "us" ? usLabel : demLabel;
+  const loserKey = winnerKey === "us" ? "dem" : "us";
+  const leaderScore = totals[winnerKey];
+  const trailerScore = totals[loserKey];
+  const message = `End the game now? ${winnerName} leads ${leaderScore} to ${trailerScore}.`;
+
+  openConfirmationModal(
+    message,
+    () => { applyManualEndGame(winnerKey, totals); closeConfirmationModal(); },
+    closeConfirmationModal,
+  );
+}
+
+function applyManualEndGame(winnerKey, totalsSnapshot) {
+  const usLabel = state.usTeamName || "Us";
+  const demLabel = state.demTeamName || "Dem";
+  const winnerName = winnerKey === "us" ? usLabel : demLabel;
+  const loserKey = winnerKey === "us" ? "dem" : "us";
+  const totals = totalsSnapshot || getCurrentTotals();
+  const victoryMethod = `Manual End - ${winnerName} Ahead`;
+  const message = `${winnerName} led ${totals[winnerKey]} to ${totals[loserKey]} when play stopped.`;
+  const { round, finalAccumulated } = prepareSpecialRound("manualEnd", totals, {
+    message,
+    winner: winnerKey,
+    victoryMethod,
+    displayLabel: "End Game",
+  });
+
+  const updatedRounds = [...state.rounds, round];
+  updateState({
+    rounds: updatedRounds,
+    undoneRounds: [],
+    gameOver: true,
+    winner: winnerKey,
+    victoryMethod,
+    biddingTeam: "",
+    bidAmount: "",
+    showCustomBid: false,
+    customBidValue: "",
+    enterBidderPoints: false,
+    error: "",
+    accumulatedTime: finalAccumulated,
+    startTime: null,
+    pendingPenalty: null,
+  });
+  updateTeamsStatsOnGameEnd(winnerKey);
+  saveCurrentGameState();
+}
+
+function handleTeamForfeit(teamKey) {
+  if (state.gameOver) return;
+  const usLabel = state.usTeamName || "Us";
+  const demLabel = state.demTeamName || "Dem";
+  const forfeitingName = teamKey === "us" ? usLabel : demLabel;
+  const opponentKey = teamKey === "us" ? "dem" : "us";
+  const opponentName = opponentKey === "us" ? usLabel : demLabel;
+
+  const message = `${forfeitingName} will forfeit the game. ${opponentName} will be declared the winner. Continue?`;
+  openConfirmationModal(
+    message,
+    () => { applyTeamForfeit(teamKey); closeConfirmationModal(); },
+    closeConfirmationModal,
+  );
+}
+
+function applyTeamForfeit(teamKey) {
+  const totals = getCurrentTotals();
+  const usLabel = state.usTeamName || "Us";
+  const demLabel = state.demTeamName || "Dem";
+  const forfeitingName = teamKey === "us" ? usLabel : demLabel;
+  const opponentKey = teamKey === "us" ? "dem" : "us";
+  const opponentName = opponentKey === "us" ? usLabel : demLabel;
+
+  const victoryMethod = `Forfeit - ${forfeitingName}`;
+  const message = `${forfeitingName} forfeited. ${opponentName} wins ${totals[opponentKey]}-${totals[teamKey]}.`;
+  const { round, finalAccumulated } = prepareSpecialRound("forfeit", totals, {
+    message,
+    team: teamKey,
+    winner: opponentKey,
+    victoryMethod,
+    displayLabel: "Forfeit",
+  });
+
+  const updatedRounds = [...state.rounds, round];
+  updateState({
+    rounds: updatedRounds,
+    undoneRounds: [],
+    gameOver: true,
+    winner: opponentKey,
+    victoryMethod,
+    biddingTeam: "",
+    bidAmount: "",
+    showCustomBid: false,
+    customBidValue: "",
+    enterBidderPoints: false,
+    error: "",
+    accumulatedTime: finalAccumulated,
+    startTime: null,
+    pendingPenalty: null,
+  });
+  updateTeamsStatsOnGameEnd(opponentKey);
+  saveCurrentGameState();
+}
+
 function handleNewGame() {
   openConfirmationModal(
     "Start a new game? Unsaved progress will be lost.",
@@ -2590,6 +2761,7 @@ function renderApp() {
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
       ${renderTeamCard("dem", totals.dem, winProb)}
     </div>
+    ${renderGameControlActions()}
     ${error ? `<div>${renderErrorAlert(error)}</div>` : ""}
     ${renderScoreInputCard()}
     ${renderHistoryCard()}
@@ -2636,6 +2808,35 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
         <p class="text-2xl font-extrabold text-gray-900 dark:text-white">${roundNumber}</p>
         ${lastBidDisplayHtml}
       </div>
+    </div>`;
+}
+
+function renderGameControlActions() {
+  if (state.gameOver) return "";
+  const usLabel = state.usTeamName || "Us";
+  const demLabel = state.demTeamName || "Dem";
+  return `
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow p-3">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <button type="button"
+                class="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded-xl font-semibold shadow hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:hover:bg-purple-600 dark:focus:ring-purple-400 threed"
+                onclick="handleManualEndGameClick()">
+          End Game
+        </button>
+        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button type="button"
+                  class="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed"
+                  onclick="handleTeamForfeit('us')">
+            ${usLabel} Forfeit
+          </button>
+          <button type="button"
+                  class="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 transition dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed"
+                  onclick="handleTeamForfeit('dem')">
+            ${demLabel} Forfeit
+          </button>
+        </div>
+      </div>
+      <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center sm:text-left">Declare a winner immediately or record a forfeit. You can undo from the Game Over screen if needed.</p>
     </div>`;
 }
 function renderErrorAlert(errorMessage) {
@@ -2764,14 +2965,30 @@ function renderHistoryCard() {
       <div class="p-4 max-h-60 overflow-y-auto no-scrollbar">
         <div class="space-y-2">
           ${rounds.map((round, idx) => {
-            const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);
-            const arrow = round.biddingTeam === "us" ? `<span class="text-gray-800 dark:text-white">←</span><span class="ml-1 text-black dark:text-white">${round.bidAmount}</span>` : `<span class="mr-1 text-black dark:text-white">${round.bidAmount}</span><span class="text-gray-800 dark:text-white">→</span>`;
-            const bidDetails = `${biddingTeamLabel} bid ${round.bidAmount}`;
+            const totalUs = Number(round.runningTotals?.us ?? 0);
+            const totalDem = Number(round.runningTotals?.dem ?? 0);
+            if (round.specialEvent) {
+              const badgeLabel = round.specialEvent === "forfeit" ? "Forfeit" : "Manual End";
+              const message = round.specialMessage || (round.specialEvent === "forfeit" ? "Game forfeited." : "Game ended manually.");
+              return `
+                <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm">
+                  <div class="text-left text-gray-800 dark:text-white font-semibold">${totalUs}</div>
+                  <div class="flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300 text-xs sm:text-sm leading-snug">
+                    <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-semibold uppercase tracking-wide dark:bg-gray-600 dark:text-gray-100">${badgeLabel}</span>
+                    <span class="mt-1">${message}</span>
+                  </div>
+                  <div class="text-right text-gray-800 dark:text-white font-semibold">${totalDem}</div>
+                </div>`;
+            }
+
+            const arrow = round.biddingTeam === "us"
+              ? `<span class="text-gray-800 dark:text-white">←</span><span class="ml-1 text-black dark:text-white">${round.bidAmount}</span>`
+              : `<span class="mr-1 text-black dark:text-white">${round.bidAmount}</span><span class="text-gray-800 dark:text-white">→</span>`;
             return `
               <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm">
-                <div class="text-left text-gray-800 dark:text-white font-semibold">${round.runningTotals.us}</div>
+                <div class="text-left text-gray-800 dark:text-white font-semibold">${totalUs}</div>
                 <div class="text-center text-gray-600 dark:text-gray-400">${arrow}</div>
-                <div class="text-right text-gray-800 dark:text-white font-semibold">${round.runningTotals.dem}</div>
+                <div class="text-right text-gray-800 dark:text-white font-semibold">${totalDem}</div>
               </div>`;
           }).join("")}
         </div>
@@ -2831,16 +3048,33 @@ function renderReadOnlyGameDetails(game) {
   }
 
   const roundHtml = (rounds || []).map((r, idx) => {
+      const totalUs = Number(r.runningTotals?.us ?? 0);
+      const totalDem = Number(r.runningTotals?.dem ?? 0);
+
+      if (r.specialEvent) {
+        const badgeLabel = r.specialEvent === "forfeit" ? "Forfeit" : "Manual End";
+        const message = r.specialMessage || (r.specialEvent === "forfeit" ? "Game forfeited." : "Game ended manually.");
+        return `
+        <div class="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm sm:text-base mb-2">
+          <div class="text-left font-medium col-span-1 text-gray-800 dark:text-white">${totalUs}</div>
+          <div class="text-center text-gray-600 dark:text-gray-300 text-xs sm:text-sm col-span-3 flex flex-col items-center leading-snug">
+            <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-semibold uppercase tracking-wide dark:bg-gray-600 dark:text-gray-100">${badgeLabel}</span>
+            <span class="mt-1">${message}</span>
+          </div>
+          <div class="text-right font-medium col-span-1 text-gray-800 dark:text-white">${totalDem}</div>
+        </div>`;
+      }
+
       const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
       const arrow = r.biddingTeam === "us" ? "←" : "→";
       const bidDisplay = `${r.bidAmount} ${arrow}`;
       return `
       <div class="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm sm:text-base mb-2">
-        <div class="text-left font-medium col-span-1 ${r.biddingTeam === "us" && r.usPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${r.runningTotals.us}</div>
+        <div class="text-left font-medium col-span-1 ${r.biddingTeam === "us" && r.usPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${totalUs}</div>
         <div class="text-center text-gray-600 dark:text-gray-300 text-xs sm:text-sm col-span-3">
           <span class="bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full">${bidTeam} bid ${bidDisplay}</span>
         </div>
-        <div class="text-right font-medium col-span-1 ${r.biddingTeam === "dem" && r.demPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${r.runningTotals.dem}</div>
+        <div class="text-right font-medium col-span-1 ${r.biddingTeam === "dem" && r.demPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${totalDem}</div>
       </div>`;
   }).join("");
 
