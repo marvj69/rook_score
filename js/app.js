@@ -3774,30 +3774,37 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 if ('serviceWorker' in navigator) {
-  let refreshing;
+  let refreshing = false;
+  let reloadPendingUpdate = false; // Avoid reload on first install; only reload after opt-in
+
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return;
-    window.location.reload();
+    if (refreshing || !reloadPendingUpdate) return;
     refreshing = true;
+    reloadPendingUpdate = false;
+    window.location.reload();
   });
+
   window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./service-worker.js') // Assuming sw is in root
-          .then(registration => {
-              registration.onupdatefound = () => {
-                  const installingWorker = registration.installing;
-                  if (installingWorker == null) return;
-                  installingWorker.onstatechange = () => {
-                      if (installingWorker.state === 'installed') {
-                          if (navigator.serviceWorker.controller) {
-                              // New update available
-                              if (confirm('New version available! Reload to update?')) {
-                                  installingWorker.postMessage({ type: 'SKIP_WAITING' });
-                              }
-                          }
-                      }
-                  };
-              };
-          }).catch(error => console.error('Service Worker registration failed:', error));
+    navigator.serviceWorker
+      .register('./service-worker.js') // Assuming sw is in root
+      .then(registration => {
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          if (installingWorker == null) return;
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                // New update available
+                if (confirm('New version available! Reload to update?')) {
+                  reloadPendingUpdate = true;
+                  installingWorker.postMessage({ type: 'SKIP_WAITING' });
+                }
+              }
+            }
+          };
+        };
+      })
+      .catch(error => console.error('Service Worker registration failed:', error));
   });
 }
 
