@@ -251,13 +251,198 @@ const L_COEFF_DIFF  =  0.00421107;
 const L_COEFF_ROUND = -0.09520921;
 const L_COEFF_MOM   =  0.00149416;
 
+const LOGISTIC_MODEL_STORAGE_KEY = "rookWinProbabilityModel";
+const MIN_TRAINING_ROWS = 8;
+const REGULARIZATION = 1e-4;
+const TRAINING_LEARNING_RATE = 5e-4;
+const TRAINING_MAX_ITERATIONS = 400;
+const TRAINING_GRADIENT_TOLERANCE = 1e-6;
+
+function cloneDefaultCoefficients() {
+  return {
+    intercept: L_INTERCEPT,
+    diff: L_COEFF_DIFF,
+    round: L_COEFF_ROUND,
+    momentum: L_COEFF_MOM,
+  };
+}
+
+function getDefaultModelSnapshot() {
+  return {
+    coefficients: cloneDefaultCoefficients(),
+    sampleSize: 0,
+    updatedAt: null,
+  };
+}
+
+function toFiniteNumber(value, fallback) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function sanitizeModelSnapshot(snapshot) {
+  const defaults = getDefaultModelSnapshot();
+  if (!snapshot || typeof snapshot !== "object") return defaults;
+
+  const coefficients = snapshot.coefficients || snapshot.params || {};
+  return {
+    coefficients: {
+      intercept: toFiniteNumber(
+        coefficients.intercept ?? coefficients.bias ?? coefficients.L_INTERCEPT,
+        defaults.coefficients.intercept,
+      ),
+      diff: toFiniteNumber(
+        coefficients.diff ?? coefficients.coeffDiff ?? coefficients.L_COEFF_DIFF,
+        defaults.coefficients.diff,
+      ),
+      round: toFiniteNumber(
+        coefficients.round ?? coefficients.coeffRound ?? coefficients.L_COEFF_ROUND,
+        defaults.coefficients.round,
+      ),
+      momentum: toFiniteNumber(
+        coefficients.momentum ?? coefficients.coeffMomentum ?? coefficients.L_COEFF_MOM,
+        defaults.coefficients.momentum,
+      ),
+    },
+    sampleSize: (() => {
+      const size = Number(snapshot.sampleSize);
+      return Number.isFinite(size) && size >= 0 ? size : defaults.sampleSize;
+    })(),
+    updatedAt: typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : defaults.updatedAt,
+  };
+}
+
+function readModelSnapshotFromStorage() {
+  try {
+    const raw = localStorage.getItem(LOGISTIC_MODEL_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn("Failed to parse stored win probability model:", err);
+    return null;
+  }
+}
+
+function getWinProbabilityModelSnapshot() {
+  const stored = readModelSnapshotFromStorage();
+  return sanitizeModelSnapshot(stored);
+}
+
+function persistWinProbabilityModelSnapshot(snapshot) {
+  const sanitized = sanitizeModelSnapshot(snapshot);
+  setLocalStorage(LOGISTIC_MODEL_STORAGE_KEY, sanitized);
+  return sanitized;
+}
+
 function logisticProb(diff, roundIdx, mom) {
-  const z = L_INTERCEPT +
-      L_COEFF_DIFF  * diff +
-      L_COEFF_ROUND * roundIdx +
-      L_COEFF_MOM   * mom;
+  const { coefficients } = getWinProbabilityModelSnapshot();
+  const z = coefficients.intercept +
+      coefficients.diff  * diff +
+      coefficients.round * roundIdx +
+      coefficients.momentum   * mom;
   return 1 / (1 + Math.exp(-z));           // probability "us" eventually wins
 }
+
+function buildTrainingDataset(historicalGames) {
+  if (!Array.isArray(historicalGames)) return [];
+
+  const rows = [];
+  historicalGames.forEach(game => {
+    if (!game || !game.finalScore || !Array.isArray(game.rounds) || !game.rounds.length) return;
+
+    const finalTotals = sanitizeTotals(game.finalScore);
+    if (finalTotals.us === finalTotals.dem) return; // Skip ties
+    const label = finalTotals.us > finalTotals.dem ? 1 : 0;
+
+    let previousDiff = 0;
+    game.rounds.forEach((round, index) => {
+      if (!round || !round.runningTotals) return;
+      const totals = sanitizeTotals(round.runningTotals);
+      const diff = totals.us - totals.dem;
+      if (!Number.isFinite(diff)) return;
+      const momentum = diff - previousDiff;
+      rows.push({
+        diff,
+        round: index,
+        momentum,
+        label,
+      });
+      previousDiff = diff;
+    });
+  });
+
+  return rows;
+}
+
+function isDatasetTrainable(rows) {
+  if (!Array.isArray(rows) || rows.length < MIN_TRAINING_ROWS) return false;
+  const positives = rows.reduce((sum, row) => sum + (row.label ? 1 : 0), 0);
+  return positives > 0 && positives < rows.length;
+}
+
+function retrainWinProbabilityModel(historicalGames) {
+  const rows = buildTrainingDataset(historicalGames);
+  if (!isDatasetTrainable(rows)) {
+    return persistWinProbabilityModelSnapshot(getDefaultModelSnapshot());
+  }
+
+  const current = getWinProbabilityModelSnapshot();
+  let { intercept, diff, round, momentum } = current.coefficients;
+
+  for (let iteration = 0; iteration < TRAINING_MAX_ITERATIONS; iteration += 1) {
+    let gradIntercept = 0;
+    let gradDiff = 0;
+    let gradRound = 0;
+    let gradMomentum = 0;
+
+    rows.forEach(row => {
+      const z = intercept + diff * row.diff + round * row.round + momentum * row.momentum;
+      const prediction = 1 / (1 + Math.exp(-z));
+      const error = prediction - row.label;
+      gradIntercept += error;
+      gradDiff += error * row.diff;
+      gradRound += error * row.round;
+      gradMomentum += error * row.momentum;
+    });
+
+    gradIntercept /= rows.length;
+    gradDiff = gradDiff / rows.length + REGULARIZATION * diff;
+    gradRound = gradRound / rows.length + REGULARIZATION * round;
+    gradMomentum = gradMomentum / rows.length + REGULARIZATION * momentum;
+
+    const maxGrad = Math.max(
+      Math.abs(gradIntercept),
+      Math.abs(gradDiff),
+      Math.abs(gradRound),
+      Math.abs(gradMomentum),
+    );
+
+    intercept -= TRAINING_LEARNING_RATE * gradIntercept;
+    diff      -= TRAINING_LEARNING_RATE * gradDiff;
+    round     -= TRAINING_LEARNING_RATE * gradRound;
+    momentum  -= TRAINING_LEARNING_RATE * gradMomentum;
+
+    if (!Number.isFinite(intercept) || !Number.isFinite(diff) || !Number.isFinite(round) || !Number.isFinite(momentum)) {
+      return persistWinProbabilityModelSnapshot(getDefaultModelSnapshot());
+    }
+
+    if (maxGrad < TRAINING_GRADIENT_TOLERANCE) break;
+  }
+
+  const snapshot = {
+    coefficients: { intercept, diff, round, momentum },
+    sampleSize: rows.length,
+    updatedAt: new Date().toISOString(),
+  };
+  return persistWinProbabilityModelSnapshot(snapshot);
+}
+
+function refreshWinProbabilityModel(historicalGames) {
+  const games = Array.isArray(historicalGames) ? historicalGames : getLocalStorage("savedGames", []);
+  PROB_CACHE.clear();
+  return retrainWinProbabilityModel(games);
+}
+
 
 /**
  * SHARPENED: Calculates win probability by blending historical empirical data
@@ -1801,6 +1986,7 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
   const savedGames = getLocalStorage("savedGames", []);
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
+  refreshWinProbabilityModel(savedGames);
   showSaveIndicator("Game Saved!");
   resetGame(); // Resets state and clears active game from storage
   confettiTriggered = false;
@@ -1922,7 +2108,10 @@ function deleteGame(storageKey, index, descriptor) {
   openConfirmationModal(`Delete this ${descriptor}?`, () => {
     items.splice(index, 1);
     setLocalStorage(storageKey, items);
-    if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game
+    if (storageKey === "savedGames") {
+      refreshWinProbabilityModel(items);
+      recalcTeamsStats(); // Only if deleting a completed game
+    }
     closeConfirmationModal();
     // Re-render the list in the modal
     if (document.getElementById("savedGamesModal") && !document.getElementById("savedGamesModal").classList.contains("hidden")) {
@@ -3714,6 +3903,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCustomThemeColors(); // Custom primary/accent
   loadCurrentGameState(); // Load after theme
   loadSettings(); // Load settings after game state
+  refreshWinProbabilityModel();
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
@@ -3918,5 +4108,9 @@ if (typeof module !== 'undefined' && module.exports) {
     buildProbabilityIndex,
     calculateWinProbabilityComplex,
     calculateWinProbability,
+    logisticProb,
+    retrainWinProbabilityModel,
+    refreshWinProbabilityModel,
+    getWinProbabilityModelSnapshot,
   };
 }
