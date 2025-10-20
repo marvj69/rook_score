@@ -1713,19 +1713,29 @@ function handleRedo() {
 
   if (Math.abs(lastTotals.us - lastTotals.dem) >= 1000) {
       gameOver = true; winner = lastTotals.us > lastTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
-  } else if ((redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) || 
-             (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500)) {
-      if (!mustWinByBid) { gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (lastTotals.us >= 500 || lastTotals.dem >= 500) {
-      if (mustWinByBid) {
-          if ((redoRound.biddingTeam === "us" && lastTotals.us >= 500 && redoRound.usPoints >= redoRound.bidAmount) ||
-              (redoRound.biddingTeam === "dem" && lastTotals.dem >= 500 && redoRound.demPoints >= redoRound.bidAmount)) {
-              gameOver = true; winner = redoRound.biddingTeam; victoryMethod = "Won on Bid";
-          }
-      } else {
-          gameOver = true; winner = lastTotals.us >= lastTotals.dem ? "us" : (lastTotals.dem > lastTotals.us ? "dem" : null);
-          if (winner === null && lastTotals.us === lastTotals.dem) victoryMethod = "Tie at 500+";
-          else if(winner) victoryMethod = "Reached 500+";
+  } else {
+      const bidderSetAndOpponentCrossed500 =
+        (redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) ||
+        (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500);
+
+      if (!gameOver && !mustWinByBid && bidderSetAndOpponentCrossed500) {
+          gameOver = true;
+          winner = redoRound.biddingTeam === "us" ? "dem" : "us";
+          victoryMethod = "Set Other Team";
+      }
+
+      if (!gameOver &&
+          ((redoRound.biddingTeam === "us" && lastTotals.us >= 500 && redoRound.usPoints >= redoRound.bidAmount) ||
+           (redoRound.biddingTeam === "dem" && lastTotals.dem >= 500 && redoRound.demPoints >= redoRound.bidAmount))) {
+          gameOver = true;
+          winner = redoRound.biddingTeam;
+          victoryMethod = "Won on Bid";
+      }
+
+      if (!gameOver && bidderSetAndOpponentCrossed500) {
+          gameOver = true;
+          winner = redoRound.biddingTeam === "us" ? "dem" : "us";
+          victoryMethod = "Set Other Team";
       }
   }
 
