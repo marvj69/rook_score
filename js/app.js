@@ -2056,43 +2056,7 @@ function getCurrentGameTime() {
 }
 
 function renderTimeWarning() {
-  if (!state.startTime || state.gameOver) return "";
-
-  const currentTime = getCurrentGameTime();
-  const roundTime = Date.now() - state.startTime;
-
-           // Warning thresholds
-   const ROUND_WARNING_TIME = 90 * 60 * 1000; // 90 minutes
-   const GAME_WARNING_TIME = 8 * 60 * 60 * 1000; // 8 hours
-
-  let warningMessage = "";
-  let warningLevel = "";
-
-  if (roundTime > ROUND_WARNING_TIME || currentTime > GAME_WARNING_TIME) {
-    if (roundTime > MAX_ROUND_TIME_MS * 0.9) {
-      warningMessage = "⚠️ Round time is very high! Consider starting a new game.";
-      warningLevel = "danger";
-    } else if (currentTime > MAX_GAME_TIME_MS * 0.9) {
-      warningMessage = "⚠️ Game time is very high! Consider starting a new game.";
-      warningLevel = "danger";
-    } else if (roundTime > ROUND_WARNING_TIME) {
-      warningMessage = "⏰ Round has been active for " + formatDuration(roundTime);
-      warningLevel = "warning";
-    } else if (currentTime > GAME_WARNING_TIME) {
-      warningMessage = "⏰ Game has been active for " + formatDuration(currentTime);
-      warningLevel = "warning";
-    }
-  }
-
-  if (!warningMessage) return "";
-
-  const bgColor = warningLevel === "danger" ? "bg-red-100 border-red-300 text-red-800 dark:bg-red-900 dark:border-red-700 dark:text-red-300" : "bg-yellow-100 border-yellow-300 text-yellow-800 dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300";
-
-  return `
-    <div class="mx-4 mb-4 p-3 rounded-lg border ${bgColor} text-sm text-center">
-      ${warningMessage}
-    </div>
-  `;
+  return "";
 }
 
 function formatDuration(ms) {
