@@ -2794,6 +2794,9 @@ function renderReadOnlyGameDetails(game) {
     sandbagResult = isGameSandbagForTeamKey(game, winnerPlayers) ? "Yes" : "No";
   }
 
+  const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
+  const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
+
   const roundHtml = (rounds || []).map((r, idx) => {
       const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
       const arrow = r.biddingTeam === "us" ? "←" : "→";
@@ -2833,13 +2836,16 @@ function renderReadOnlyGameDetails(game) {
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Sandbag?</span>
           <span class="text-sm text-gray-700 dark:text-gray-300">${sandbagResult}</span>
         </div>
-        <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-end"> <!-- Tighter padding -->
+      <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-end"> <!-- Tighter padding -->
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>
           <span class="text-sm text-gray-700 dark:text-gray-300">${durationMs ? formatDuration(durationMs) : "N/A"}</span>
         </div>
       </div>
       <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm"> <!-- Reduced padding -->
-        <p class="font-semibold text-gray-800 dark:text-white mb-1">Round History</p>
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-semibold text-gray-800 dark:text-white">Round History</p>
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">${roundsLabel}</span>
+        </div>
         <div class="space-y-2 max-h-60 overflow-y-auto rounded-xl pr-1 no-scrollbar">${roundHtml || '<p class="text-gray-500">No rounds.</p>'}</div>
       </div>
       <div class="flex justify-center"><button type="button" onclick="closeViewSavedGameModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition-colors threed">Close</button></div>
