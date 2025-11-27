@@ -783,21 +783,21 @@ loadedState = JSON.parse(storedStateString);
     completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
     const now = Date.now();
     const hasRounds = Array.isArray(completeLoadedState.rounds) && completeLoadedState.rounds.length > 0;
-    const timerWasRunning = typeof completeLoadedState.startTime === 'number' && !completeLoadedState.gameOver && hasRounds;
-    const storedAccumulated = Number(completeLoadedState.accumulatedTime);
-    const sanitizedAccumulated = Number.isFinite(storedAccumulated) && storedAccumulated >= 0 ? storedAccumulated : 0;
+    const startTimeValid = isStartTimestampActive(completeLoadedState.startTime);
+    const timerWasRunning = startTimeValid && !completeLoadedState.gameOver && hasRounds;
+    const sanitizedAccumulated = clampDurationMs(completeLoadedState.accumulatedTime);
 
     if (timerWasRunning) {
-if (typeof completeLoadedState.timerLastSavedAt !== 'number') {
-  // Legacy snapshots did not pre-accumulate time; cap what we add just in case.
-  completeLoadedState.accumulatedTime = calculateSafeTimeAccumulation(sanitizedAccumulated, completeLoadedState.startTime);
-} else {
-  completeLoadedState.accumulatedTime = Math.min(sanitizedAccumulated, MAX_GAME_TIME_MS);
-}
-completeLoadedState.startTime = now; // Resume timer from now so offline time is not double-counted.
+      if (typeof completeLoadedState.timerLastSavedAt !== 'number') {
+        // Legacy snapshots did not pre-accumulate time; cap what we add just in case.
+        completeLoadedState.accumulatedTime = calculateSafeTimeAccumulation(sanitizedAccumulated, completeLoadedState.startTime, now);
+      } else {
+        completeLoadedState.accumulatedTime = sanitizedAccumulated;
+      }
+      completeLoadedState.startTime = now; // Resume timer from now so offline time is not double-counted.
     } else {
-completeLoadedState.accumulatedTime = Math.min(sanitizedAccumulated, MAX_GAME_TIME_MS);
-completeLoadedState.startTime = null;
+      completeLoadedState.accumulatedTime = sanitizedAccumulated;
+      completeLoadedState.startTime = null;
     }
 
     completeLoadedState.timerLastSavedAt = now;
@@ -827,11 +827,12 @@ function saveCurrentGameState() {
       window.syncToFirestore(ACTIVE_GAME_KEY, null);
     }
   } else {
-    const timerRunning = state.startTime !== null;
     const now = Date.now();
+    const timerRunning = isStartTimestampActive(state.startTime);
+    const baseAccumulated = clampDurationMs(state.accumulatedTime);
     const finalAccumulated = timerRunning
-      ? calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime)
-      : Math.min(Number(state.accumulatedTime) || 0, MAX_GAME_TIME_MS);
+      ? calculateSafeTimeAccumulation(baseAccumulated, state.startTime, now)
+      : baseAccumulated;
     const snapshot = {
       ...state,
       accumulatedTime: finalAccumulated,
@@ -1475,10 +1476,11 @@ victoryMethod  = "Set Other Team";
     }
     // no "auto-win at 500+" fallback any more
 
-  let finalAccumulated = state.accumulatedTime;
-  if (state.startTime !== null && !gameFinished) { /* Time continues */ }
-  else if (state.startTime !== null && gameFinished) { 
-    finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  const timerRunning = isStartTimestampActive(state.startTime);
+  let finalAccumulated = clampDurationMs(state.accumulatedTime);
+  if (timerRunning && !gameFinished) { /* Time continues */ }
+  else if (timerRunning && gameFinished) { 
+    finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 
   updateState({
@@ -1494,7 +1496,7 @@ victoryMethod  = "Set Other Team";
     enterBidderPoints: false,
     error: "",
     accumulatedTime: finalAccumulated,
-    startTime: gameFinished ? null : state.startTime,
+    startTime: gameFinished ? null : (timerRunning ? state.startTime : null),
     pendingPenalty: null
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
@@ -1654,16 +1656,17 @@ victoryMethod  = "Set Other Team";
     }
 
   ephemeralCustomBid = ""; ephemeralPoints = "";
-  let finalAccumulated = state.accumulatedTime;
-  if (state.startTime !== null && !gameFinished) { /* Time continues */ }
-  else if (state.startTime !== null && gameFinished) { 
-    finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  const timerRunning = isStartTimestampActive(state.startTime);
+  let finalAccumulated = clampDurationMs(state.accumulatedTime);
+  if (timerRunning && !gameFinished) { /* Time continues */ }
+  else if (timerRunning && gameFinished) { 
+    finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 
   updateState({
       rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
-      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : state.startTime, pendingPenalty: null 
+      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null 
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
@@ -1890,7 +1893,7 @@ function loadFreezerGame(index) {
           demPlayers: chosenDemPlayers,
           usTeamName: chosenUsName,
           demTeamName: chosenDemName,
-          accumulatedTime: Math.min(chosen.accumulatedTime || 0, MAX_GAME_TIME_MS), // Cap accumulated time
+          accumulatedTime: clampDurationMs(chosen.accumulatedTime), // Cap accumulated time
           startTime: Date.now(), // Restart timer
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [] // Clear any undone rounds from previous state
@@ -2038,21 +2041,36 @@ function showVersionNum() {
 const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
 const MAX_ROUND_TIME_MS = 2 * 60 * 60 * 1000; // 2 hours maximum per round
 
-function calculateSafeTimeAccumulation(currentAccumulated, startTime) {
-  if (!startTime) return currentAccumulated;
+function clampDurationMs(value, cap = MAX_GAME_TIME_MS) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return 0;
+  return Math.min(num, cap);
+}
 
-  const elapsed = Date.now() - startTime;
-  const cappedElapsed = Math.min(elapsed, MAX_ROUND_TIME_MS);
-  const totalTime = currentAccumulated + cappedElapsed;
+function isStartTimestampActive(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0;
+}
+
+function calculateSafeTimeAccumulation(currentAccumulated, startTime, nowTs = Date.now()) {
+  const base = clampDurationMs(currentAccumulated);
+  const startMs = Number(startTime);
+  if (!Number.isFinite(startMs) || startMs <= 0) return base;
+
+  const elapsedRaw = nowTs - startMs;
+  if (!Number.isFinite(elapsedRaw) || elapsedRaw <= 0) return base; // Guard against clock skew/invalid timestamps
+
+  const cappedElapsed = Math.min(elapsedRaw, MAX_ROUND_TIME_MS);
+  const totalTime = base + cappedElapsed;
 
   // Cap the total game time as well
   return Math.min(totalTime, MAX_GAME_TIME_MS);
 }
 
 function getCurrentGameTime() {
-  if (!state.startTime) return state.accumulatedTime;
-  const elapsed = Date.now() - state.startTime;
-  return state.accumulatedTime + elapsed;
+  const base = clampDurationMs(state.accumulatedTime);
+  if (!isStartTimestampActive(state.startTime)) return base;
+  return calculateSafeTimeAccumulation(base, state.startTime);
 }
 
 function renderTimeWarning() {
