@@ -178,6 +178,9 @@ const {
   buildProbabilityIndex,
   calculateWinProbabilityComplex,
   calculateWinProbability,
+  logisticProb,
+  retrainWinProbabilityModel,
+  getWinProbabilityModelSnapshot,
 } = require('../js/app.js');
 
 const LOGISTIC_PARAMS = {
@@ -204,6 +207,40 @@ const computeLogisticPercentage = (diff, roundIndex, momentum) => {
 const resetState = () => {
   localStorage.clear();
 };
+
+const US_FAVORABLE_DIFFS = [80, 150, 220];
+const DEM_FAVORABLE_DIFFS = [-70, -130, -180];
+
+function createSyntheticGame(diffSequence, winner) {
+  const rounds = diffSequence.map((diff, index) => {
+    const dem = 180 + index * 40;
+    const us = dem + diff;
+    return { runningTotals: { us, dem } };
+  });
+  const lastRound = rounds[rounds.length - 1];
+  const finalScore = lastRound
+    ? { ...lastRound.runningTotals }
+    : winner === 'us'
+      ? { us: 520, dem: 320 }
+      : { us: 320, dem: 520 };
+
+  return {
+    finalScore,
+    rounds,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildSyntheticHistory(usWins, demWins) {
+  const games = [];
+  for (let i = 0; i < usWins; i += 1) {
+    games.push(createSyntheticGame(US_FAVORABLE_DIFFS, 'us'));
+  }
+  for (let i = 0; i < demWins; i += 1) {
+    games.push(createSyntheticGame(DEM_FAVORABLE_DIFFS, 'dem'));
+  }
+  return games;
+}
 
 test('sanitizePlayerName trims and normalizes whitespace', () => {
   assert.equal(sanitizePlayerName('  Alice   Bob '), 'Alice Bob');
@@ -480,4 +517,29 @@ test('calculateWinProbability proxies to calculateWinProbabilityComplex', () => 
     calculateWinProbability(state, historicalGames),
     calculateWinProbabilityComplex(state, historicalGames),
   );
+});
+
+test('retrainWinProbabilityModel raises win probability when history favors us', () => {
+  resetState();
+  const scenario = { diff: 80, roundIdx: 1, momentum: 70 };
+  const baseline = logisticProb(scenario.diff, scenario.roundIdx, scenario.momentum);
+
+  const history = buildSyntheticHistory(12, 3);
+  const snapshot = retrainWinProbabilityModel(history);
+  assert.ok(snapshot.sampleSize >= history.length * US_FAVORABLE_DIFFS.length);
+
+  const updated = logisticProb(scenario.diff, scenario.roundIdx, scenario.momentum);
+  assert.ok(updated > baseline, `Expected retrained probability ${updated} to exceed baseline ${baseline}`);
+  const stored = getWinProbabilityModelSnapshot();
+  assert.equal(stored.sampleSize, snapshot.sampleSize);
+});
+
+test('retrainWinProbabilityModel lowers win probability when history favors opponents', () => {
+  resetState();
+  const scenario = { diff: -80, roundIdx: 1, momentum: -60 };
+  const baseline = logisticProb(scenario.diff, scenario.roundIdx, scenario.momentum);
+
+  retrainWinProbabilityModel(buildSyntheticHistory(3, 12));
+  const updated = logisticProb(scenario.diff, scenario.roundIdx, scenario.momentum);
+  assert.ok(updated < baseline, `Expected retrained probability ${updated} to be below baseline ${baseline}`);
 });
