@@ -8,6 +8,7 @@ const ACTIVE_GAME_KEY = "activeGameState";
 const PRO_MODE_KEY = "proModeEnabled";
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
+const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";
 const PROB_CACHE = new Map();   // memoise across calls
 const TEAM_STORAGE_VERSION = 2;
 const TEAM_KEY_SEPARATOR = "||";
@@ -32,6 +33,7 @@ const DEFAULT_STATE = {
   timerLastSavedAt: null,
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
+  misdealCount: 0,
 };
 
 function sanitizePlayerName(name) {
@@ -763,8 +765,6 @@ function resetGame() {
   if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       window.syncToFirestore(ACTIVE_GAME_KEY, null); // Sync deletion of active game
   }
-  // Show dealer prompt modal after a short delay to allow UI to update
-  setTimeout(() => openDealerPromptModal(), 100);
 }
 function loadCurrentGameState() {
   let loadedState = null; // Initialize to null
@@ -1109,22 +1109,43 @@ function openConfirmationModal(message, yesCb, noCb) {
 function closeConfirmationModal() { closeModal("confirmationModal"); confirmationCallback = null; noCallback = null; }
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
 function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
-function openDealerPromptModal() { openModal("dealerPromptModal"); }
-function closeDealerPromptModal() { closeModal("dealerPromptModal"); }
 function openDealerOrderModal() {
   const form = document.getElementById("dealerOrderForm");
   if (form) form.reset();
   openModal("dealerOrderModal");
 }
 function closeDealerOrderModal() { closeModal("dealerOrderModal"); }
-function handleDealerPromptYes() {
-  closeDealerPromptModal();
-  openDealerOrderModal();
+function openDealerPairSelectionModal() {
+  // Populate the button text with dealer names
+  if (state.dealers && state.dealers.length === 4) {
+    const pair13Text = `${state.dealers[0]} & ${state.dealers[2]}`;
+    const pair24Text = `${state.dealers[1]} & ${state.dealers[3]}`;
+    document.getElementById("pair13Text").textContent = pair13Text;
+    document.getElementById("pair24Text").textContent = pair24Text;
+  }
+  openModal("dealerPairSelectionModal");
 }
-function handleDealerPromptNo() {
-  closeDealerPromptModal();
-  updateState({ dealers: [] });
-  saveCurrentGameState();
+function closeDealerPairSelectionModal() { closeModal("dealerPairSelectionModal"); }
+function handleDealerPairSelection(pair) {
+  closeDealerPairSelectionModal();
+  
+  // Set up the team players based on selection
+  if (pair === '13') {
+    // Dealers 1 & 3 are "Us", Dealers 2 & 4 are "Dem"
+    window.prePopulatedTeamData = {
+      usPlayers: [state.dealers[0], state.dealers[2]],
+      demPlayers: [state.dealers[1], state.dealers[3]]
+    };
+  } else if (pair === '24') {
+    // Dealers 2 & 4 are "Us", Dealers 1 & 3 are "Dem"
+    window.prePopulatedTeamData = {
+      usPlayers: [state.dealers[1], state.dealers[3]],
+      demPlayers: [state.dealers[0], state.dealers[2]]
+    };
+  }
+  
+  // Open team selection modal with pre-populated data
+  openTeamSelectionModal();
 }
 function handleDealerOrderSubmit(event) {
   event.preventDefault();
@@ -1132,7 +1153,14 @@ function handleDealerOrderSubmit(event) {
   const dealer2 = document.getElementById("dealer2")?.value.trim() || "";
   const dealer3 = document.getElementById("dealer3")?.value.trim() || "";
   const dealer4 = document.getElementById("dealer4")?.value.trim() || "";
-  const dealers = [dealer1, dealer2, dealer3, dealer4].filter(Boolean);
+  
+  // Validate that all 4 dealers are entered
+  if (!dealer1 || !dealer2 || !dealer3 || !dealer4) {
+    alert("Please enter all 4 dealer names to continue.");
+    return;
+  }
+  
+  const dealers = [dealer1, dealer2, dealer3, dealer4];
   updateState({ dealers });
   saveCurrentGameState();
   closeDealerOrderModal();
@@ -1767,6 +1795,13 @@ function handleRedo() {
   if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
   saveCurrentGameState();
 }
+function handleMisdeal() {
+  // Increment misdeal counter to skip to next dealer
+  const newMisdealCount = (state.misdealCount || 0) + 1;
+  updateState({ misdealCount: newMisdealCount });
+  saveCurrentGameState();
+  showSaveIndicator("Moved to next dealer");
+}
 function handleNewGame() {
   openConfirmationModal(
     "Start a new game? Unsaved progress will be lost.",
@@ -1787,7 +1822,32 @@ function handleGameOverSaveClick(e) {
   if (e) e.preventDefault();
   hideGameOverOverlay();
   pendingGameAction = "save";
-  openTeamSelectionModal();
+  
+  // Check if we have dealers and no team names set yet
+  const hasTeamNames = state.usTeamName || state.demTeamName || 
+                       (state.usPlayers && state.usPlayers.some(Boolean)) || 
+                       (state.demPlayers && state.demPlayers.some(Boolean));
+  const hasFourDealers = state.dealers && state.dealers.length === 4;
+  
+  console.log("DEBUG - Save Game Click:", {
+    dealers: state.dealers,
+    hasFourDealers,
+    hasTeamNames,
+    usTeamName: state.usTeamName,
+    demTeamName: state.demTeamName,
+    usPlayers: state.usPlayers,
+    demPlayers: state.demPlayers
+  });
+  
+  if (hasFourDealers && !hasTeamNames) {
+    console.log("Opening dealer pair selection modal");
+    // Show dealer pair selection first
+    openDealerPairSelectionModal();
+  } else {
+    console.log("Opening team selection modal directly");
+    // Go directly to team selection
+    openTeamSelectionModal();
+  }
 }
 function handleGameOverFixClick(e) {
   if (e) e.preventDefault();
@@ -1801,7 +1861,19 @@ function handleGameOverFixClick(e) {
 
 function handleManualSaveGame() { // Called after team names confirmed or if already set
   if (!state.usTeamName || !state.demTeamName) {
-    pendingGameAction = "save"; openTeamSelectionModal(); return;
+    pendingGameAction = "save";
+    
+    // Check if we have dealers to auto-populate team selection
+    const hasFourDealers = state.dealers && state.dealers.length === 4;
+    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) || 
+                         (state.demPlayers && state.demPlayers.some(Boolean));
+    
+    if (hasFourDealers && !hasTeamNames) {
+      openDealerPairSelectionModal();
+    } else {
+      openTeamSelectionModal();
+    }
+    return;
   }
   if (!state.rounds.length) return;
 
@@ -1972,6 +2044,9 @@ function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen ga
 function saveSettings() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
   if (mustWinToggle) localStorage.setItem(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
+
+  const misdealToggle = document.getElementById("misdealHandlingToggle");
+  if (misdealToggle) localStorage.setItem(MISDEAL_HANDLING_KEY, misdealToggle.checked);
 
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
@@ -2449,8 +2524,17 @@ function populateTeamSelects() {
     });
   };
 
-  configureTeamSection("selectUsTeam", ["usPlayerOne", "usPlayerTwo"], ensurePlayersArray(state.usPlayers));
-  configureTeamSection("selectDemTeam", ["demPlayerOne", "demPlayerTwo"], ensurePlayersArray(state.demPlayers));
+  // Check for pre-populated data from dealer pair selection
+  const usPlayersToUse = window.prePopulatedTeamData?.usPlayers || ensurePlayersArray(state.usPlayers);
+  const demPlayersToUse = window.prePopulatedTeamData?.demPlayers || ensurePlayersArray(state.demPlayers);
+  
+  configureTeamSection("selectUsTeam", ["usPlayerOne", "usPlayerTwo"], usPlayersToUse);
+  configureTeamSection("selectDemTeam", ["demPlayerOne", "demPlayerTwo"], demPlayersToUse);
+  
+  // Clear pre-populated data after use
+  if (window.prePopulatedTeamData) {
+    window.prePopulatedTeamData = null;
+  }
 
   const playerSuggestions = new Set();
   teamEntries.forEach(entry => entry.players.forEach(name => { if (name) playerSuggestions.add(name); }));
@@ -2592,18 +2676,35 @@ function renderApp() {
   }
 
 
-  // Calculate current dealer badge
+  // Calculate current dealer badge (including misdeals in the count)
   let dealerBadge = "";
   if (state.dealers && state.dealers.length > 0) {
-    const dealerIndex = (roundNumber - 1) % state.dealers.length;
+    const totalDeals = (roundNumber - 1) + (state.misdealCount || 0);
+    const dealerIndex = totalDeals % state.dealers.length;
     const currentDealer = state.dealers[dealerIndex];
     dealerBadge = `<div class="mt-1"><span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${currentDealer}</span></div>`;
+  }
+
+  // Show "Enter dealing order" button only before game starts AND if no dealers set
+  let dealerEntryButton = "";
+  const hasDealers = state.dealers && state.dealers.length > 0;
+  if (rounds.length === 0 && !hasDealers) {
+    dealerEntryButton = `<div class="mt-2"><button onclick="openDealerOrderModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">Enter dealing order</button></div>`;
+  }
+
+  // Show "Misdeal" button if dealers exist, setting is enabled, and game hasn't started bidding yet
+  let misdealButton = "";
+  const misdealHandlingEnabled = JSON.parse(localStorage.getItem(MISDEAL_HANDLING_KEY) || "false");
+  if (hasDealers && misdealHandlingEnabled && !biddingTeam && !gameOver) {
+    misdealButton = `<div class="mt-2"><button onclick="handleMisdeal()" class="px-4 py-2 bg-yellow-500 dark:bg-yellow-600 text-white rounded-lg hover:bg-yellow-600 dark:hover:bg-yellow-700 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm">⚠️ Misdeal</button></div>`;
   }
 
   document.getElementById("app").innerHTML = `
     <div class="text-center space-y-2">
       <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white">Rook!</h1>
       <p class="text-md sm:text-lg text-gray-600 dark:text-white">Tap a team to start a bid!</p>
+      ${dealerEntryButton}
+      ${misdealButton}
       ${dealerBadge}
     </div>
     ${renderTimeWarning()}
@@ -3592,6 +3693,12 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
 function loadSettings() {
   console.log("Loading settings from localStorage...");
 
+  // Load misdeal handling setting
+  const misdealToggle = document.getElementById("misdealHandlingToggle");
+  if (misdealToggle) {
+    misdealToggle.checked = JSON.parse(localStorage.getItem(MISDEAL_HANDLING_KEY) || "false");
+  }
+
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
@@ -3779,8 +3886,8 @@ document.addEventListener("DOMContentLoaded", () => {
     presetEditorModal: closePresetEditorModal,
     tableTalkModal: closeTableTalkModal,
     probabilityModal: closeProbabilityModal,
-    dealerPromptModal: closeDealerPromptModal,
     dealerOrderModal: closeDealerOrderModal,
+    dealerPairSelectionModal: closeDealerPairSelectionModal,
   };
 
   document.addEventListener("click", (e) => {
