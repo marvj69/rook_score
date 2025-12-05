@@ -31,6 +31,7 @@ const DEFAULT_STATE = {
   accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
   timerLastSavedAt: null,
   startingTotals: { us: 0, dem: 0 },
+  dealers: [],
 };
 
 function sanitizePlayerName(name) {
@@ -762,6 +763,8 @@ function resetGame() {
   if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       window.syncToFirestore(ACTIVE_GAME_KEY, null); // Sync deletion of active game
   }
+  // Show dealer prompt modal after a short delay to allow UI to update
+  setTimeout(() => openDealerPromptModal(), 100);
 }
 function loadCurrentGameState() {
   let loadedState = null; // Initialize to null
@@ -1106,6 +1109,34 @@ function openConfirmationModal(message, yesCb, noCb) {
 function closeConfirmationModal() { closeModal("confirmationModal"); confirmationCallback = null; noCallback = null; }
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
 function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
+function openDealerPromptModal() { openModal("dealerPromptModal"); }
+function closeDealerPromptModal() { closeModal("dealerPromptModal"); }
+function openDealerOrderModal() {
+  const form = document.getElementById("dealerOrderForm");
+  if (form) form.reset();
+  openModal("dealerOrderModal");
+}
+function closeDealerOrderModal() { closeModal("dealerOrderModal"); }
+function handleDealerPromptYes() {
+  closeDealerPromptModal();
+  openDealerOrderModal();
+}
+function handleDealerPromptNo() {
+  closeDealerPromptModal();
+  updateState({ dealers: [] });
+  saveCurrentGameState();
+}
+function handleDealerOrderSubmit(event) {
+  event.preventDefault();
+  const dealer1 = document.getElementById("dealer1")?.value.trim() || "";
+  const dealer2 = document.getElementById("dealer2")?.value.trim() || "";
+  const dealer3 = document.getElementById("dealer3")?.value.trim() || "";
+  const dealer4 = document.getElementById("dealer4")?.value.trim() || "";
+  const dealers = [dealer1, dealer2, dealer3, dealer4].filter(Boolean);
+  updateState({ dealers });
+  saveCurrentGameState();
+  closeDealerOrderModal();
+}
 function openResumeGameModal() {
   const form = document.getElementById("resumeGameForm");
   const errorEl = document.getElementById("resumeGameError");
@@ -2561,10 +2592,19 @@ function renderApp() {
   }
 
 
+  // Calculate current dealer badge
+  let dealerBadge = "";
+  if (state.dealers && state.dealers.length > 0) {
+    const dealerIndex = (roundNumber - 1) % state.dealers.length;
+    const currentDealer = state.dealers[dealerIndex];
+    dealerBadge = `<div class="mt-1"><span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${currentDealer}</span></div>`;
+  }
+
   document.getElementById("app").innerHTML = `
     <div class="text-center space-y-2">
       <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white">Rook!</h1>
       <p class="text-md sm:text-lg text-gray-600 dark:text-white">Tap a team to start a bid!</p>
+      ${dealerBadge}
     </div>
     ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
@@ -3714,6 +3754,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
+  document.getElementById("dealerOrderForm")?.addEventListener("submit", handleDealerOrderSubmit);
   const resumePaperGameButton = document.getElementById("resumePaperGameButton");
   if (resumePaperGameButton) {
     resumePaperGameButton.addEventListener("click", (event) => {
@@ -3738,6 +3779,8 @@ document.addEventListener("DOMContentLoaded", () => {
     presetEditorModal: closePresetEditorModal,
     tableTalkModal: closeTableTalkModal,
     probabilityModal: closeProbabilityModal,
+    dealerPromptModal: closeDealerPromptModal,
+    dealerOrderModal: closeDealerOrderModal,
   };
 
   document.addEventListener("click", (e) => {

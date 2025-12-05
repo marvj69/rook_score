@@ -138,6 +138,56 @@
       </div>
     </div>
 
+    <!-- Dealer Order Prompt Modal -->
+    <div id="dealerPromptModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal transition-opacity duration-300" role="dialog" aria-modal="true" aria-labelledby="dealerPromptModalTitle">
+      <div class="bg-white w-full max-w-md rounded-2xl shadow-xl dark:bg-gray-800 transform transition-all duration-300 scale-100">
+        <div class="p-6 space-y-6">
+          <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
+              <svg class="h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <h2 id="dealerPromptModalTitle" class="text-2xl font-semibold text-gray-900 dark:text-white">Enter Dealing Order?</h2>
+          </div>
+          <p class="text-base text-gray-600 dark:text-gray-300">Would you like to set a dealing order for this game?</p>
+          <div class="flex justify-end items-center space-x-3">
+            <button type="button" onclick="handleDealerPromptNo()" class="px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors duration-200 font-medium">No</button>
+            <button type="button" onclick="handleDealerPromptYes()" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors duration-200 font-medium">Yes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dealer Order Entry Modal -->
+    <div id="dealerOrderModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="dealerOrderModalTitle">
+      <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800">
+        <div class="p-6">
+          <h2 id="dealerOrderModalTitle" class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Enter Dealing Order</h2>
+          <form id="dealerOrderForm" class="space-y-4">
+            <div>
+              <label for="dealer1" class="block text-sm font-medium text-gray-700 dark:text-white mb-1">First Dealer</label>
+              <input type="text" id="dealer1" name="dealer1" class="block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter name" />
+            </div>
+            <div>
+              <label for="dealer2" class="block text-sm font-medium text-gray-700 dark:text-white mb-1">Second Dealer</label>
+              <input type="text" id="dealer2" name="dealer2" class="block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter name" />
+            </div>
+            <div>
+              <label for="dealer3" class="block text-sm font-medium text-gray-700 dark:text-white mb-1">Third Dealer</label>
+              <input type="text" id="dealer3" name="dealer3" class="block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter name" />
+            </div>
+            <div>
+              <label for="dealer4" class="block text-sm font-medium text-gray-700 dark:text-white mb-1">Fourth Dealer</label>
+              <input type="text" id="dealer4" name="dealer4" class="block w-full border border-gray-300 rounded-xl px-4 py-2 dark:bg-gray-600 dark:border-gray-500 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter name" />
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+              <button type="button" onclick="closeDealerOrderModal();" class="bg-gray-400 text-white px-4 py-2 rounded-xl hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-500 dark:hover:bg-gray-600">Cancel</button>
+              <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600">Confirm</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- View Saved Game Modal -->
     <div id="viewSavedGameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-2 sm:p-4 modal" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle">
       <div class="bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-hidden dark:bg-gray-800 max-h-[95vh] sm:max-h-[90vh] flex flex-col">
