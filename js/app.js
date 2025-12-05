@@ -1912,7 +1912,19 @@ function handleFreezerGame() {
     alert("No active game to freeze."); return;
   }
   if (!state.usTeamName || !state.demTeamName) {
-    pendingGameAction = "freeze"; openTeamSelectionModal(); return;
+    pendingGameAction = "freeze";
+    
+    // Check if we have dealers to auto-populate team selection
+    const hasFourDealers = state.dealers && state.dealers.length === 4;
+    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) || 
+                         (state.demPlayers && state.demPlayers.some(Boolean));
+    
+    if (hasFourDealers && !hasTeamNames) {
+      openDealerPairSelectionModal();
+    } else {
+      openTeamSelectionModal();
+    }
+    return;
   }
   confirmFreeze(); // Ask for confirmation
 }
@@ -1934,8 +1946,16 @@ function freezeCurrentGame() {
   const usTeamKey = buildTeamKey(usPlayers) || null;
   const demTeamKey = buildTeamKey(demPlayers) || null;
 
+  // Generate name from dealers if available, otherwise use timestamp
+  let gameName;
+  if (state.dealers && state.dealers.length === 4) {
+    gameName = state.dealers.join(', ');
+  } else {
+    gameName = `FROZEN-${new Date().toLocaleTimeString()}`;
+  }
+
   const frozenGame = {
-      name: `FROZEN-${new Date().toLocaleTimeString()}`, // More readable name
+      name: gameName,
       usName: usDisplay,
       demName: demDisplay,
       usPlayers,
@@ -1952,7 +1972,8 @@ function freezeCurrentGame() {
       // Store necessary state to resume
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
       customBidValue: state.customBidValue, showCustomBid: state.showCustomBid,
-      enterBidderPoints: state.enterBidderPoints, lastBidAmount: state.lastBidAmount, lastBidTeam: state.lastBidTeam
+      enterBidderPoints: state.enterBidderPoints, lastBidAmount: state.lastBidAmount, lastBidTeam: state.lastBidTeam,
+      dealers: state.dealers || [], misdealCount: state.misdealCount || 0
   };
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
@@ -1994,7 +2015,9 @@ function loadFreezerGame(index) {
           accumulatedTime: clampDurationMs(chosen.accumulatedTime), // Cap accumulated time
           startTime: Date.now(), // Restart timer
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
-          undoneRounds: [] // Clear any undone rounds from previous state
+          undoneRounds: [], // Clear any undone rounds from previous state
+          dealers: chosen.dealers || [],
+          misdealCount: chosen.misdealCount || 0
       });
       freezerGames.splice(index, 1); // Remove from freezer
       setLocalStorage("freezerGames", freezerGames);
