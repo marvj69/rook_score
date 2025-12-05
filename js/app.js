@@ -1156,10 +1156,10 @@ function handleDealerPairSelection(pair) {
 }
 function handleDealerOrderSubmit(event) {
   event.preventDefault();
-  const dealer1 = document.getElementById("dealer1")?.value.trim() || "";
-  const dealer2 = document.getElementById("dealer2")?.value.trim() || "";
-  const dealer3 = document.getElementById("dealer3")?.value.trim() || "";
-  const dealer4 = document.getElementById("dealer4")?.value.trim() || "";
+  const dealer1 = sanitizePlayerName(document.getElementById("dealer1")?.value || "");
+  const dealer2 = sanitizePlayerName(document.getElementById("dealer2")?.value || "");
+  const dealer3 = sanitizePlayerName(document.getElementById("dealer3")?.value || "");
+  const dealer4 = sanitizePlayerName(document.getElementById("dealer4")?.value || "");
   
   // Validate that all 4 dealers are entered
   if (!dealer1 || !dealer2 || !dealer3 || !dealer4) {
@@ -1835,16 +1835,6 @@ function handleGameOverSaveClick(e) {
                        (state.usPlayers && state.usPlayers.some(Boolean)) || 
                        (state.demPlayers && state.demPlayers.some(Boolean));
   const hasFourDealers = state.dealers && state.dealers.length === 4;
-  
-  console.log("DEBUG - Save Game Click:", {
-    dealers: state.dealers,
-    hasFourDealers,
-    hasTeamNames,
-    usTeamName: state.usTeamName,
-    demTeamName: state.demTeamName,
-    usPlayers: state.usPlayers,
-    demPlayers: state.demPlayers
-  });
   
   if (hasFourDealers && !hasTeamNames) {
     console.log("Opening dealer pair selection modal");
@@ -4052,6 +4042,7 @@ function handleTeamSelectionCancel() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     sanitizePlayerName,
+    escapeHtml,
     ensurePlayersArray,
     canonicalizePlayers,
     formatTeamDisplay,
