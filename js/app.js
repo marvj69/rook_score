@@ -1837,11 +1837,9 @@ function handleGameOverSaveClick(e) {
   const hasFourDealers = state.dealers && state.dealers.length === 4;
   
   if (hasFourDealers && !hasTeamNames) {
-    console.log("Opening dealer pair selection modal");
     // Show dealer pair selection first
     openDealerPairSelectionModal();
   } else {
-    console.log("Opening team selection modal directly");
     // Go directly to team selection
     openTeamSelectionModal();
   }
