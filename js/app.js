@@ -40,6 +40,13 @@ function sanitizePlayerName(name) {
   return (typeof name === "string" ? name : "").trim().replace(/\s+/g, " ");
 }
 
+function escapeHtml(text) {
+  if (typeof text !== "string") return "";
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function ensurePlayersArray(input) {
   const arr = Array.isArray(input) ? input : [];
   return [sanitizePlayerName(arr[0] ?? ""), sanitizePlayerName(arr[1] ?? "")];
@@ -2682,7 +2689,8 @@ function renderApp() {
     const totalDeals = (roundNumber - 1) + (state.misdealCount || 0);
     const dealerIndex = totalDeals % state.dealers.length;
     const currentDealer = state.dealers[dealerIndex];
-    dealerBadge = `<div class="mt-1"><span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${currentDealer}</span></div>`;
+    const escapedDealer = escapeHtml(currentDealer);
+    dealerBadge = `<div class="mt-1"><span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${escapedDealer}</span></div>`;
   }
 
   // Show "Enter dealing order" button only before game starts AND if no dealers set
