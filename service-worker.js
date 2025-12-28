@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v1.5.5-b2";
+const CACHE_NAME = "rook-cache-v1.5.5-b8";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
