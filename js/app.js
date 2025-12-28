@@ -347,6 +347,19 @@ function setLocalStorage(key, value) {
   }
 }
 
+function removeLocalStorageKey(key) {
+  try {
+    localStorage.removeItem(key);
+    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+      setTimeout(() => {
+        window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
+      }, 0);
+    }
+  } catch (error) {
+    console.error(`Error removing localStorage key ${key}:`, error);
+  }
+}
+
 function getLocalStorage(key, defaultValue = null) {
   const raw = localStorage.getItem(key);
   if (raw === null) {
@@ -562,12 +575,12 @@ function initializeTheme() {
   // ------------------------------------------------------------------
   //  One-time migration for themes stored by older app versions
   // ------------------------------------------------------------------
-  let savedTheme = localStorage.getItem("rookSelectedTheme");
+  const savedTheme = getLocalStorage(THEME_KEY, "");
 
   if (savedTheme) {
     const { normalized, mutated } = ensureBaseClasses(savedTheme);
     if (mutated && normalized !== savedTheme) {
-      localStorage.setItem("rookSelectedTheme", normalized);
+      setLocalStorage(THEME_KEY, normalized);
     }
     body.className = normalized;
     return;
@@ -600,8 +613,8 @@ function initializeCustomThemeColors() {
   const defaultUsColor = rootStyles.getPropertyValue('--primary-color').trim() || "#3b82f6";
   const defaultDemColor = rootStyles.getPropertyValue('--accent-color').trim() || "#ef4444";
 
-  const storedUsColor = localStorage.getItem('customUsColor');
-  const storedDemColor = localStorage.getItem('customDemColor');
+  const storedUsColor = getLocalStorage('customUsColor', '');
+  const storedDemColor = getLocalStorage('customDemColor', '');
 
   const body = document.getElementById('bodyRoot');
   const usPicker = document.getElementById('usColorPicker');
@@ -609,13 +622,13 @@ function initializeCustomThemeColors() {
 
   const usColor = sanitizeHexColor(storedUsColor);
   if (usColor) {
-    if (storedUsColor !== usColor) localStorage.setItem('customUsColor', usColor);
+    if (storedUsColor !== usColor) setLocalStorage('customUsColor', usColor);
     if (body) body.style.setProperty('--primary-color', usColor);
     if (usPicker) usPicker.value = usColor;
   } else {
     if (storedUsColor !== null) { // Warn only when a value existed
       console.warn(`Invalid customUsColor ("${storedUsColor}") in localStorage. Using default.`);
-      localStorage.removeItem('customUsColor');
+      removeLocalStorageKey('customUsColor');
     }
     if (body) body.style.setProperty('--primary-color', defaultUsColor);
     if (usPicker) usPicker.value = defaultUsColor;
@@ -623,13 +636,13 @@ function initializeCustomThemeColors() {
 
   const demColor = sanitizeHexColor(storedDemColor);
   if (demColor) {
-    if (storedDemColor !== demColor) localStorage.setItem('customDemColor', demColor);
+    if (storedDemColor !== demColor) setLocalStorage('customDemColor', demColor);
     if (body) body.style.setProperty('--accent-color', demColor);
     if (demPicker) demPicker.value = demColor;
   } else {
     if (storedDemColor !== null) {
       console.warn(`Invalid customDemColor ("${storedDemColor}") in localStorage. Using default.`);
-      localStorage.removeItem('customDemColor');
+      removeLocalStorageKey('customDemColor');
     }
     if (body) body.style.setProperty('--accent-color', defaultDemColor);
     if (demPicker) demPicker.value = defaultDemColor;
@@ -646,16 +659,16 @@ function applyCustomThemeColors() {
 
   if (usColor) {
     if (body) body.style.setProperty('--primary-color', usColor);
-    localStorage.setItem('customUsColor', usColor);
+    setLocalStorage('customUsColor', usColor);
   } else {
-    localStorage.removeItem('customUsColor');
+    removeLocalStorageKey('customUsColor');
   }
 
   if (demColor) {
     if (body) body.style.setProperty('--accent-color', demColor);
-    localStorage.setItem('customDemColor', demColor);
+    setLocalStorage('customDemColor', demColor);
   } else {
-    localStorage.removeItem('customDemColor');
+    removeLocalStorageKey('customDemColor');
   }
 
   closeThemeModal(null); // Pass null if event is not available or needed
@@ -664,8 +677,8 @@ function resetThemeColors() {
   const defaultUs = "#3b82f6", defaultDem = "#ef4444";
   document.getElementById('bodyRoot').style.setProperty('--primary-color', defaultUs);
   document.getElementById('bodyRoot').style.setProperty('--accent-color', defaultDem);
-  localStorage.removeItem('customUsColor');
-  localStorage.removeItem('customDemColor');
+  removeLocalStorageKey('customUsColor');
+  removeLocalStorageKey('customDemColor');
   const usPicker = document.getElementById('usColorPicker');
   const demPicker = document.getElementById('demColorPicker');
   if (usPicker) usPicker.value = defaultUs;
@@ -1316,9 +1329,9 @@ if (typeof window !== "undefined") {
 }
 function openSettingsModal() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
-  if (mustWinToggle) mustWinToggle.checked = JSON.parse(localStorage.getItem(MUST_WIN_BY_BID_KEY) || "false");
+  if (mustWinToggle) mustWinToggle.checked = !!getLocalStorage(MUST_WIN_BY_BID_KEY, false);
   const proToggleModal = document.getElementById("proModeToggleModal");
-  if (proToggleModal) proToggleModal.checked = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
+  if (proToggleModal) proToggleModal.checked = !!getLocalStorage(PRO_MODE_KEY, false);
   document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
 
   // Load all settings using the common function
@@ -2061,10 +2074,10 @@ function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen ga
 // --- Settings & Pro Mode ---
 function saveSettings() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
-  if (mustWinToggle) localStorage.setItem(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
+  if (mustWinToggle) setLocalStorage(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
 
   const misdealToggle = document.getElementById("misdealHandlingToggle");
-  if (misdealToggle) localStorage.setItem(MISDEAL_HANDLING_KEY, misdealToggle.checked);
+  if (misdealToggle) setLocalStorage(MISDEAL_HANDLING_KEY, misdealToggle.checked);
 
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
@@ -2094,7 +2107,7 @@ function updateProModeUI(isProMode) {
 }
 function toggleProMode(checkbox) {
   const isPro = checkbox.checked;
-  localStorage.setItem(PRO_MODE_KEY, isPro);
+  setLocalStorage(PRO_MODE_KEY, isPro);
   updateProModeUI(isPro);
   saveCurrentGameState(); // Save state with new pro mode setting
 }
@@ -2713,7 +2726,7 @@ function renderApp() {
 
   // Show "Misdeal" button if dealers exist, setting is enabled, and game hasn't started bidding yet
   let misdealButton = "";
-  const misdealHandlingEnabled = JSON.parse(localStorage.getItem(MISDEAL_HANDLING_KEY) || "false");
+  const misdealHandlingEnabled = !!getLocalStorage(MISDEAL_HANDLING_KEY, false);
   if (hasDealers && misdealHandlingEnabled && !biddingTeam && !gameOver) {
     misdealButton = `<div class="mt-2"><button onclick="handleMisdeal()" class="px-4 py-2 bg-yellow-500 dark:bg-yellow-600 text-white rounded-lg hover:bg-yellow-600 dark:hover:bg-yellow-700 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm">⚠️ Misdeal</button></div>`;
   }
@@ -3715,7 +3728,7 @@ function loadSettings() {
   // Load misdeal handling setting
   const misdealToggle = document.getElementById("misdealHandlingToggle");
   if (misdealToggle) {
-    misdealToggle.checked = JSON.parse(localStorage.getItem(MISDEAL_HANDLING_KEY) || "false");
+    misdealToggle.checked = !!getLocalStorage(MISDEAL_HANDLING_KEY, false);
   }
 
   // Load table talk penalty settings

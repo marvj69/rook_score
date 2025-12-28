@@ -137,7 +137,11 @@ if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
 
   // Re-initialize state from potentially merged localStorage
   if (typeof performTeamPlayerMigration === 'function') performTeamPlayerMigration();
-  if (window.loadCurrentGameState) window.loadCurrentGameState(); 
+  if (window.initializeTheme) window.initializeTheme();
+  if (window.initializeCustomThemeColors) window.initializeCustomThemeColors();
+  if (window.loadCurrentGameState) window.loadCurrentGameState();
+  if (window.loadSettings) window.loadSettings();
+  if (window.updateProModeUI) window.updateProModeUI(window.getLocalStorage?.('proModeEnabled', false));
   if (window.renderApp) window.renderApp();
 }
 
