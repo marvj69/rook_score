@@ -16,23 +16,26 @@
     *   **Game Library:** Browse completed games with search and sort functionality.
     *   **View Game Details:** Review full round-by-round history, duration, and winner for saved games.
     *   **Freezer Games:** Pause an ongoing game to "freeze" it and resume later.
+    *   **Resume Paper Games:** Jump into an in-progress paper score sheet by entering current scores, player names, and dealer order.
 *   **Cloud Synchronization (Firebase):**
     *   Sign in with Google to securely back up your game data (active game, saved games, freezer games, settings) to the cloud.
     *   Access your data across multiple devices.
     *   Anonymous sign-in is supported for local play, with an option to upgrade to a Google account and merge data.
-*   **Team Management & Statistics:**
-    *   Use default "Us" & "Dem" or set custom team names.
-    *   Track team statistics: wins, losses, games played, average bid, bid success percentage, 360s, and sandbagger detection.
-    *   Delete team statistics and associated game data.
+*   **Team & Player Management:**
+    *   Use default "Us" & "Dem" or set custom team names, with optional player names for each side.
+    *   Track both **team** and **individual player** statistics: wins, losses, games played, average bid, bid success percentage, 360s, and sandbagger detection.
+    *   Delete team statistics (including associated player stats) and associated game data.
 *   **Customization:**
     *   **Always-On Dark Theme:** Optimized visuals for low-light environments.
     *   **Customizable Team Colors:** Personalize the "Us" and "Dem" team colors.
     *   **Editable Bid Presets:** Customize the quick bid buttons to your common bid values.
 *   **Advanced Gameplay Features:**
+    *   **Dealer Tracking:** Enter a four-player dealing order, auto-set teams by pairing with the dealer across the table, and see a dealer badge during play.
+    *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.
-    *   **Table-Talk/Cheating Penalty:** Flag a team for table-talk, automatically making them lose their bid for that hand.
+    *   **Table-Talk/Cheating Penalty:** Flag a team for table-talk with configurable penalties (deduct bid amount or a fixed point value).
 *   **User Experience:**
     *   Responsive design for all screen sizes (desktop, tablet, mobile).
     *   Smooth animations and transitions.
@@ -45,19 +48,14 @@
 *   **Bug Reporting:** Easy "Create Bug Report Email" option with pre-filled device and app state info.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New in v1.5.0 (Build 1)
+## 🚀 What's New (Latest Updates)
 
-*   **Improved 0-Point Handling:** Added a smart popup to confirm if a 0-point team should trigger a 180 or 360-point bonus to the bidding team.
-*   **Table-Talk Feature:** New "Table-Talk" button lets you penalize the offending team by removing their bid for the current hand.
-*   **Pro Mode:** Unlock win probability display during games.
-*   **Sandbagger Statistic:** Identifies teams who frequently "sandbag" based on game history.
-*   **Unified Settings Modal:** Access game rules, Pro Mode, theme color customization, and bid presets from a new centralized settings menu.
-    *   **Game Rules:** Toggle "Must win by making bid" to require the bidder to make their bid to win, even if over 500 points.
-    *   **Customize Theme Colors:** Personalize team colors for "Us" and "Dem".
-    *   **Edit Bid Presets:** Change the quick bid buttons to your preferred values.
-*   **UI Overhaul:** Major visual and usability improvements throughout the app for a cleaner, more modern experience.
-*   **Enhanced Game Library:** Separate tabs for "Completed Games" and "Freezer Games" with individual counts, search, and sort functionality.
-*   Various bug fixes and performance enhancements.
+*   **Resume Paper Games:** New modal lets you set player names, enter current scores, and continue a game that started on paper.
+*   **Dealer Tools:** Capture the four-player dealing order, auto-create teams by pairing across the table, and show the active dealer badge during play.
+*   **Misdeal Support:** Optional setting surfaces a Misdeal button to skip to the next dealer without changing scores.
+*   **Table-Talk Options:** Configure whether table-talk deducts the bid amount or a custom point value per infraction.
+*   **Player-Level Insights:** Statistics view now supports switching between team and individual player stats.
+*   **Performance & UX:** Additional polish to modals, onboarding cards, and status indicators.
 
 ## 🛠️ Tech Stack
 
@@ -95,10 +93,12 @@ This will provide an app-like experience with an icon and potentially offline ac
 1.  **Start a Game:**
     *   The app loads into an active game state.
     *   To start fresh, open the **menu** (hamburger icon ☰) and select "**New Game**". Confirm if you want to discard any unsaved progress.
+    *   If you're continuing from paper scores, use **Menu -> Resume Paper Game** to enter current scores, player names, and dealer order before scoring digitally.
 2.  **Team Names (Optional):**
     *   By default, teams are "Us" and "Dem".
     *   To set custom names, you'll be prompted when saving a game for the first time or when freezing a game. You can also proactively set them if you start a "New Game" and then try to save/freeze it immediately.
     *   Alternatively, if you want to set names *before* any rounds are played, start a "New Game", then go to the menu -> "Freeze Game". This will trigger the team name selection. After setting names, you can choose to cancel the freeze if you just wanted to set names.
+    *   When dealer order is entered, the app can auto-create teams by pairing players across the table.
 3.  **Select Bidding Team:**
     *   Tap on the team card ("Us" or "Dem") that won the bid for the current round. The selected team's card will appear "sunken".
 4.  **Enter Bid Amount:**
@@ -117,7 +117,7 @@ This will provide an app-like experience with an icon and potentially offline ac
     *   The total points in a standard hand (excluding the Rook card value if counted separately) are 180. A 360 input implies all points were taken by one team.
 7.  **Table-Talk Penalty:**
     *   If a team engages in table-talk/cheating during a hand they bid, click the "📣" (megaphone/shout) icon next to the Undo/Redo buttons while their score input card is active.
-    *   Confirm the penalty. The bidding team will automatically lose their bid amount for that hand.
+    *   Confirm the penalty. Penalties can deduct either the bid amount or a fixed point value (configurable in Settings).
 8.  **Game Continues:**
     *   Scores update, the round number increments, and the round details are added to the History card.
     *   The input panel resets for the next round.
@@ -130,6 +130,7 @@ This will provide an app-like experience with an icon and potentially offline ac
 Accessible via the hamburger icon (☰) in the top-left:
 
 *   **View Games:** Opens the "Game Library" modal to browse completed and freezer games.
+*   **Resume Paper Game:** Enter existing scores, players, and dealer order to pick up a game from paper tracking.
 *   **New Game:** Starts a new game, discarding current progress (with confirmation).
 *   **Freeze Game:** Saves the current game state to "Freezer Games" and starts a new game. Useful for pausing a game to resume later.
 *   **Settings:** Opens the settings modal (see "Settings & Customization" below).
@@ -143,14 +144,15 @@ Accessible via the hamburger icon (☰) in the top-left:
     *   Tabs for "Completed Games" and "Freezer Games".
     *   Search and sort functionality.
     *   View details of completed games or load/delete freezer games.
+*   **Resume Paper Game:** A guided modal to enter current scores, player names, and (optionally) dealers so you can keep playing digitally.
 *   **View Saved Game Details:** A read-only detailed view of a completed game's rounds and stats.
-*   **Team Selection:** Prompts for "Us" and "Dem" team names, allowing selection from previously used names or adding new ones.
-*   **Settings:** Configure game rules, Pro Mode, theme colors, and bid presets.
+*   **Team Selection:** Prompts for "Us" and "Dem" team names, allowing selection from previously used names or adding new ones. Dealer entry can auto-create the two teams.
+*   **Settings:** Configure game rules, Pro Mode, table-talk penalties, misdeal handling, theme colors, and bid presets.
 *   **Theme Customization:** Pick custom primary (Us) and accent (Dem) colors.
 *   **Confirmation:** A generic modal to confirm actions like starting a new game, deleting items, etc.
 *   **Zero Points Helper:** Assists in correctly scoring when one team gets 0 points.
 *   **About:** App information, changelog, and bug report link.
-*   **Statistics:** View various game and team statistics.
+*   **Statistics:** View various game, team, and individual player statistics.
 
 ## ⚙️ Settings & Customization
 
@@ -158,10 +160,12 @@ Access these via **Menu -> Settings**:
 
 *   **Game Rules:**
     *   **Must win by making bid:** If enabled, the bidding team must achieve their bid value to win the game, even if their total score is over 500 but they failed their last bid.
-*   **Appearance & Features:**
+    *   **Misdeal Handling:** Show a Misdeal button to skip to the next dealer without changing scores.
+    *   **Appearance & Features:**
     *   **Pro Mode:** Toggle to enable/disable the win probability display during active games.
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
+    *   **Table-Talk Penalties:** Choose whether penalties subtract the bid amount or a custom point value (multiples of 5).
 
 ## 🔥 Firebase Cloud Sync
 
