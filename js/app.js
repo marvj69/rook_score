@@ -28,6 +28,7 @@ const DEFAULT_STATE = {
   error: "", gameOver: false, winner: null, victoryMethod: null,
   savedScoreInputStates: { us: null, dem: null }, lastBidAmount: null,
   lastBidTeam: null,
+  historyEdit: null,
   usTeamName: "", demTeamName: "",
   usPlayers: ["", ""], demPlayers: ["", ""],
   startTime: null,
@@ -3037,6 +3038,154 @@ function renderPointsInput() {
       </div>
     </div>`;
 }
+function isHistoryCellEditing(idx, field) {
+  return state.historyEdit && state.historyEdit.idx === idx && state.historyEdit.field === field;
+}
+function startHistoryEdit(idx, field) {
+  updateState({ historyEdit: { idx, field }, error: "" });
+  setTimeout(() => {
+    const input = document.getElementById(`history-edit-${idx}-${field}`);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }, 0);
+}
+function cancelHistoryEdit() {
+  if (state.historyEdit) updateState({ historyEdit: null });
+}
+function handleHistoryEditKey(e, idx, field) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    commitHistoryEdit(idx, field, e.target.value);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    cancelHistoryEdit();
+  }
+}
+function recalcRunningTotals(rounds, startingTotals) {
+  const baseTotals = sanitizeTotals(startingTotals);
+  let running = { ...baseTotals };
+  return rounds.map((round) => {
+    const usPoints = Number(round.usPoints);
+    const demPoints = Number(round.demPoints);
+    running = {
+      us: running.us + (Number.isFinite(usPoints) ? usPoints : 0),
+      dem: running.dem + (Number.isFinite(demPoints) ? demPoints : 0),
+    };
+    return { ...round, runningTotals: sanitizeTotals(running) };
+  });
+}
+function computeGameOutcomeFromRounds(rounds) {
+  if (!rounds.length) return { gameOver: false, winner: null, victoryMethod: null };
+  const lastRound = rounds[rounds.length - 1];
+  const lastTotals = sanitizeTotals(lastRound?.runningTotals);
+  const biddingTeam = lastRound?.biddingTeam;
+  const bidAmount = Number(lastRound?.bidAmount) || 0;
+  const usEarned = Number(lastRound?.usPoints) || 0;
+  const demEarned = Number(lastRound?.demPoints) || 0;
+  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
+  let gameOver = false, winner = null, victoryMethod = null;
+
+  if (Math.abs(lastTotals.us - lastTotals.dem) >= 1000) {
+    gameOver = true; winner = lastTotals.us > lastTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
+  } else if ((biddingTeam === "us" && usEarned < 0 && lastTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && lastTotals.us >= 500)) {
+    if (!mustWinByBid) { gameOver = true; winner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
+  } else if (
+    (biddingTeam === "us" && lastTotals.us >= 500 && usEarned >= bidAmount) ||
+    (biddingTeam === "dem" && lastTotals.dem >= 500 && demEarned >= bidAmount)
+  ) {
+    gameOver = true; winner = biddingTeam; victoryMethod = "Won on Bid";
+  } else if ((biddingTeam === "us" && usEarned < 0 && lastTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && lastTotals.us >= 500)) {
+    gameOver = true; winner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team";
+  }
+
+  return { gameOver, winner, victoryMethod };
+}
+function commitHistoryEdit(idx, field, rawValue) {
+  const rounds = Array.isArray(state.rounds) ? state.rounds : [];
+  if (!rounds.length || !rounds[idx]) {
+    cancelHistoryEdit();
+    return;
+  }
+
+  const numericValue = Number(rawValue);
+  if (!Number.isFinite(numericValue)) {
+    updateState({ historyEdit: null, error: "Enter a valid number." });
+    return;
+  }
+  if (field === "bid") {
+    const bidError = validateBid(String(numericValue));
+    if (bidError) {
+      updateState({ historyEdit: null, error: bidError });
+      return;
+    }
+  }
+
+  const updatedRounds = rounds.map((round) => ({ ...round }));
+  const baseTotals = getBaseTotals();
+  if (field === "bid") {
+    updatedRounds[idx].bidAmount = numericValue;
+  } else {
+    const prevTotals = idx === 0 ? baseTotals : sanitizeTotals(updatedRounds[idx - 1].runningTotals);
+    if (field === "us") {
+      updatedRounds[idx].usPoints = numericValue - prevTotals.us;
+    } else if (field === "dem") {
+      updatedRounds[idx].demPoints = numericValue - prevTotals.dem;
+    }
+  }
+
+  const recalculatedRounds = recalcRunningTotals(updatedRounds, baseTotals);
+  const outcome = computeGameOutcomeFromRounds(recalculatedRounds);
+  const lastRound = recalculatedRounds[recalculatedRounds.length - 1];
+  const nextState = {
+    rounds: recalculatedRounds,
+    undoneRounds: [],
+    gameOver: outcome.gameOver,
+    winner: outcome.winner,
+    victoryMethod: outcome.victoryMethod,
+    historyEdit: null,
+    error: "",
+  };
+  if (field === "bid" && idx === recalculatedRounds.length - 1) {
+    nextState.lastBidAmount = String(lastRound.bidAmount);
+    nextState.lastBidTeam = lastRound.biddingTeam;
+  }
+  if (outcome.gameOver) {
+    if (isStartTimestampActive(state.startTime)) {
+      nextState.accumulatedTime = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+    }
+    nextState.startTime = null;
+  }
+
+  const priorWinner = state.winner;
+  const priorGameOver = state.gameOver;
+  if (priorGameOver && priorWinner && (!outcome.gameOver || outcome.winner !== priorWinner)) {
+    const teams = getTeamsObject();
+    const reverted = applyTeamResultDelta(teams, {
+      usPlayers: state.usPlayers,
+      demPlayers: state.demPlayers,
+      usDisplay: state.usTeamName,
+      demDisplay: state.demTeamName,
+      winner: priorWinner,
+    }, -1);
+    if (reverted) setTeamsObject(teams);
+  }
+  if (outcome.gameOver && outcome.winner && (!priorGameOver || outcome.winner !== priorWinner)) {
+    const teams = getTeamsObject();
+    const applied = applyTeamResultDelta(teams, {
+      usPlayers: state.usPlayers,
+      demPlayers: state.demPlayers,
+      usDisplay: state.usTeamName,
+      demDisplay: state.demTeamName,
+      winner: outcome.winner,
+    }, 1);
+    if (applied) setTeamsObject(teams);
+  }
+
+  updateState(nextState);
+  saveCurrentGameState();
+}
 function renderHistoryCard() {
   const { rounds, usTeamName, demTeamName } = state;
   const labelUs = usTeamName || "Us";
@@ -3059,6 +3208,7 @@ function renderHistoryCard() {
       : "text-gray-800 dark:text-white";
 
   const lastRound = rounds[rounds.length - 1] || {};
+  const historyEditKey = state.historyEdit ? `${state.historyEdit.idx}:${state.historyEdit.field}` : "";
   const cacheKey = [
     roundsVersion,
     rounds.length,
@@ -3070,6 +3220,7 @@ function renderHistoryCard() {
     labelDem,
     showProbabilityButton ? 1 : 0,
     state.gameOver ? 1 : 0,
+    historyEditKey,
   ].join("|");
 
   if (HISTORY_RENDER_CACHE.key === cacheKey) return HISTORY_RENDER_CACHE.html;
@@ -3094,13 +3245,26 @@ function renderHistoryCard() {
         <div class="space-y-2">
           ${rounds.map((round, idx) => {
             const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);
-            const arrow = round.biddingTeam === "us" ? `<span class="text-gray-800 dark:text-white">←</span><span class="ml-1 text-black dark:text-white">${round.bidAmount}</span>` : `<span class="mr-1 text-black dark:text-white">${round.bidAmount}</span><span class="text-gray-800 dark:text-white">→</span>`;
-            const bidDetails = `${biddingTeamLabel} bid ${round.bidAmount}`;
+            const bidValue = Number.isFinite(Number(round.bidAmount)) ? round.bidAmount : 0;
+            const usValue = Number.isFinite(Number(round.runningTotals?.us)) ? round.runningTotals.us : 0;
+            const demValue = Number.isFinite(Number(round.runningTotals?.dem)) ? round.runningTotals.dem : 0;
+            const bidInput = isHistoryCellEditing(idx, "bid")
+              ? `<input id="history-edit-${idx}-bid" type="number" inputmode="numeric" class="w-16 bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${bidValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'bid')" onblur="commitHistoryEdit(${idx}, 'bid', this.value)" />`
+              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabel} bid for round ${idx + 1}">${bidValue}</button>`;
+            const bidContent = round.biddingTeam === "us"
+              ? `<div class="flex items-center justify-center gap-1"><span class="text-gray-800 dark:text-white">←</span>${bidInput}</div>`
+              : `<div class="flex items-center justify-center gap-1">${bidInput}<span class="text-gray-800 dark:text-white">→</span></div>`;
+            const usScoreContent = isHistoryCellEditing(idx, "us")
+              ? `<input id="history-edit-${idx}-us" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${usValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'us')" onblur="commitHistoryEdit(${idx}, 'us', this.value)" />`
+              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUs} score for round ${idx + 1}">${usValue}</button>`;
+            const demScoreContent = isHistoryCellEditing(idx, "dem")
+              ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
+              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDem} score for round ${idx + 1}">${demValue}</button>`;
             return `
               <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm">
-                <div class="text-left text-gray-800 dark:text-white font-semibold">${round.runningTotals.us}</div>
-                <div class="text-center text-gray-600 dark:text-gray-400">${arrow}</div>
-                <div class="text-right text-gray-800 dark:text-white font-semibold">${round.runningTotals.dem}</div>
+                <div class="text-left">${usScoreContent}</div>
+                <div class="text-center text-gray-600 dark:text-gray-400">${bidContent}</div>
+                <div class="text-right">${demScoreContent}</div>
               </div>`;
           }).join("")}
         </div>
