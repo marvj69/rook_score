@@ -2223,6 +2223,7 @@ function saveSettings() {
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points);
   }
 
+  renderApp();
   showSaveIndicator("Settings Saved");
 }
 function updateProModeUI(isProMode) {
