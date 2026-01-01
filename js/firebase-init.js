@@ -169,21 +169,37 @@ window.signOutUser = async function() {
   }
 };
 
+async function ensureUserSession() {
+  if (!window.firebaseAuth) return null;
+  if (window.firebaseAuth.currentUser) return window.firebaseAuth.currentUser;
+
+  try {
+    const credential = await signInAnonymously(window.firebaseAuth);
+    return credential.user;
+  } catch (error) {
+    console.error("Failed to establish anonymous session for Firestore sync:", error);
+    return null;
+  }
+}
+
 window.syncToFirestore = async function(key, value) {
   if (!window.firebaseAuth || !window.firestoreDB) {
     console.warn("Firebase not initialized for sync.");
     return false;
   }
-  if (!window.firebaseAuth.currentUser) {
-    console.log("User not authenticated. Not syncing to Firestore.");
+
+  const user = await ensureUserSession();
+  if (!user) {
+    console.log("Unable to establish user session. Not syncing to Firestore.");
     return false;
   }
+
   try {
-    const userId = window.firebaseAuth.currentUser.uid;
+    const userId = user.uid;
     await window.firestoreSetDoc( // Use global setDoc
-window.firestoreDoc(window.firestoreDB, "rookData", userId), // Use global doc
-{ [key]: value, timestamp: new Date().toISOString() },
-{ merge: true }
+      window.firestoreDoc(window.firestoreDB, "rookData", userId), // Use global doc
+      { [key]: value, timestamp: new Date().toISOString() },
+      { merge: true }
     );
     console.log(`Successfully synced ${key} to Firestore.`);
     return true;
@@ -208,20 +224,13 @@ clearTimeout(authTimeoutId);
 if (user) {
     window.firebaseReady = true;
     updateAuthUI(user);
-    if (!user.isAnonymous) {
-        window.mergeLocalStorageWithFirestore(user); // Use global one
-    } else {
-        // For anonymous users, just load local state. Sync up happens if they sign in.
-        if (window.loadCurrentGameState) window.loadCurrentGameState();
-        if (window.renderApp) window.renderApp();
-    }
+    window.mergeLocalStorageWithFirestore(user); // Use global one for all users
 } else {
     signInAnonymously(auth)
         .then((anonUserCredential) => {
             window.firebaseReady = true; // Firebase is working for anon
             updateAuthUI(anonUserCredential.user);
-            if (window.loadCurrentGameState) window.loadCurrentGameState();
-            if (window.renderApp) window.renderApp();
+            window.mergeLocalStorageWithFirestore(anonUserCredential.user);
         })
         .catch((error) => {
             console.error("Anonymous sign-in failed:", error);
