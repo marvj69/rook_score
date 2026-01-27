@@ -79,6 +79,19 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     }
   }
 
+  if (window.getIndexedDbSnapshot) {
+    try {
+      const indexedDbData = await window.getIndexedDbSnapshot();
+      if (indexedDbData && typeof indexedDbData === 'object') {
+        Object.entries(indexedDbData).forEach(([key, value]) => {
+          if (value !== undefined) localData[key] = value;
+        });
+      }
+    } catch (error) {
+      console.warn("Unable to read IndexedDB snapshot for merge:", error);
+    }
+  }
+
   const mergedData = {};
   const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
 
@@ -123,17 +136,24 @@ if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
   mergedData.timestamp = new Date().toISOString();
   await setDoc(docRef, mergedData, { merge: true });
 
-  // Update localStorage with merged data
-  Object.entries(mergedData).forEach(([key, value]) => {
-    if (key !== "timestamp") {
-      const serialized = serializeForLocalStorage(value);
-      if (serialized === null) {
-        localStorage.removeItem(key);
-      } else {
-        localStorage.setItem(key, serialized);
+  // Update localStorage/IndexedDB with merged data
+  for (const [key, value] of Object.entries(mergedData)) {
+    if (key === "timestamp") continue;
+    if (window.isIndexedDbKey?.(key)) {
+      if (value === null || value === undefined) {
+        if (window.removeIndexedDbValue) await window.removeIndexedDbValue(key);
+      } else if (window.setIndexedDbValue) {
+        await window.setIndexedDbValue(key, value);
       }
+      continue;
     }
-  });
+    const serialized = serializeForLocalStorage(value);
+    if (serialized === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, serialized);
+    }
+  }
 
   // Re-initialize state from potentially merged localStorage
   if (typeof performTeamPlayerMigration === 'function') performTeamPlayerMigration();
