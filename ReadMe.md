@@ -198,17 +198,9 @@ If you want to use your own Firebase backend:
 2.  Create a new Firebase project.
 3.  Add a Web app to your project.
 4.  Copy the Firebase configuration object provided.
-5.  In `index.html`, find the `firebaseConfig` object (around line 700) and replace it with your project's configuration.
-    ```javascript
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-    ```
+5.  Copy `js/firebase-config.example.js` to `js/firebase-config.js` and replace the placeholders with your project's values.
+    *   `js/firebase-config.js` is ignored by git so you don't accidentally commit environment-specific config.
+    *   If you skip this step, the app will still work, but Firebase cloud sync and Google sign-in will be disabled.
 6.  **Enable Firebase Services:**
     *   **Authentication:** Enable "Google" and "Anonymous" sign-in methods in the Firebase Authentication section.
     *   **Firestore:** Create a Firestore database in "Production mode".

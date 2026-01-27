@@ -2,28 +2,71 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebas
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyB_DmalmDfoluZ4HSerI9f8vA70XMGvksY", // This key is public and safe to expose client-side
-  authDomain: "rookscore-dadfd.firebaseapp.com",
-  projectId: "rookscore-dadfd",
-  storageBucket: "rookscore-dadfd.firebasestorage.app",
-  messagingSenderId: "395153935926",
-  appId: "1:395153935926:web:d76dbb239473f861159297",
-};
+function onDomReady(callback) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', callback, { once: true });
+    return;
+  }
+  callback();
+}
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+function setAuthUiState({ enabled, label }) {
+  onDomReady(() => {
+    const authLabel = document.getElementById("authLabel");
+    if (authLabel && typeof label === 'string') authLabel.textContent = label;
 
-window.firebaseApp = app;
-window.firebaseAuth = auth;
-window.firestoreDB = db;
-window.firestoreDoc = doc; // Make Firestore 'doc' function globally available
-window.firestoreSetDoc = setDoc; // Make Firestore 'setDoc' function globally available
-window.firestoreGetDoc = getDoc;
-window.googleProvider = googleProvider;
+    const authBtn = document.getElementById("googleAuthBtn");
+    if (authBtn) {
+      authBtn.disabled = !enabled;
+      if (enabled) authBtn.removeAttribute('aria-disabled');
+      else authBtn.setAttribute('aria-disabled', 'true');
+    }
+  });
+}
+
+const firebaseConfig =
+  typeof window !== 'undefined' && window.__FIREBASE_CONFIG__ && typeof window.__FIREBASE_CONFIG__ === 'object'
+    ? window.__FIREBASE_CONFIG__
+    : null;
+
+let app = null;
+let auth = null;
+let db = null;
+let googleProvider = null;
+
+window.firebaseReady = false;
+window.firebaseConfigured = false;
+
+try {
+  if (!firebaseConfig) {
+    console.warn(
+      "Firebase config not found. Cloud sync is disabled. Create `js/firebase-config.js` from `js/firebase-config.example.js`."
+    );
+    setAuthUiState({ enabled: false, label: "Cloud Sync Not Configured" });
+  } else {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    googleProvider = new GoogleAuthProvider();
+    googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+    window.firebaseConfigured = true;
+    setAuthUiState({ enabled: true, label: "Sign in with Google" });
+
+    window.firebaseApp = app;
+    window.firebaseAuth = auth;
+    window.firestoreDB = db;
+    window.firestoreDoc = doc; // Make Firestore 'doc' function globally available
+    window.firestoreSetDoc = setDoc; // Make Firestore 'setDoc' function globally available
+    window.firestoreGetDoc = getDoc;
+    window.googleProvider = googleProvider;
+  }
+} catch (error) {
+  console.error("Firebase initialization failed. Cloud sync is disabled.", error);
+  window.firebaseReady = false;
+  window.firebaseConfigured = false;
+  setAuthUiState({ enabled: false, label: "Cloud Sync Unavailable" });
+}
 
 function shouldAttemptJsonParse(raw) {
   if (typeof raw !== 'string') return false;
@@ -51,6 +94,10 @@ function serializeForLocalStorage(value) {
 }
 
 function updateAuthUI(user) {
+  if (!window.firebaseConfigured) {
+    setAuthUiState({ enabled: false, label: "Cloud Sync Not Configured" });
+    return;
+  }
   const authLabel = document.getElementById("authLabel");
   if (!authLabel) return;
   authLabel.textContent = "Sign in with Google";
@@ -66,6 +113,7 @@ function updateAuthUI(user) {
 }
 
 window.mergeLocalStorageWithFirestore = async function(user) {
+  if (!db) return;
   const docRef = doc(db, "rookData", user.uid);
   const docSnap = await getDoc(docRef);
   let firestoreData = docSnap.exists() ? docSnap.data() : {};
@@ -167,6 +215,10 @@ if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
 
 
 window.signInWithGoogle = async function() {
+  if (!auth || !googleProvider) {
+    console.warn("Firebase not configured; Google sign-in is disabled.");
+    return;
+  }
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const googleUser = result.user;
@@ -180,6 +232,7 @@ window.signInWithGoogle = async function() {
 };
 
 window.signOutUser = async function() {
+  if (!auth) return;
   try {
     await signOut(auth);
     window.firebaseReady = false; // Or handle as anonymous
@@ -190,11 +243,11 @@ window.signOutUser = async function() {
 };
 
 async function ensureUserSession() {
-  if (!window.firebaseAuth) return null;
-  if (window.firebaseAuth.currentUser) return window.firebaseAuth.currentUser;
+  if (!auth) return null;
+  if (auth.currentUser) return auth.currentUser;
 
   try {
-    const credential = await signInAnonymously(window.firebaseAuth);
+    const credential = await signInAnonymously(auth);
     return credential.user;
   } catch (error) {
     console.error("Failed to establish anonymous session for Firestore sync:", error);
@@ -203,7 +256,7 @@ async function ensureUserSession() {
 }
 
 window.syncToFirestore = async function(key, value) {
-  if (!window.firebaseAuth || !window.firestoreDB) {
+  if (!auth || !db) {
     console.warn("Firebase not initialized for sync.");
     return false;
   }
@@ -217,7 +270,7 @@ window.syncToFirestore = async function(key, value) {
   try {
     const userId = user.uid;
     await window.firestoreSetDoc( // Use global setDoc
-      window.firestoreDoc(window.firestoreDB, "rookData", userId), // Use global doc
+      window.firestoreDoc(db, "rookData", userId), // Use global doc
       { [key]: value, timestamp: new Date().toISOString() },
       { merge: true }
     );
@@ -230,7 +283,7 @@ window.syncToFirestore = async function(key, value) {
 };
 
 // Initial Auth State Handling
-document.addEventListener('DOMContentLoaded', () => {
+if (auth) document.addEventListener('DOMContentLoaded', () => {
   let authTimeoutId = setTimeout(() => {
 console.log("Firebase auth timed out - likely offline or blocked.");
 window.firebaseReady = false;
