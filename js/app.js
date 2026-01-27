@@ -2995,6 +2995,47 @@ function handleTeamSelectionSubmit(e) {
     return;
   }
 
+  // If the game is already over, update team stats to reflect the newly
+  // confirmed players. This covers the case where players were entered
+  // only at save-time (after the game finished).
+  const priorGameOver = state.gameOver;
+  const priorWinner = state.winner;
+  if (priorGameOver && (priorWinner === "us" || priorWinner === "dem")) {
+    const priorUsPlayers = ensurePlayersArray(state.usPlayers);
+    const priorDemPlayers = ensurePlayersArray(state.demPlayers);
+    const priorUsKey = buildTeamKey(priorUsPlayers);
+    const priorDemKey = buildTeamKey(priorDemPlayers);
+    const keysChanged = priorUsKey !== usKey || priorDemKey !== demKey;
+    const priorKeysValid = Boolean(priorUsKey && priorDemKey);
+
+    // Only touch stats when we have something new to apply, or when the
+    // previous keys were missing (meaning stats likely were never applied).
+    if (!priorKeysValid || keysChanged) {
+      const teams = getTeamsObject();
+      let mutated = false;
+
+      if (priorKeysValid && keysChanged) {
+        mutated = applyTeamResultDelta(teams, {
+          usPlayers: priorUsPlayers,
+          demPlayers: priorDemPlayers,
+          usDisplay: state.usTeamName,
+          demDisplay: state.demTeamName,
+          winner: priorWinner,
+        }, -1) || mutated;
+      }
+
+      mutated = applyTeamResultDelta(teams, {
+        usPlayers,
+        demPlayers,
+        usDisplay: formatTeamDisplay(usPlayers),
+        demDisplay: formatTeamDisplay(demPlayers),
+        winner: priorWinner,
+      }, 1) || mutated;
+
+      if (mutated) setTeamsObject(teams);
+    }
+  }
+
   addTeamIfNotExists(usPlayers, formatTeamDisplay(usPlayers));
   addTeamIfNotExists(demPlayers, formatTeamDisplay(demPlayers));
   updateState({ usPlayers, demPlayers });
