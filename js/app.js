@@ -11,9 +11,19 @@ const PRESET_BIDS_KEY = 'customPresetBids';
 const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";
 const PROB_CACHE = new Map();   // memoise across calls
 const LOCAL_STORAGE_CACHE = new Map();
+const IDB_DB_NAME = "rookScoreStorage";
+const IDB_DB_VERSION = 1;
+const IDB_STORE = "appData";
+const IDB_KEYS = new Set(["savedGames", "freezerGames", "teams"]);
+const IDB_CACHE = new Map();
+let idbInitPromise = null;
+let idbInstance = null;
+let idbUnavailable = false;
 const WIN_PROB_CACHE = { key: null, value: null };
 const TEAM_STORAGE_VERSION = 2;
 const TEAM_KEY_SEPARATOR = "||";
+window.indexedDbStorageKeys = Array.from(IDB_KEYS);
+window.isIndexedDbKey = (key) => IDB_KEYS.has(key);
 function sanitizeTotals(input) {
   if (!input || typeof input !== 'object') return { us: 0, dem: 0 };
   const parse = (value) => {
@@ -424,7 +434,199 @@ function getWinProbability(currentState, historicalGames) {
 
 
 // --- Local Storage & Sync ---
+function getIndexedDbDefault(key, defaultValue = null) {
+  if (defaultValue !== null) return defaultValue;
+  if (key === "savedGames" || key === "freezerGames") return [];
+  if (key === "teams") return {};
+  return null;
+}
+
+function openIndexedDb() {
+  if (idbInstance) return Promise.resolve(idbInstance);
+  if (!("indexedDB" in window)) {
+    idbUnavailable = true;
+    return Promise.reject(new Error("IndexedDB not supported"));
+  }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_DB_NAME, IDB_DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => {
+      idbInstance = request.result;
+      resolve(idbInstance);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function readIndexedDbValue(db, key) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(IDB_STORE, "readonly");
+    const store = transaction.objectStore(IDB_STORE);
+    const request = store.get(key);
+    request.onsuccess = () => {
+      resolve(request.result ? request.result.value : undefined);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function writeIndexedDbValue(db, key, value) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(IDB_STORE, "readwrite");
+    const store = transaction.objectStore(IDB_STORE);
+    store.put({ key, value });
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+function deleteIndexedDbValue(db, key) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(IDB_STORE, "readwrite");
+    const store = transaction.objectStore(IDB_STORE);
+    store.delete(key);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+function normalizeIndexedDbValue(key, value) {
+  if (key === "savedGames" || key === "freezerGames") return Array.isArray(value) ? value : [];
+  if (key === "teams") return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return value;
+}
+
+function mergeGameArrays(primary = [], secondary = []) {
+  const combined = [...primary, ...secondary].filter(Boolean);
+  const uniqueMap = new Map();
+  combined.forEach(item => {
+    if (!item) return;
+    const uniqueKey = item.id || item.timestamp || JSON.stringify(item);
+    uniqueMap.set(uniqueKey, item);
+  });
+  return Array.from(uniqueMap.values());
+}
+
+function mergeTeamsObjects(primary = {}, secondary = {}) {
+  if (!primary || typeof primary !== "object" || Array.isArray(primary)) primary = {};
+  if (!secondary || typeof secondary !== "object" || Array.isArray(secondary)) secondary = {};
+  return { ...secondary, ...primary };
+}
+
+function readLocalStorageValue(key) {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return undefined;
+  if (!shouldAttemptJsonParse(raw)) return raw;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn(`Could not parse localStorage key ${key} during migration:`, e);
+    return undefined;
+  }
+}
+
+async function initializeIndexedDbStorage() {
+  if (idbInitPromise) return idbInitPromise;
+  idbInitPromise = (async () => {
+    let db = null;
+    try {
+      db = await openIndexedDb();
+    } catch (error) {
+      console.warn("IndexedDB unavailable, continuing with localStorage.", error);
+      idbUnavailable = true;
+    }
+
+    for (const key of IDB_KEYS) {
+      const localValue = readLocalStorageValue(key);
+      let idbValue = undefined;
+      if (!idbUnavailable && db) {
+        try {
+          idbValue = await readIndexedDbValue(db, key);
+        } catch (error) {
+          console.warn(`Failed to read ${key} from IndexedDB:`, error);
+        }
+      }
+
+      let mergedValue = idbValue;
+      if (key === "savedGames" || key === "freezerGames") {
+        const idbArray = Array.isArray(idbValue) ? idbValue : [];
+        const localArray = Array.isArray(localValue) ? localValue : [];
+        mergedValue = mergeGameArrays(localArray, idbArray);
+      } else if (key === "teams") {
+        mergedValue = mergeTeamsObjects(localValue, idbValue);
+      }
+
+      if (localValue !== undefined && !idbUnavailable && db) {
+        try {
+          await writeIndexedDbValue(db, key, normalizeIndexedDbValue(key, mergedValue));
+          localStorage.removeItem(key);
+          LOCAL_STORAGE_CACHE.delete(key);
+        } catch (error) {
+          console.warn(`Failed to migrate ${key} to IndexedDB:`, error);
+        }
+      }
+
+      IDB_CACHE.set(key, normalizeIndexedDbValue(key, mergedValue));
+    }
+
+    return true;
+  })();
+  return idbInitPromise;
+}
+
+async function setIndexedDbValue(key, value) {
+  if (!IDB_KEYS.has(key)) return;
+  IDB_CACHE.set(key, normalizeIndexedDbValue(key, value));
+  if (idbUnavailable) return;
+  try {
+    const db = await openIndexedDb();
+    await writeIndexedDbValue(db, key, normalizeIndexedDbValue(key, value));
+  } catch (error) {
+    console.error(`Failed to write ${key} to IndexedDB:`, error);
+  }
+}
+
+async function removeIndexedDbValue(key) {
+  if (!IDB_KEYS.has(key)) return;
+  IDB_CACHE.delete(key);
+  if (idbUnavailable) return;
+  try {
+    const db = await openIndexedDb();
+    await deleteIndexedDbValue(db, key);
+  } catch (error) {
+    console.error(`Failed to delete ${key} from IndexedDB:`, error);
+  }
+}
+
+window.initializeIndexedDbStorage = initializeIndexedDbStorage;
+window.getIndexedDbSnapshot = async () => {
+  await initializeIndexedDbStorage();
+  const snapshot = {};
+  IDB_KEYS.forEach(key => {
+    snapshot[key] = IDB_CACHE.get(key);
+  });
+  return snapshot;
+};
+window.setIndexedDbValue = setIndexedDbValue;
+window.removeIndexedDbValue = removeIndexedDbValue;
+
 function setLocalStorage(key, value) {
+  if (IDB_KEYS.has(key)) {
+    setIndexedDbValue(key, value);
+    localStorage.removeItem(key);
+    LOCAL_STORAGE_CACHE.delete(key);
+    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+      setTimeout(() => {
+        window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
+      }, 0);
+    }
+    return;
+  }
   try {
     const serialized = JSON.stringify(value);
     localStorage.setItem(key, serialized);
@@ -441,6 +643,15 @@ function setLocalStorage(key, value) {
 }
 
 function removeLocalStorageKey(key) {
+  if (IDB_KEYS.has(key)) {
+    removeIndexedDbValue(key);
+    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+      setTimeout(() => {
+        window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
+      }, 0);
+    }
+    return;
+  }
   try {
     localStorage.removeItem(key);
     LOCAL_STORAGE_CACHE.delete(key);
@@ -465,6 +676,14 @@ function shouldAttemptJsonParse(raw) {
 }
 
 function getLocalStorage(key, defaultValue = null) {
+  if (IDB_KEYS.has(key)) {
+    if (IDB_CACHE.has(key)) return IDB_CACHE.get(key);
+    if (idbUnavailable) {
+      const fallback = readLocalStorageValue(key);
+      if (fallback !== undefined) return fallback;
+    }
+    return getIndexedDbDefault(key, defaultValue);
+  }
   const raw = localStorage.getItem(key);
   if (raw === null) {
     LOCAL_STORAGE_CACHE.delete(key);
@@ -2776,6 +2995,47 @@ function handleTeamSelectionSubmit(e) {
     return;
   }
 
+  // If the game is already over, update team stats to reflect the newly
+  // confirmed players. This covers the case where players were entered
+  // only at save-time (after the game finished).
+  const priorGameOver = state.gameOver;
+  const priorWinner = state.winner;
+  if (priorGameOver && (priorWinner === "us" || priorWinner === "dem")) {
+    const priorUsPlayers = ensurePlayersArray(state.usPlayers);
+    const priorDemPlayers = ensurePlayersArray(state.demPlayers);
+    const priorUsKey = buildTeamKey(priorUsPlayers);
+    const priorDemKey = buildTeamKey(priorDemPlayers);
+    const keysChanged = priorUsKey !== usKey || priorDemKey !== demKey;
+    const priorKeysValid = Boolean(priorUsKey && priorDemKey);
+
+    // Only touch stats when we have something new to apply, or when the
+    // previous keys were missing (meaning stats likely were never applied).
+    if (!priorKeysValid || keysChanged) {
+      const teams = getTeamsObject();
+      let mutated = false;
+
+      if (priorKeysValid && keysChanged) {
+        mutated = applyTeamResultDelta(teams, {
+          usPlayers: priorUsPlayers,
+          demPlayers: priorDemPlayers,
+          usDisplay: state.usTeamName,
+          demDisplay: state.demTeamName,
+          winner: priorWinner,
+        }, -1) || mutated;
+      }
+
+      mutated = applyTeamResultDelta(teams, {
+        usPlayers,
+        demPlayers,
+        usDisplay: formatTeamDisplay(usPlayers),
+        demDisplay: formatTeamDisplay(demPlayers),
+        winner: priorWinner,
+      }, 1) || mutated;
+
+      if (mutated) setTeamsObject(teams);
+    }
+  }
+
   addTeamIfNotExists(usPlayers, formatTeamDisplay(usPlayers));
   addTeamIfNotExists(demPlayers, formatTeamDisplay(demPlayers));
   updateState({ usPlayers, demPlayers });
@@ -4301,63 +4561,67 @@ function performTeamPlayerMigration() {
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
-  performTeamPlayerMigration();
-  document.body.classList.remove('modal-open');
-  document.getElementById('app')?.classList.remove('modal-active');
-  document.querySelectorAll('.modal').forEach(modal => modal.classList.add('hidden'));
-  enforceDarkMode();
-  initializeTheme(); // Predefined themes
-  initializeCustomThemeColors(); // Custom primary/accent
-  loadCurrentGameState(); // Load after theme
-  loadSettings(); // Load settings after game state
+  initializeIndexedDbStorage()
+    .catch(err => console.warn("IndexedDB initialization failed; falling back to localStorage.", err))
+    .finally(() => {
+      performTeamPlayerMigration();
+      document.body.classList.remove('modal-open');
+      document.getElementById('app')?.classList.remove('modal-active');
+      document.querySelectorAll('.modal').forEach(modal => modal.classList.add('hidden'));
+      enforceDarkMode();
+      initializeTheme(); // Predefined themes
+      initializeCustomThemeColors(); // Custom primary/accent
+      loadCurrentGameState(); // Load after theme
+      loadSettings(); // Load settings after game state
 
-  // Pro mode toggle (in settings modal, not main nav)
-  const proModeToggleModal = document.getElementById("proModeToggleModal");
-  if (proModeToggleModal) {
-      proModeToggleModal.checked = getLocalStorage(PRO_MODE_KEY, false);
-      proModeToggleModal.addEventListener("change", (e) => toggleProMode(e.target));
-  }
-  updateProModeUI(getLocalStorage(PRO_MODE_KEY, false)); // Initial UI update
-
-  document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
-  document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
-  document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
-  document.getElementById("dealerOrderForm")?.addEventListener("submit", handleDealerOrderSubmit);
-  const resumePaperGameButton = document.getElementById("resumePaperGameButton");
-  if (resumePaperGameButton) {
-    resumePaperGameButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      openResumeGameModal();
-      toggleMenu(event);
-    });
-  }
-
-  // Close modals on outside click (simplified)
-  const modalCloseHandlers = {
-    savedGamesModal: closeSavedGamesModal,
-    viewSavedGameModal: closeViewSavedGameModal,
-    aboutModal: closeAboutModal,
-    statisticsModal: closeStatisticsModal,
-    entityStatisticsModal: closeEntityStatisticsModal,
-    teamSelectionModal: closeTeamSelectionModal,
-    resumeGameModal: closeResumeGameModal,
-	    settingsModal: closeSettingsModal,
-	    themeModal: () => closeThemeModal(null),
-	    confirmationModal: closeConfirmationModal,
-	    presetEditorModal: closePresetEditorModal,
-	    tableTalkModal: closeTableTalkModal,
-	    probabilityModal: closeProbabilityModal,
-	    dealerOrderModal: closeDealerOrderModal,
-	  };
-
-  document.addEventListener("click", (e) => {
-    Object.entries(modalCloseHandlers).forEach(([id, handler]) => {
-      const modalEl = document.getElementById(id);
-      if (modalEl && !modalEl.classList.contains("hidden") && e.target === modalEl) {
-        handler();
+      // Pro mode toggle (in settings modal, not main nav)
+      const proModeToggleModal = document.getElementById("proModeToggleModal");
+      if (proModeToggleModal) {
+          proModeToggleModal.checked = getLocalStorage(PRO_MODE_KEY, false);
+          proModeToggleModal.addEventListener("change", (e) => toggleProMode(e.target));
       }
+      updateProModeUI(getLocalStorage(PRO_MODE_KEY, false)); // Initial UI update
+
+      document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
+      document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
+      document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
+      document.getElementById("dealerOrderForm")?.addEventListener("submit", handleDealerOrderSubmit);
+      const resumePaperGameButton = document.getElementById("resumePaperGameButton");
+      if (resumePaperGameButton) {
+        resumePaperGameButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          openResumeGameModal();
+          toggleMenu(event);
+        });
+      }
+
+      // Close modals on outside click (simplified)
+      const modalCloseHandlers = {
+        savedGamesModal: closeSavedGamesModal,
+        viewSavedGameModal: closeViewSavedGameModal,
+        aboutModal: closeAboutModal,
+        statisticsModal: closeStatisticsModal,
+        entityStatisticsModal: closeEntityStatisticsModal,
+        teamSelectionModal: closeTeamSelectionModal,
+        resumeGameModal: closeResumeGameModal,
+  	    settingsModal: closeSettingsModal,
+  	    themeModal: () => closeThemeModal(null),
+  	    confirmationModal: closeConfirmationModal,
+  	    presetEditorModal: closePresetEditorModal,
+  	    tableTalkModal: closeTableTalkModal,
+  	    probabilityModal: closeProbabilityModal,
+  	    dealerOrderModal: closeDealerOrderModal,
+  	  };
+
+      document.addEventListener("click", (e) => {
+        Object.entries(modalCloseHandlers).forEach(([id, handler]) => {
+          const modalEl = document.getElementById(id);
+          if (modalEl && !modalEl.classList.contains("hidden") && e.target === modalEl) {
+            handler();
+          }
+        });
+      });
     });
-  });
 });
 
 if ('serviceWorker' in navigator) {
