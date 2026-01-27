@@ -24,11 +24,6 @@ function setAuthUiState({ enabled, label }) {
   });
 }
 
-const firebaseConfig =
-  typeof window !== 'undefined' && window.__FIREBASE_CONFIG__ && typeof window.__FIREBASE_CONFIG__ === 'object'
-    ? window.__FIREBASE_CONFIG__
-    : null;
-
 let app = null;
 let auth = null;
 let db = null;
@@ -37,13 +32,32 @@ let googleProvider = null;
 window.firebaseReady = false;
 window.firebaseConfigured = false;
 
-try {
-  if (!firebaseConfig) {
-    console.warn(
-      "Firebase config not found. Cloud sync is disabled. Create `js/firebase-config.js` from `js/firebase-config.example.js`."
-    );
-    setAuthUiState({ enabled: false, label: "Cloud Sync Not Configured" });
-  } else {
+async function loadFirebaseConfig() {
+  if (typeof window !== 'undefined' && window.__FIREBASE_CONFIG__ && typeof window.__FIREBASE_CONFIG__ === 'object') {
+    return window.__FIREBASE_CONFIG__;
+  }
+
+  try {
+    const response = await fetch('js/firebase-config.json', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const parsed = await response.json();
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function initializeFirebase() {
+  try {
+    const firebaseConfig = await loadFirebaseConfig();
+    if (!firebaseConfig) {
+      console.warn(
+        "Firebase config not found. Cloud sync is disabled. Create `js/firebase-config.json` from `js/firebase-config.example.json`."
+      );
+      setAuthUiState({ enabled: false, label: "Cloud Sync Not Configured" });
+      return;
+    }
+
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
@@ -60,12 +74,14 @@ try {
     window.firestoreSetDoc = setDoc; // Make Firestore 'setDoc' function globally available
     window.firestoreGetDoc = getDoc;
     window.googleProvider = googleProvider;
+
+    if (auth) startAuthStateListener();
+  } catch (error) {
+    console.error("Firebase initialization failed. Cloud sync is disabled.", error);
+    window.firebaseReady = false;
+    window.firebaseConfigured = false;
+    setAuthUiState({ enabled: false, label: "Cloud Sync Unavailable" });
   }
-} catch (error) {
-  console.error("Firebase initialization failed. Cloud sync is disabled.", error);
-  window.firebaseReady = false;
-  window.firebaseConfigured = false;
-  setAuthUiState({ enabled: false, label: "Cloud Sync Unavailable" });
 }
 
 function shouldAttemptJsonParse(raw) {
@@ -282,36 +298,40 @@ window.syncToFirestore = async function(key, value) {
   }
 };
 
-// Initial Auth State Handling
-if (auth) document.addEventListener('DOMContentLoaded', () => {
-  let authTimeoutId = setTimeout(() => {
-console.log("Firebase auth timed out - likely offline or blocked.");
-window.firebaseReady = false;
-updateAuthUI(null);
-if (window.loadCurrentGameState) window.loadCurrentGameState();
-if (window.renderApp) window.renderApp();
-  }, 5000); // 5 second timeout
+function startAuthStateListener() {
+  if (!auth) return;
+  document.addEventListener('DOMContentLoaded', () => {
+    let authTimeoutId = setTimeout(() => {
+      console.log("Firebase auth timed out - likely offline or blocked.");
+      window.firebaseReady = false;
+      updateAuthUI(null);
+      if (window.loadCurrentGameState) window.loadCurrentGameState();
+      if (window.renderApp) window.renderApp();
+    }, 5000); // 5 second timeout
 
-  onAuthStateChanged(auth, (user) => {
-clearTimeout(authTimeoutId);
-if (user) {
-    window.firebaseReady = true;
-    updateAuthUI(user);
-    window.mergeLocalStorageWithFirestore(user); // Use global one for all users
-} else {
-    signInAnonymously(auth)
-        .then((anonUserCredential) => {
+    onAuthStateChanged(auth, (user) => {
+      clearTimeout(authTimeoutId);
+      if (user) {
+        window.firebaseReady = true;
+        updateAuthUI(user);
+        window.mergeLocalStorageWithFirestore(user); // Use global one for all users
+      } else {
+        signInAnonymously(auth)
+          .then((anonUserCredential) => {
             window.firebaseReady = true; // Firebase is working for anon
             updateAuthUI(anonUserCredential.user);
             window.mergeLocalStorageWithFirestore(anonUserCredential.user);
-        })
-        .catch((error) => {
+          })
+          .catch((error) => {
             console.error("Anonymous sign-in failed:", error);
             window.firebaseReady = false;
             updateAuthUI(null);
             if (window.loadCurrentGameState) window.loadCurrentGameState();
             if (window.renderApp) window.renderApp();
-        });
+          });
+      }
+    });
+  }, { once: true });
 }
-  });
-});
+
+initializeFirebase();
