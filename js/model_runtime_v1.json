@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "modelId": "prod-270g-1958r",
+  "featureSet": [
+    "diff",
+    "round_idx",
+    "momentum",
+    "bid_amount",
+    "bidding_team_sign",
+    "point_delta",
+    "abs_diff",
+    "abs_momentum",
+    "diff_x_round",
+    "point_delta_x_round",
+    "bid_x_team",
+    "diff_x_point_delta",
+    "momentum_x_round",
+    "lead_sign"
+  ],
+  "intercept": -1.7553030137814647,
+  "coefficients": {
+    "diff": 0.002508448836128177,
+    "round_idx": -0.021977202303692153,
+    "momentum": 1.1076800877172538e-05,
+    "bid_amount": 0.013462765270560048,
+    "bidding_team_sign": 0.10755381707923319,
+    "point_delta": 0.0007116890088571467,
+    "abs_diff": 0.00038873243876060373,
+    "abs_momentum": -0.0006314111596346127,
+    "diff_x_round": 0.00037637904888010085,
+    "point_delta_x_round": 4.790781748288295e-05,
+    "bid_x_team": 0.0008082813362465263,
+    "diff_x_point_delta": -1.250862888064988e-06,
+    "momentum_x_round": 4.790781748288295e-05,
+    "lead_sign": 0.12223547645614245
+  },
+  "calibration": {
+    "type": "platt",
+    "slope": 0.9403348112138662,
+    "intercept": -0.0024757172493712894
+  },
+  "metadata": {
+    "generatedAt": "2026-02-06T18:45:27.174440Z",
+    "games": 270,
+    "roundSamples": 1958
+  }
+}

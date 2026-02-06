@@ -260,11 +260,610 @@ function renderWinProbability() {
 
 // --- Win‑probability engine -------------------------------------------
 
+const RUNTIME_MODEL_PATH = "./js/model_runtime_v1.json";
+const PROBABILITY_PERSONALIZATION_KEY = "probabilityPersonalizationV1";
+const PROBABILITY_PERSONALIZATION_SCHEMA_VERSION = 1;
+const PERSONALIZATION_MIN_GAMES = 10;
+const PERSONALIZATION_MIN_ROUNDS = 60;
+const PERSONALIZATION_LR = 0.03;
+const PERSONALIZATION_EPOCHS = 1600;
+const PERSONALIZATION_L2 = 1e-3;
+const PERSONALIZATION_MIN_IMPROVEMENT = 1e-4;
+const PERSONALIZATION_MIN_SLOPE = 0.25;
+const PERSONALIZATION_MAX_SLOPE = 3.5;
+const PERSONALIZATION_MAX_ABS_INTERCEPT = 2.5;
+
+const MODEL_FEATURE_SET = Object.freeze([
+  "diff",
+  "round_idx",
+  "momentum",
+  "bid_amount",
+  "bidding_team_sign",
+  "point_delta",
+  "abs_diff",
+  "abs_momentum",
+  "diff_x_round",
+  "point_delta_x_round",
+  "bid_x_team",
+  "diff_x_point_delta",
+  "momentum_x_round",
+  "lead_sign",
+]);
+
+const FALLBACK_RUNTIME_MODEL = Object.freeze({
+  schemaVersion: 1,
+  modelId: "prod-270g-1958r",
+  featureSet: [...MODEL_FEATURE_SET],
+  intercept: -1.7553030137814647,
+  coefficients: {
+    diff: 0.002508448836128177,
+    round_idx: -0.021977202303692153,
+    momentum: 0.000011076800877172538,
+    bid_amount: 0.013462765270560048,
+    bidding_team_sign: 0.10755381707923319,
+    point_delta: 0.0007116890088571467,
+    abs_diff: 0.00038873243876060373,
+    abs_momentum: -0.0006314111596346127,
+    diff_x_round: 0.00037637904888010085,
+    point_delta_x_round: 0.00004790781748288295,
+    bid_x_team: 0.0008082813362465263,
+    diff_x_point_delta: -0.000001250862888064988,
+    momentum_x_round: 0.00004790781748288295,
+    lead_sign: 0.12223547645614245,
+  },
+  calibration: {
+    type: "platt",
+    slope: 0.9403348112138662,
+    intercept: -0.0024757172493712894,
+  },
+  metadata: {
+    generatedAt: "2026-02-06T00:00:00.000Z",
+    games: 270,
+    roundSamples: 1958,
+  },
+});
+
+const RUNTIME_MODEL_STATE = {
+  model: FALLBACK_RUNTIME_MODEL,
+  loaded: false,
+  error: null,
+};
+let runtimeModelLoadPromise = null;
+const PERSONALIZATION_STATE_CACHE = { key: null, value: null };
+
+function parseFiniteNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function clampProbability(prob) {
+  const num = parseFiniteNumber(prob, 0.5);
+  if (num <= 1e-6) return 1e-6;
+  if (num >= 1 - 1e-6) return 1 - 1e-6;
+  return num;
+}
+
+function safeSigmoid(z) {
+  const x = parseFiniteNumber(z, 0);
+  if (x >= 0) {
+    const expNeg = Math.exp(-Math.min(x, 60));
+    return 1 / (1 + expNeg);
+  }
+  const expPos = Math.exp(Math.max(x, -60));
+  return expPos / (1 + expPos);
+}
+
+function probabilityToLogit(prob) {
+  const clipped = clampProbability(prob);
+  return Math.log(clipped / (1 - clipped));
+}
+
+function applyPlattCalibration(prob, slope, intercept) {
+  const logit = probabilityToLogit(prob);
+  const calibratedLogit = parseFiniteNumber(slope, 1) * logit + parseFiniteNumber(intercept, 0);
+  return safeSigmoid(calibratedLogit);
+}
+
+function clearWinProbabilityCache() {
+  WIN_PROB_CACHE.key = null;
+  WIN_PROB_CACHE.value = null;
+}
+
+function clearPersonalizationStateCache() {
+  PERSONALIZATION_STATE_CACHE.key = null;
+  PERSONALIZATION_STATE_CACHE.value = null;
+}
+
+function getActiveRuntimeModel() {
+  return RUNTIME_MODEL_STATE.model || FALLBACK_RUNTIME_MODEL;
+}
+
+function normalizeRuntimeModelArtifact(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (Number(raw.schemaVersion) !== 1) return null;
+
+  const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : "";
+  const featureSet = Array.isArray(raw.featureSet) ? raw.featureSet.map(String) : [];
+  const hasAllFeatures = MODEL_FEATURE_SET.every(name => featureSet.includes(name));
+  if (!modelId || !hasAllFeatures) return null;
+
+  const intercept = parseFiniteNumber(raw.intercept, NaN);
+  if (!Number.isFinite(intercept)) return null;
+
+  const coefficients = {};
+  for (const featureName of MODEL_FEATURE_SET) {
+    const coeff = parseFiniteNumber(raw.coefficients?.[featureName], NaN);
+    if (!Number.isFinite(coeff)) return null;
+    coefficients[featureName] = coeff;
+  }
+
+  if (raw.calibration?.type !== "platt") return null;
+  const calSlope = parseFiniteNumber(raw.calibration?.slope, NaN);
+  const calIntercept = parseFiniteNumber(raw.calibration?.intercept, NaN);
+  if (!Number.isFinite(calSlope) || !Number.isFinite(calIntercept)) return null;
+
+  return {
+    schemaVersion: 1,
+    modelId,
+    featureSet: [...MODEL_FEATURE_SET],
+    intercept,
+    coefficients,
+    calibration: {
+      type: "platt",
+      slope: calSlope,
+      intercept: calIntercept,
+    },
+    metadata: {
+      generatedAt: typeof raw.metadata?.generatedAt === "string" ? raw.metadata.generatedAt : null,
+      games: parseFiniteNumber(raw.metadata?.games, 0),
+      roundSamples: parseFiniteNumber(raw.metadata?.roundSamples, 0),
+    },
+  };
+}
+
+function loadRuntimeModel() {
+  if (runtimeModelLoadPromise) return runtimeModelLoadPromise;
+  if (typeof fetch !== "function") {
+    return Promise.resolve(getActiveRuntimeModel());
+  }
+
+  runtimeModelLoadPromise = fetch(RUNTIME_MODEL_PATH, { cache: "no-cache" })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Runtime model fetch failed: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(raw => {
+      const normalized = normalizeRuntimeModelArtifact(raw);
+      if (!normalized) {
+        throw new Error("Runtime model JSON failed validation.");
+      }
+
+      const previousModelId = getActiveRuntimeModel().modelId;
+      RUNTIME_MODEL_STATE.model = normalized;
+      RUNTIME_MODEL_STATE.loaded = true;
+      RUNTIME_MODEL_STATE.error = null;
+      clearWinProbabilityCache();
+      clearPersonalizationStateCache();
+
+      if (normalized.modelId !== previousModelId) {
+        const savedGames = getLocalStorage("savedGames", []);
+        ensureProbabilityPersonalizationForGames(savedGames, normalized, { force: true });
+      }
+
+      return normalized;
+    })
+    .catch(error => {
+      RUNTIME_MODEL_STATE.error = error?.message || String(error);
+      console.warn("Unable to load runtime model JSON. Falling back to bundled model.", error);
+      return getActiveRuntimeModel();
+    });
+
+  return runtimeModelLoadPromise;
+}
+
+function normalizeBiddingTeamValue(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (raw === "us" || raw === "dem") return raw;
+  return "";
+}
+
+function getBiddingTeamSign(biddingTeam) {
+  const normalized = normalizeBiddingTeamValue(biddingTeam);
+  if (normalized === "us") return 1;
+  if (normalized === "dem") return -1;
+  return 0;
+}
+
+function buildModelFeatureVector({ diff, roundIdx, momentum, bidAmount, biddingTeamSign, pointDelta }) {
+  const safeDiff = parseFiniteNumber(diff, 0);
+  const safeRoundIdx = Math.max(0, Math.trunc(parseFiniteNumber(roundIdx, 0)));
+  const safeMomentum = parseFiniteNumber(momentum, 0);
+  const safeBidAmount = parseFiniteNumber(bidAmount, 0);
+  const safeBiddingTeamSign = parseFiniteNumber(biddingTeamSign, 0);
+  const safePointDelta = parseFiniteNumber(pointDelta, 0);
+
+  return {
+    diff: safeDiff,
+    round_idx: safeRoundIdx,
+    momentum: safeMomentum,
+    bid_amount: safeBidAmount,
+    bidding_team_sign: safeBiddingTeamSign,
+    point_delta: safePointDelta,
+    abs_diff: Math.abs(safeDiff),
+    abs_momentum: Math.abs(safeMomentum),
+    diff_x_round: safeDiff * safeRoundIdx,
+    point_delta_x_round: safePointDelta * safeRoundIdx,
+    bid_x_team: safeBidAmount * safeBiddingTeamSign,
+    diff_x_point_delta: safeDiff * safePointDelta,
+    momentum_x_round: safeMomentum * safeRoundIdx,
+    lead_sign: safeDiff > 0 ? 1 : safeDiff < 0 ? -1 : 0,
+  };
+}
+
+function extractModelFeaturesFromRoundContext(roundIndex, lastRound, prevRound = null) {
+  const safeRoundIndex = Math.max(0, Math.trunc(parseFiniteNumber(roundIndex, 0)));
+  const lastTotals = sanitizeTotals(lastRound?.runningTotals);
+  const prevTotals = sanitizeTotals(prevRound?.runningTotals);
+
+  const diff = lastTotals.us - lastTotals.dem;
+  const prevDiff = prevTotals.us - prevTotals.dem;
+  const momentum = safeRoundIndex === 0 ? 0 : diff - prevDiff;
+  const bidAmount = parseFiniteNumber(lastRound?.bidAmount, 0);
+  const biddingTeamSign = getBiddingTeamSign(lastRound?.biddingTeam);
+  const usPoints = parseFiniteNumber(lastRound?.usPoints, 0);
+  const demPoints = parseFiniteNumber(lastRound?.demPoints, 0);
+  const pointDelta = usPoints - demPoints;
+
+  return buildModelFeatureVector({
+    diff,
+    roundIdx: safeRoundIndex,
+    momentum,
+    bidAmount,
+    biddingTeamSign,
+    pointDelta,
+  });
+}
+
+function computeRawModelProbabilityFromFeatures(features, model = getActiveRuntimeModel()) {
+  let z = parseFiniteNumber(model?.intercept, 0);
+  for (const featureName of MODEL_FEATURE_SET) {
+    const featureValue = parseFiniteNumber(features?.[featureName], 0);
+    const coefficient = parseFiniteNumber(model?.coefficients?.[featureName], 0);
+    z += coefficient * featureValue;
+  }
+  return safeSigmoid(z);
+}
+
+function predictBaseModelProbabilityFromFeatures(features, model = getActiveRuntimeModel()) {
+  const rawProb = computeRawModelProbabilityFromFeatures(features, model);
+  return applyPlattCalibration(rawProb, model?.calibration?.slope, model?.calibration?.intercept);
+}
+
+function inferWinnerSide(game) {
+  const winnerRaw = typeof game?.winner === "string" ? game.winner.trim().toLowerCase() : "";
+  if (winnerRaw === "us" || winnerRaw === "dem") return winnerRaw;
+
+  const finalTotals = sanitizeTotals(game?.finalScore);
+  if (finalTotals.us > finalTotals.dem) return "us";
+  if (finalTotals.dem > finalTotals.us) return "dem";
+  return null;
+}
+
+function normalizeGameRoundsForModeling(rounds) {
+  if (!Array.isArray(rounds) || !rounds.length) return [];
+  return rounds
+    .map((round, idx) => ({
+      round,
+      roundIndex: Math.max(0, Math.trunc(parseFiniteNumber(round?.roundIndex, idx))),
+      originalIndex: idx,
+    }))
+    .sort((a, b) => a.roundIndex - b.roundIndex || a.originalIndex - b.originalIndex);
+}
+
+function buildPersonalizationDataset(savedGames, model = getActiveRuntimeModel()) {
+  const games = Array.isArray(savedGames) ? savedGames : [];
+  const logits = [];
+  const labels = [];
+  let gameSamples = 0;
+
+  for (const game of games) {
+    const winner = inferWinnerSide(game);
+    if (!winner) continue;
+
+    const rounds = normalizeGameRoundsForModeling(game?.rounds);
+    if (!rounds.length) continue;
+
+    let previousDiff = 0;
+    let hasRoundSample = false;
+
+    rounds.forEach((entry, idx) => {
+      const round = entry.round;
+      if (!round?.runningTotals) return;
+
+      const totals = sanitizeTotals(round.runningTotals);
+      const diff = totals.us - totals.dem;
+      const momentum = idx === 0 ? 0 : diff - previousDiff;
+      previousDiff = diff;
+
+      const bidAmount = parseFiniteNumber(round?.bidAmount, 0);
+      const biddingTeamSign = getBiddingTeamSign(round?.biddingTeam);
+      const usPoints = parseFiniteNumber(round?.usPoints, 0);
+      const demPoints = parseFiniteNumber(round?.demPoints, 0);
+      const pointDelta = usPoints - demPoints;
+
+      const features = buildModelFeatureVector({
+        diff,
+        roundIdx: entry.roundIndex,
+        momentum,
+        bidAmount,
+        biddingTeamSign,
+        pointDelta,
+      });
+      const baseProb = predictBaseModelProbabilityFromFeatures(features, model);
+      logits.push(probabilityToLogit(baseProb));
+      labels.push(winner === "us" ? 1 : 0);
+      hasRoundSample = true;
+    });
+
+    if (hasRoundSample) {
+      gameSamples += 1;
+    }
+  }
+
+  return {
+    logits,
+    labels,
+    roundSamples: logits.length,
+    gameSamples,
+  };
+}
+
+function computeBinaryLogLoss(labels, probs) {
+  if (!Array.isArray(labels) || !Array.isArray(probs) || !labels.length || labels.length !== probs.length) {
+    return 0;
+  }
+
+  let sum = 0;
+  for (let idx = 0; idx < labels.length; idx += 1) {
+    const y = parseFiniteNumber(labels[idx], 0) >= 0.5 ? 1 : 0;
+    const p = clampProbability(probs[idx]);
+    sum += -(y * Math.log(p) + (1 - y) * Math.log(1 - p));
+  }
+  return sum / labels.length;
+}
+
+function fitPersonalizationCalibration(logits, labels, options = {}) {
+  const xs = Array.isArray(logits) ? logits.map(v => parseFiniteNumber(v, 0)) : [];
+  const ys = Array.isArray(labels) ? labels.map(v => (parseFiniteNumber(v, 0) >= 0.5 ? 1 : 0)) : [];
+
+  if (!xs.length || xs.length !== ys.length) {
+    return {
+      slope: 1,
+      intercept: 0,
+      baseLogLoss: 0,
+      personalizedLogLoss: 0,
+      accepted: false,
+      improvement: 0,
+      guardrailsOk: false,
+    };
+  }
+
+  const lr = parseFiniteNumber(options.learningRate, PERSONALIZATION_LR);
+  const epochs = Math.max(1, Math.trunc(parseFiniteNumber(options.epochs, PERSONALIZATION_EPOCHS)));
+  const l2 = Math.max(0, parseFiniteNumber(options.l2, PERSONALIZATION_L2));
+  const minImprovement = parseFiniteNumber(options.minImprovement, PERSONALIZATION_MIN_IMPROVEMENT);
+  const minSlope = parseFiniteNumber(options.minSlope, PERSONALIZATION_MIN_SLOPE);
+  const maxSlope = parseFiniteNumber(options.maxSlope, PERSONALIZATION_MAX_SLOPE);
+  const maxAbsIntercept = parseFiniteNumber(options.maxAbsIntercept, PERSONALIZATION_MAX_ABS_INTERCEPT);
+
+  let slope = 1;
+  let intercept = 0;
+  const n = xs.length;
+
+  for (let epoch = 0; epoch < epochs; epoch += 1) {
+    let gradSlope = 0;
+    let gradIntercept = 0;
+
+    for (let idx = 0; idx < n; idx += 1) {
+      const z = slope * xs[idx] + intercept;
+      const p = safeSigmoid(z);
+      const err = p - ys[idx];
+      gradSlope += err * xs[idx];
+      gradIntercept += err;
+    }
+
+    gradSlope = (gradSlope / n) + (l2 * slope);
+    gradIntercept /= n;
+
+    slope -= lr * gradSlope;
+    intercept -= lr * gradIntercept;
+  }
+
+  const baseProbs = xs.map(v => safeSigmoid(v));
+  const personalizedProbs = xs.map(v => safeSigmoid(slope * v + intercept));
+  const baseLogLoss = computeBinaryLogLoss(ys, baseProbs);
+  const personalizedLogLoss = computeBinaryLogLoss(ys, personalizedProbs);
+  const improvement = baseLogLoss - personalizedLogLoss;
+  const guardrailsOk = Number.isFinite(slope) && Number.isFinite(intercept)
+    && slope >= minSlope && slope <= maxSlope
+    && Math.abs(intercept) <= maxAbsIntercept;
+  const accepted = guardrailsOk && improvement >= minImprovement;
+
+  return {
+    slope: accepted ? slope : 1,
+    intercept: accepted ? intercept : 0,
+    baseLogLoss,
+    personalizedLogLoss: accepted ? personalizedLogLoss : baseLogLoss,
+    accepted,
+    improvement,
+    guardrailsOk,
+  };
+}
+
+function normalizePersonalizationRecord(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (Number(raw.schemaVersion) !== PROBABILITY_PERSONALIZATION_SCHEMA_VERSION) return null;
+
+  const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : "";
+  if (!modelId) return null;
+
+  const slope = parseFiniteNumber(raw.slope, NaN);
+  const intercept = parseFiniteNumber(raw.intercept, NaN);
+  const roundSamples = Math.max(0, Math.trunc(parseFiniteNumber(raw.roundSamples, NaN)));
+  const gameSamples = Math.max(0, Math.trunc(parseFiniteNumber(raw.gameSamples, NaN)));
+  const baseLogLoss = parseFiniteNumber(raw.baseLogLoss, NaN);
+  const personalizedLogLoss = parseFiniteNumber(raw.personalizedLogLoss, NaN);
+  const gamesHash = typeof raw.gamesHash === "string" ? raw.gamesHash : "0";
+  const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : null;
+
+  if (!Number.isFinite(slope) || !Number.isFinite(intercept)
+      || !Number.isFinite(roundSamples) || !Number.isFinite(gameSamples)
+      || !Number.isFinite(baseLogLoss) || !Number.isFinite(personalizedLogLoss)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: PROBABILITY_PERSONALIZATION_SCHEMA_VERSION,
+    modelId,
+    slope,
+    intercept,
+    roundSamples,
+    gameSamples,
+    gamesHash,
+    updatedAt,
+    baseLogLoss,
+    personalizedLogLoss,
+  };
+}
+
+function isPersonalizationRecordActive(record, modelId = getActiveRuntimeModel().modelId) {
+  if (!record || record.modelId !== modelId) return false;
+  if (record.gameSamples < PERSONALIZATION_MIN_GAMES) return false;
+  if (record.roundSamples < PERSONALIZATION_MIN_ROUNDS) return false;
+  if (!(record.personalizedLogLoss <= (record.baseLogLoss - PERSONALIZATION_MIN_IMPROVEMENT))) return false;
+  if (record.slope < PERSONALIZATION_MIN_SLOPE || record.slope > PERSONALIZATION_MAX_SLOPE) return false;
+  if (Math.abs(record.intercept) > PERSONALIZATION_MAX_ABS_INTERCEPT) return false;
+  return true;
+}
+
+function getPersonalizationSignature(record, modelId = getActiveRuntimeModel().modelId) {
+  const normalized = normalizePersonalizationRecord(record);
+  if (!normalized || normalized.modelId !== modelId) return "none";
+  return [
+    normalized.modelId,
+    normalized.slope.toFixed(6),
+    normalized.intercept.toFixed(6),
+    normalized.roundSamples,
+    normalized.gameSamples,
+    normalized.gamesHash,
+  ].join("|");
+}
+
+function createPersonalizationRecord(historicalGames, model = getActiveRuntimeModel(), gamesHash = getProbabilityCacheKey(historicalGames)) {
+  const dataset = buildPersonalizationDataset(historicalGames, model);
+  const fitResult = fitPersonalizationCalibration(dataset.logits, dataset.labels);
+  const hasEnoughData = dataset.gameSamples >= PERSONALIZATION_MIN_GAMES && dataset.roundSamples >= PERSONALIZATION_MIN_ROUNDS;
+  const usePersonalization = hasEnoughData && fitResult.accepted;
+
+  return {
+    schemaVersion: PROBABILITY_PERSONALIZATION_SCHEMA_VERSION,
+    modelId: model.modelId,
+    slope: usePersonalization ? fitResult.slope : 1,
+    intercept: usePersonalization ? fitResult.intercept : 0,
+    roundSamples: dataset.roundSamples,
+    gameSamples: dataset.gameSamples,
+    gamesHash,
+    updatedAt: new Date().toISOString(),
+    baseLogLoss: fitResult.baseLogLoss,
+    personalizedLogLoss: usePersonalization ? fitResult.personalizedLogLoss : fitResult.baseLogLoss,
+  };
+}
+
+function ensureProbabilityPersonalizationForGames(historicalGames, model = getActiveRuntimeModel(), options = {}) {
+  const games = Array.isArray(historicalGames) ? historicalGames : [];
+  const gamesHash = getProbabilityCacheKey(games);
+  const cacheKey = `${model.modelId}|${gamesHash}`;
+  const force = !!options.force;
+
+  if (!force && PERSONALIZATION_STATE_CACHE.key === cacheKey && PERSONALIZATION_STATE_CACHE.value) {
+    return PERSONALIZATION_STATE_CACHE.value;
+  }
+
+  const storedRecord = normalizePersonalizationRecord(getLocalStorage(PROBABILITY_PERSONALIZATION_KEY, null));
+  if (!force && storedRecord && storedRecord.modelId === model.modelId && storedRecord.gamesHash === gamesHash) {
+    PERSONALIZATION_STATE_CACHE.key = cacheKey;
+    PERSONALIZATION_STATE_CACHE.value = storedRecord;
+    return storedRecord;
+  }
+
+  const nextRecord = createPersonalizationRecord(games, model, gamesHash);
+  setLocalStorage(PROBABILITY_PERSONALIZATION_KEY, nextRecord);
+  PERSONALIZATION_STATE_CACHE.key = cacheKey;
+  PERSONALIZATION_STATE_CACHE.value = nextRecord;
+  clearWinProbabilityCache();
+  return nextRecord;
+}
+
+function refreshProbabilityPersonalizationFromSavedGames(savedGames = getLocalStorage("savedGames", []), options = {}) {
+  return ensureProbabilityPersonalizationForGames(savedGames, getActiveRuntimeModel(), options);
+}
+
+function getProbabilityContext(historicalGames, options = {}) {
+  const model = getActiveRuntimeModel();
+  const personalization = ensureProbabilityPersonalizationForGames(historicalGames, model, options);
+  return { model, personalization };
+}
+
+function getModelProbabilitySnapshotForState(currentState, model = getActiveRuntimeModel(), personalization = null) {
+  const rounds = Array.isArray(currentState?.rounds) ? currentState.rounds : [];
+  if (!rounds.length) {
+    return {
+      modelId: model.modelId,
+      features: null,
+      roundIndex: 0,
+      currentDiff: 0,
+      momentum: 0,
+      rawModelProbUs: 0.5,
+      baseModelProbUs: 0.5,
+      modelProbUs: 0.5,
+      personalizationRecord: personalization,
+      personalizationActive: false,
+    };
+  }
+
+  const roundIndex = rounds.length - 1;
+  const lastRound = rounds[roundIndex];
+  const prevRound = roundIndex > 0 ? rounds[roundIndex - 1] : null;
+  const features = extractModelFeaturesFromRoundContext(roundIndex, lastRound, prevRound);
+  const rawModelProbUs = computeRawModelProbabilityFromFeatures(features, model);
+  const baseModelProbUs = applyPlattCalibration(rawModelProbUs, model.calibration.slope, model.calibration.intercept);
+  const personalizationRecord = normalizePersonalizationRecord(personalization);
+  const personalizationActive = isPersonalizationRecordActive(personalizationRecord, model.modelId);
+  const modelProbUs = personalizationActive
+    ? applyPlattCalibration(baseModelProbUs, personalizationRecord.slope, personalizationRecord.intercept)
+    : baseModelProbUs;
+
+  return {
+    modelId: model.modelId,
+    features,
+    roundIndex,
+    currentDiff: features.diff,
+    momentum: features.momentum,
+    rawModelProbUs,
+    baseModelProbUs,
+    modelProbUs,
+    personalizationRecord,
+    personalizationActive,
+  };
+}
+
 function bucketScore(diff) {
   const sign = diff < 0 ? -1 : 1;
-  const abs  = Math.min(Math.abs(diff), 180);   // ≥180 ⇒ final bucket
-  const band = Math.floor(abs / 20) * 20;       // 0‑19,20‑39,…160‑179
-  return sign * band;                           // e.g.  -40  or  120
+  const abs = Math.min(Math.abs(diff), 180);   // >=180 => final bucket
+  const band = Math.floor(abs / 20) * 20;      // 0-19,20-39,...160-179
+  return sign * band;                          // e.g. -40 or 120
 }
 
 function getProbabilityCacheKey(historicalGames) {
@@ -298,7 +897,7 @@ function buildProbabilityIndex(historicalGames) {
   if (!Array.isArray(historicalGames) || !historicalGames.length) return table;
 
   const add = (k, winner, weight) => {
-    if (!table[k]) table[k] = { us: 1, dem: 1 };      // Laplace prior (1 | 1)
+    if (!table[k]) table[k] = { us: 1, dem: 1 };      // Laplace prior (1|1)
     table[k][winner] += weight;
   };
 
@@ -322,101 +921,81 @@ function buildProbabilityIndex(historicalGames) {
   return table;
 }
 
-// --- Calibrated logistic (trained 2025-06-20 on 44 games) -------------
-const L_INTERCEPT   =  0.2084586876141831;
-const L_COEFF_DIFF  =  0.00421107;
-const L_COEFF_ROUND = -0.09520921;
-const L_COEFF_MOM   =  0.00149416;
-
-function logisticProb(diff, roundIdx, mom) {
-  const z = L_INTERCEPT +
-      L_COEFF_DIFF  * diff +
-      L_COEFF_ROUND * roundIdx +
-      L_COEFF_MOM   * mom;
-  return 1 / (1 + Math.exp(-z));           // probability "us" eventually wins
-}
-
 /**
- * SHARPENED: Calculates win probability by blending historical empirical data
- * with a logistic regression model for a more robust and accurate prediction.
+ * Calculates win probability by blending historical empirical data
+ * with the calibrated regression model probability.
  */
-function calculateWinProbabilityComplex(state, historicalGames) {
-  // ---------------- Guards & Setup ----------------
+function calculateWinProbabilityComplex(state, historicalGames, probabilityContext = null) {
   const rounds = Array.isArray(state?.rounds) ? state.rounds : [];
-  if (!rounds.length) return { us: 50, dem: 50 }; // No rounds played yet, 50/50 chance.
+  if (!rounds.length) return { us: 50, dem: 50 };
 
   const lastRound = rounds[rounds.length - 1];
   const roundIndex = rounds.length - 1;
   const lastTotals = sanitizeTotals(lastRound?.runningTotals);
   const currentDiff = lastTotals.us - lastTotals.dem;
 
-  // ---------------- 1. Empirical Probability (from Historical Data) ----------------
-  // Get the pre-computed index of historical game outcomes.
-  // We use memoization (PROB_CACHE) to avoid rebuilding this on every single call.
   const games = Array.isArray(historicalGames) ? historicalGames : [];
-  const cacheKey = getProbabilityCacheKey(games);
-  if (!PROB_CACHE.has(cacheKey)) {
-    PROB_CACHE.set(cacheKey, buildProbabilityIndex(games));
+  const probCacheKey = getProbabilityCacheKey(games);
+  if (!PROB_CACHE.has(probCacheKey)) {
+    PROB_CACHE.set(probCacheKey, buildProbabilityIndex(games));
   }
-  const table = PROB_CACHE.get(cacheKey);
+  const table = PROB_CACHE.get(probCacheKey);
 
-  // Find the result for the current game situation (round index + bucketed score difference).
-  const key = `${roundIndex}|${bucketScore(currentDiff)}`;
-  const counts = table[key] || { us: 1, dem: 1 }; // Use Laplace prior (1,1) if no data.
+  const empiricalKey = `${roundIndex}|${bucketScore(currentDiff)}`;
+  const counts = table[empiricalKey] || { us: 1, dem: 1 };
   const empiricalProbUs = counts.us / (counts.us + counts.dem);
-
-  // Count how many actual past games fall into this bucket (before our +1 prior).
   const observationsInBucket = (counts.us - 1) + (counts.dem - 1);
 
-  // ---------------- 2. Model-Based Probability (Logistic Regression) ----------------
-  // Calculate momentum (change in score difference from the previous round).
-  const prevTotals = rounds.length > 1 ? sanitizeTotals(rounds[rounds.length - 2]?.runningTotals) : { us: 0, dem: 0 };
-  const prevDiff = prevTotals.us - prevTotals.dem;
-  const momentum = currentDiff - prevDiff;
+  const context = probabilityContext || { model: getActiveRuntimeModel(), personalization: null };
+  const modelSnapshot = getModelProbabilitySnapshotForState(state, context.model, context.personalization);
+  const modelProbUs = modelSnapshot.modelProbUs;
 
-  // Get the "smoothed" probability from your trained logistic model.
-  const modelProbUs = logisticProb(currentDiff, roundIndex, momentum);
-
-  // ---------------- 3. Blending with Credibility Weighting (The Core Improvement) ----------------
-  // Create a weight 'beta' that determines how much we trust the empirical data.
-  // The more data we have for a situation (observationsInBucket), the higher the weight.
-  // If we have no data, the weight is 0, and we rely 100% on the logistic model.
-
-  // K is the number of observations at which we are 'fully confident' in the empirical data.
-  // A value of 30 means after 30 similar past situations, we heavily trust the historical record.
-  const K_CONFIDENCE_THRESHOLD = 30; 
+  const K_CONFIDENCE_THRESHOLD = 30;
   const beta = Math.min(1, Math.log(observationsInBucket + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));
-
-  // The final probability is a weighted average of the two approaches.
   const blendedProbUs = (beta * empiricalProbUs) + ((1 - beta) * modelProbUs);
 
   return {
     us: +(blendedProbUs * 100).toFixed(1),
-    dem: +((1 - blendedProbUs) * 100).toFixed(1)
+    dem: +((1 - blendedProbUs) * 100).toFixed(1),
   };
 }
 
-function calculateWinProbability(state, historicalGames) {
-  return calculateWinProbabilityComplex(state, historicalGames);
+function calculateWinProbability(state, historicalGames, probabilityContext = null) {
+  return calculateWinProbabilityComplex(state, historicalGames, probabilityContext);
 }
 
-function buildWinProbabilityCacheKey(currentState, historicalGames) {
+function buildWinProbabilityCacheKey(currentState, historicalGames, probabilityContext = null) {
   const rounds = Array.isArray(currentState?.rounds) ? currentState.rounds : [];
   const lastRound = rounds[rounds.length - 1];
   const prevRound = rounds.length > 1 ? rounds[rounds.length - 2] : null;
   const lastTotals = sanitizeTotals(lastRound?.runningTotals);
   const prevTotals = sanitizeTotals(prevRound?.runningTotals);
   const gamesKey = getProbabilityCacheKey(historicalGames);
-  return `${rounds.length}|${lastTotals.us}|${lastTotals.dem}|${prevTotals.us}|${prevTotals.dem}|${gamesKey}`;
+  const context = probabilityContext || getProbabilityContext(historicalGames);
+  const modelId = context.model?.modelId || getActiveRuntimeModel().modelId;
+  const personalizationSignature = getPersonalizationSignature(context.personalization, modelId);
+
+  return [
+    rounds.length,
+    lastTotals.us,
+    lastTotals.dem,
+    prevTotals.us,
+    prevTotals.dem,
+    gamesKey,
+    modelId,
+    personalizationSignature,
+  ].join("|");
 }
 
-function getWinProbability(currentState, historicalGames) {
+function getWinProbability(currentState, historicalGames, probabilityContext = null) {
   const games = Array.isArray(historicalGames) ? historicalGames : [];
-  const cacheKey = buildWinProbabilityCacheKey(currentState, games);
+  const context = probabilityContext || getProbabilityContext(games);
+  const cacheKey = buildWinProbabilityCacheKey(currentState, games, context);
   if (WIN_PROB_CACHE.key === cacheKey && WIN_PROB_CACHE.value) {
     return WIN_PROB_CACHE.value;
   }
-  const value = calculateWinProbability(currentState, games);
+
+  const value = calculateWinProbability(currentState, games, context);
   WIN_PROB_CACHE.key = cacheKey;
   WIN_PROB_CACHE.value = value;
   return value;
@@ -2041,6 +2620,7 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
   const savedGames = getLocalStorage("savedGames", []);
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
+  refreshProbabilityPersonalizationFromSavedGames(savedGames, { force: true });
   showSaveIndicator("Game Saved!");
   resetGame(); // Resets state and clears active game from storage
   confettiTriggered = false;
@@ -2390,7 +2970,9 @@ function generateProbabilityBreakdown() {
   }
 
   const historicalGames = getLocalStorage("savedGames");
-  const winProb = getWinProbability(state, historicalGames);
+  const games = Array.isArray(historicalGames) ? historicalGames : [];
+  const probabilityContext = getProbabilityContext(games);
+  const winProb = getWinProbability(state, games, probabilityContext);
 
   // Get current game state
   const lastRound = state.rounds[state.rounds.length - 1];
@@ -2403,11 +2985,23 @@ function generateProbabilityBreakdown() {
   const momentum = scoreDiff - prevDiff;
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
+  const modelSnapshot = getModelProbabilitySnapshotForState(state, probabilityContext.model, probabilityContext.personalization);
 
-  return generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum);
+  return generateComplexProbabilityBreakdown(
+    scoreDiff,
+    roundsPlayed,
+    labelUs,
+    labelDem,
+    winProb,
+    games,
+    currentScores,
+    momentum,
+    probabilityContext,
+    modelSnapshot
+  );
 }
 
-function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum) {
+function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum, probabilityContext, modelSnapshot) {
   // Get the probability table for complex analysis
   const games = Array.isArray(historicalGames) ? historicalGames : [];
   const cacheKey = getProbabilityCacheKey(games);
@@ -2418,7 +3012,6 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
 
   // Calculate the bucketed score and key for this situation
   const roundIndex = Math.max(0, roundsPlayed - 1);
-  const safeMomentum = Number.isFinite(momentum) ? momentum : 0;
   const bucketedScore = bucketScore(scoreDiff);
   const key = `${roundIndex}|${bucketedScore}`;
   const counts = table[key] || { us: 1, dem: 1 };
@@ -2426,7 +3019,16 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const totalObs = counts.us + counts.dem - 2; // Remove Laplace prior
   const K_CONFIDENCE_THRESHOLD = 30;
   const beta = Math.min(1, Math.log(totalObs + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));
-  const modelProbUs = logisticProb(scoreDiff, roundIndex, safeMomentum);
+  const snapshot = modelSnapshot || getModelProbabilitySnapshotForState(
+    state,
+    probabilityContext?.model || getActiveRuntimeModel(),
+    probabilityContext?.personalization || null
+  );
+  const modelProbUs = snapshot.modelProbUs;
+  const baseModelProbUs = snapshot.baseModelProbUs;
+  const personalizationRecord = snapshot.personalizationRecord;
+  const personalizationActive = snapshot.personalizationActive;
+  const modelId = snapshot.modelId;
 
   // Score bucketing analysis
   const bucketAnalysis = (() => {
@@ -2453,7 +3055,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
 
   // Historical pattern analysis (exact bucket + round)
   const historicalAnalysis = (() => {
-    const relevantGames = historicalGames.filter(game => {
+    const relevantGames = games.filter(game => {
       return game.rounds && game.rounds.length > 0 && game.finalScore;
     });
 
@@ -2483,6 +3085,8 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
     const modelWeight = Math.round((1 - beta) * 100);
     const empiricalPercent = Math.round(empirical * 100);
     const modelPercent = Math.round(modelProbUs * 100);
+    const baseModelPercent = Math.round(baseModelProbUs * 100);
+    const modelLabel = personalizationActive ? "personalized model" : "base model";
 
     let confidence = "Low";
     if (totalObs >= 50) confidence = "Very High";
@@ -2495,8 +3099,48 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
       modelWeight,
       empiricalPercent,
       modelPercent,
+      baseModelPercent,
+      modelLabel,
       confidence,
       totalObservations: totalObs
+    };
+  })();
+
+  const personalizationAnalysis = (() => {
+    const record = normalizePersonalizationRecord(personalizationRecord);
+    if (!record || record.modelId !== modelId) {
+      return {
+        status: "Inactive",
+        detail: "No personalization record for the active model yet.",
+        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (no personalization applied)`,
+      };
+    }
+
+    const updatedAtMs = Date.parse(record.updatedAt || "");
+    const updatedAtText = Number.isFinite(updatedAtMs) ? formatTimestamp(updatedAtMs, "Unknown") : "Unknown";
+    const baseLossText = Number.isFinite(record.baseLogLoss) ? record.baseLogLoss.toFixed(4) : "N/A";
+    const personalizedLossText = Number.isFinite(record.personalizedLogLoss) ? record.personalizedLogLoss.toFixed(4) : "N/A";
+
+    if (personalizationActive) {
+      return {
+        status: "Active",
+        detail: `${record.gameSamples} games / ${record.roundSamples} rounds • Updated ${updatedAtText}`,
+        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% -> Personalized: ${Math.round(modelProbUs * 100)}%`,
+      };
+    }
+
+    if (record.gameSamples < PERSONALIZATION_MIN_GAMES || record.roundSamples < PERSONALIZATION_MIN_ROUNDS) {
+      return {
+        status: "Inactive (more local data needed)",
+        detail: `${record.gameSamples}/${PERSONALIZATION_MIN_GAMES} games • ${record.roundSamples}/${PERSONALIZATION_MIN_ROUNDS} rounds`,
+        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (personalization pending)`,
+      };
+    }
+
+    return {
+      status: "Inactive (no reliable gain)",
+      detail: `Log loss: base ${baseLossText} vs personalized ${personalizedLossText}`,
+      effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (guardrails kept identity calibration)`,
     };
   })();
 
@@ -2518,7 +3162,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Method: Historical bucket + logistic model • Confidence: ${blendingAnalysis.confidence}
+          Method: Historical bucket + regression model${personalizationActive ? " + user calibration" : ""} • Confidence: ${blendingAnalysis.confidence}
         </div>
       </div>
 
@@ -2561,13 +3205,29 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
             <div class="font-medium text-gray-700 dark:text-gray-300">Probability Blend</div>
-            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${blendingAnalysis.empiricalWeight}% Historical bucket + ${blendingAnalysis.modelWeight}% Logistic model</div>
+            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${blendingAnalysis.empiricalWeight}% Historical bucket + ${blendingAnalysis.modelWeight}% Regression model</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Inputs:</strong> ${blendingAnalysis.empiricalPercent}% (bucket) + ${blendingAnalysis.modelPercent}% (model) -> ${winProb.us.toFixed(1)}%
+            <strong>Inputs:</strong> ${blendingAnalysis.empiricalPercent}% (bucket) + ${blendingAnalysis.modelPercent}% (${blendingAnalysis.modelLabel}) -> ${winProb.us.toFixed(1)}%
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Base model output before personalization: ${blendingAnalysis.baseModelPercent}%.
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Based on ${blendingAnalysis.totalObservations} observations in this exact bucket. More data = higher historical weight.
+          </div>
+        </div>
+
+        <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
+          <div class="flex justify-between items-start mb-2">
+            <div class="font-medium text-gray-700 dark:text-gray-300">Per-User Calibration</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">${personalizationAnalysis.status}</div>
+          </div>
+          <div class="text-sm text-gray-600 dark:text-gray-400">
+            ${personalizationAnalysis.detail}
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            ${personalizationAnalysis.effectText}
           </div>
         </div>
       </div>
@@ -2580,11 +3240,12 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
             <p>• <strong>Current state:</strong> Uses the live score after round ${roundsPlayed} and momentum (change in score diff from the previous round)</p>
             <p>• <strong>Historical bucket:</strong> Looks up saved games in the exact round index and 20-point score-diff bucket, with Laplace smoothing (1|1)</p>
             <p>• <strong>Recency weighting:</strong> Disabled; all saved games count equally</p>
-            <p>• <strong>Logistic model:</strong> Computes a model probability from score diff, round index, and momentum using fixed coefficients</p>
+            <p>• <strong>Regression model:</strong> Computes base probability from 14 features (score diff, round index, momentum, bid context, and interaction terms), then applies global Platt calibration</p>
+            <p>• <strong>User calibration:</strong> Learns per-user slope/intercept from completed local games and applies only when data + log-loss guardrails are met</p>
             <p>• <strong>Blend:</strong> Final probability = (weight * historical) + (1 - weight) * model; weight grows with the log of observations in this exact bucket (full weight at 30)</p>
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-            Historical bucket updates as you save games; model coefficients stay fixed until retrained.
+            Historical bucket and user calibration update as you save games; global model coefficients stay fixed until retrained.
           </div>
         </div>
       </div>
@@ -4310,6 +4971,11 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCustomThemeColors(); // Custom primary/accent
   loadCurrentGameState(); // Load after theme
   loadSettings(); // Load settings after game state
+  refreshProbabilityPersonalizationFromSavedGames(getLocalStorage("savedGames", []));
+  loadRuntimeModel().then(() => {
+    refreshProbabilityPersonalizationFromSavedGames(getLocalStorage("savedGames", []));
+    scheduleRender();
+  });
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
@@ -4504,6 +5170,24 @@ if (typeof module !== 'undefined' && module.exports) {
     playersEqual,
     bucketScore,
     buildProbabilityIndex,
+    MODEL_FEATURE_SET,
+    FALLBACK_RUNTIME_MODEL,
+    PROBABILITY_PERSONALIZATION_KEY,
+    getActiveRuntimeModel,
+    normalizeRuntimeModelArtifact,
+    loadRuntimeModel,
+    buildModelFeatureVector,
+    extractModelFeaturesFromRoundContext,
+    computeRawModelProbabilityFromFeatures,
+    predictBaseModelProbabilityFromFeatures,
+    applyPlattCalibration,
+    fitPersonalizationCalibration,
+    ensureProbabilityPersonalizationForGames,
+    refreshProbabilityPersonalizationFromSavedGames,
+    getProbabilityContext,
+    getModelProbabilitySnapshotForState,
+    buildWinProbabilityCacheKey,
+    getWinProbability,
     calculateWinProbabilityComplex,
     calculateWinProbability,
   };

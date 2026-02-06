@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v1.5.5-b9";
+const CACHE_NAME = "rook-cache-v1.6.0-b1";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -6,6 +6,7 @@ const urlsToCache = [
   "./index.html",
   "./css/app.css",
   "./js/app.js",
+  "./js/model_runtime_v1.json",
   "./js/tailwind-config.js",
   "./js/firebase-init.js",
   "./manifest.json",

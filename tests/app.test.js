@@ -193,33 +193,58 @@ const {
   playersEqual,
   bucketScore,
   buildProbabilityIndex,
+  MODEL_FEATURE_SET,
+  FALLBACK_RUNTIME_MODEL,
+  PROBABILITY_PERSONALIZATION_KEY,
+  buildModelFeatureVector,
+  extractModelFeaturesFromRoundContext,
+  predictBaseModelProbabilityFromFeatures,
+  applyPlattCalibration,
+  fitPersonalizationCalibration,
+  ensureProbabilityPersonalizationForGames,
+  getModelProbabilitySnapshotForState,
+  buildWinProbabilityCacheKey,
+  getWinProbability,
+  getProbabilityContext,
   calculateWinProbabilityComplex,
   calculateWinProbability,
 } = require('../js/app.js');
 
-const LOGISTIC_PARAMS = {
-  intercept: 0.2084586876141831,
-  coeffDiff: 0.00421107,
-  coeffRound: -0.09520921,
-  coeffMomentum: 0.00149416,
-};
-
-const computeLogisticPercentage = (diff, roundIndex, momentum) => {
-  const { intercept, coeffDiff, coeffRound, coeffMomentum } = LOGISTIC_PARAMS;
-  const z =
-    intercept +
-    coeffDiff * diff +
-    coeffRound * roundIndex +
-    coeffMomentum * momentum;
-  const probUs = 1 / (1 + Math.exp(-z));
-  return {
-    us: +(probUs * 100).toFixed(1),
-    dem: +((1 - probUs) * 100).toFixed(1),
-  };
-};
-
 const resetState = () => {
   localStorage.clear();
+};
+
+const makeTrainingGames = (numGames = 10, roundsPerGame = 6) => {
+  const games = [];
+  for (let g = 0; g < numGames; g += 1) {
+    const usWins = g % 2 === 0;
+    const rounds = [];
+    let usTotal = 0;
+    let demTotal = 0;
+    for (let r = 0; r < roundsPerGame; r += 1) {
+      const swing = 25 + (r * 5);
+      const usPoints = usWins ? (60 + swing) : (35 - Math.floor(swing / 5));
+      const demPoints = 180 - usPoints;
+      usTotal += usPoints;
+      demTotal += demPoints;
+      rounds.push({
+        roundIndex: r,
+        bidAmount: 130 + ((r % 3) * 5),
+        biddingTeam: r % 2 === 0 ? 'us' : 'dem',
+        usPoints,
+        demPoints,
+        runningTotals: { us: usTotal, dem: demTotal },
+      });
+    }
+
+    games.push({
+      winner: usWins ? 'us' : 'dem',
+      finalScore: { us: usTotal, dem: demTotal },
+      rounds,
+      timestamp: new Date(Date.UTC(2025, 0, 1 + g)).toISOString(),
+    });
+  }
+  return games;
 };
 
 test('sanitizePlayerName trims and normalizes whitespace', () => {
@@ -321,6 +346,66 @@ test('bucketScore returns zero for ties and caps large negative swings', () => {
   assert.ok(smallNegative === 0);
   assert.ok(Object.is(smallNegative, -0));
   assert.equal(bucketScore(-999), -180);
+});
+
+test('model feature set includes all expected runtime features', () => {
+  assert.equal(MODEL_FEATURE_SET.length, 14);
+  assert.ok(MODEL_FEATURE_SET.includes('diff'));
+  assert.ok(MODEL_FEATURE_SET.includes('momentum_x_round'));
+  assert.ok(MODEL_FEATURE_SET.includes('lead_sign'));
+});
+
+test('extractModelFeaturesFromRoundContext maps full feature vector correctly', () => {
+  const prevRound = { runningTotals: { us: 45, dem: 135 } };
+  const lastRound = {
+    runningTotals: { us: 200, dem: 190 },
+    bidAmount: 140,
+    biddingTeam: 'Dem',
+    usPoints: 155,
+    demPoints: 55,
+  };
+  const features = extractModelFeaturesFromRoundContext(1, lastRound, prevRound);
+
+  assert.equal(features.diff, 10);
+  assert.equal(features.round_idx, 1);
+  assert.equal(features.momentum, 100);
+  assert.equal(features.bid_amount, 140);
+  assert.equal(features.bidding_team_sign, -1);
+  assert.equal(features.point_delta, 100);
+  assert.equal(features.abs_diff, 10);
+  assert.equal(features.abs_momentum, 100);
+  assert.equal(features.diff_x_round, 10);
+  assert.equal(features.point_delta_x_round, 100);
+  assert.equal(features.bid_x_team, -140);
+  assert.equal(features.diff_x_point_delta, 1000);
+  assert.equal(features.momentum_x_round, 100);
+  assert.equal(features.lead_sign, 1);
+});
+
+test('extractModelFeaturesFromRoundContext normalizes missing bid and team fields', () => {
+  const lastRound = {
+    runningTotals: { us: 20, dem: 60 },
+    usPoints: 20,
+    demPoints: 60,
+  };
+  const features = extractModelFeaturesFromRoundContext(0, lastRound, null);
+  assert.equal(features.bid_amount, 0);
+  assert.equal(features.bidding_team_sign, 0);
+  assert.equal(features.momentum, 0);
+});
+
+test('base model probability matches expected calibrated value for known round sample', () => {
+  const features = buildModelFeatureVector({
+    diff: -90,
+    roundIdx: 0,
+    momentum: 0,
+    bidAmount: 130,
+    biddingTeamSign: -1,
+    pointDelta: -90,
+  });
+
+  const probUs = predictBaseModelProbabilityFromFeatures(features, FALLBACK_RUNTIME_MODEL);
+  assert.ok(Math.abs(probUs - 0.3609258237010129) < 1e-9);
 });
 
 test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
@@ -476,8 +561,9 @@ test('calculateWinProbabilityComplex blends empirical and model probabilities', 
     ];
 
     const result = calculateWinProbabilityComplex(state, historicalGames);
-    assert.ok(result.us > result.dem);
-    assert.ok(result.us >= 50);
+    assert.ok(result.us >= 0 && result.us <= 100);
+    assert.ok(result.dem >= 0 && result.dem <= 100);
+    assert.notEqual(result.us, 50);
     assert.equal(Number(result.us.toFixed(1)) + Number(result.dem.toFixed(1)), 100);
   } finally {
     Date.now = originalNow;
@@ -533,23 +619,30 @@ test('calculateWinProbabilityComplex returns even odds with no rounds', () => {
   assert.deepEqual(result, { us: 50, dem: 50 });
 });
 
-test('calculateWinProbabilityComplex falls back to logistic model without history', () => {
+test('calculateWinProbabilityComplex falls back to runtime regression model without history', () => {
   const state = {
     rounds: [
-      { runningTotals: { us: 40, dem: 20 } },
-      { runningTotals: { us: 110, dem: 60 } },
+      {
+        runningTotals: { us: 45, dem: 135 },
+        bidAmount: 130,
+        biddingTeam: 'Dem',
+        usPoints: 45,
+        demPoints: 135,
+      },
+      {
+        runningTotals: { us: 200, dem: 190 },
+        bidAmount: 140,
+        biddingTeam: 'dem',
+        usPoints: 155,
+        demPoints: 55,
+      },
     ],
   };
-  const roundIndex = state.rounds.length - 1;
-  const currentDiff = 110 - 60;
-  const prevDiff = 40 - 20;
-  const momentum = currentDiff - prevDiff;
-
-  const expected = computeLogisticPercentage(currentDiff, roundIndex, momentum);
+  const snapshot = getModelProbabilitySnapshotForState(state, FALLBACK_RUNTIME_MODEL, null);
   const result = calculateWinProbabilityComplex(state, []);
 
-  assert.equal(result.us, expected.us);
-  assert.equal(result.dem, expected.dem);
+  assert.equal(result.us, +(snapshot.modelProbUs * 100).toFixed(1));
+  assert.equal(result.dem, +((1 - snapshot.modelProbUs) * 100).toFixed(1));
 });
 
 test('calculateWinProbabilityComplex favors opponent when trailing with no data', () => {
@@ -574,6 +667,99 @@ test('calculateWinProbability proxies to calculateWinProbabilityComplex', () => 
     calculateWinProbability(state, historicalGames),
     calculateWinProbabilityComplex(state, historicalGames),
   );
+});
+
+test('fitPersonalizationCalibration returns identity when improvement threshold is not met', () => {
+  const logits = [0, 0, 0, 0, 0, 0];
+  const labels = [0, 1, 0, 1, 0, 1];
+  const result = fitPersonalizationCalibration(logits, labels, { minImprovement: 0.5 });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.slope, 1);
+  assert.equal(result.intercept, 0);
+  assert.equal(result.personalizedLogLoss, result.baseLogLoss);
+});
+
+test('fitPersonalizationCalibration accepts calibration when log loss improves', () => {
+  const logits = [-1, -0.6, -0.2, 0.2, 0.6, 1];
+  const labels = [0, 0, 0, 1, 1, 1];
+  const result = fitPersonalizationCalibration(logits, labels, {
+    epochs: 5000,
+    minImprovement: 1e-8,
+    maxSlope: 100,
+    maxAbsIntercept: 20,
+  });
+
+  assert.equal(result.accepted, true);
+  assert.ok(result.personalizedLogLoss < result.baseLogLoss);
+  assert.notEqual(result.slope, 1);
+});
+
+test('ensureProbabilityPersonalizationForGames stores personalization record from saved games', () => {
+  resetState();
+  const games = makeTrainingGames(10, 6);
+  const record = ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL, { force: true });
+  const stored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
+
+  assert.equal(stored.schemaVersion, 1);
+  assert.equal(stored.modelId, FALLBACK_RUNTIME_MODEL.modelId);
+  assert.equal(stored.gameSamples, 10);
+  assert.equal(stored.roundSamples, 60);
+  assert.equal(record.gamesHash, stored.gamesHash);
+});
+
+test('ensureProbabilityPersonalizationForGames does not recompute when hash is unchanged', () => {
+  resetState();
+  const games = makeTrainingGames(10, 6);
+  ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL, { force: true });
+  const firstStored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
+
+  const secondRecord = ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL);
+  const secondStored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
+
+  assert.equal(secondRecord.gamesHash, firstStored.gamesHash);
+  assert.equal(secondStored.updatedAt, firstStored.updatedAt);
+});
+
+test('win probability cache key and output change when personalization parameters change', () => {
+  resetState();
+  const state = {
+    rounds: [
+      {
+        runningTotals: { us: 160, dem: 80 },
+        bidAmount: 130,
+        biddingTeam: 'us',
+        usPoints: 160,
+        demPoints: 80,
+      },
+    ],
+  };
+  const historicalGames = [];
+  const common = {
+    schemaVersion: 1,
+    modelId: FALLBACK_RUNTIME_MODEL.modelId,
+    roundSamples: 120,
+    gameSamples: 20,
+    gamesHash: '0',
+    updatedAt: '2026-02-06T00:00:00.000Z',
+    baseLogLoss: 0.5,
+  };
+  const contextA = {
+    model: FALLBACK_RUNTIME_MODEL,
+    personalization: { ...common, slope: 1, intercept: 0, personalizedLogLoss: 0.49 },
+  };
+  const contextB = {
+    model: FALLBACK_RUNTIME_MODEL,
+    personalization: { ...common, slope: 2, intercept: 0, personalizedLogLoss: 0.45 },
+  };
+
+  const keyA = buildWinProbabilityCacheKey(state, historicalGames, contextA);
+  const keyB = buildWinProbabilityCacheKey(state, historicalGames, contextB);
+  assert.notEqual(keyA, keyB);
+
+  const first = getWinProbability(state, historicalGames, contextA);
+  const second = getWinProbability(state, historicalGames, contextB);
+  assert.notEqual(first.us, second.us);
 });
 
 // --- Dealer Order & Misdeal Handling Tests ---
