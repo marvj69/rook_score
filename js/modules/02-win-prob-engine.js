@@ -106,6 +106,14 @@ function applyPlattCalibration(prob, slope, intercept) {
   return safeSigmoid(calibratedLogit);
 }
 
+function toDisplayProbabilityPercents(probUs) {
+  const usPercentRaw = clampProbability(probUs) * 100;
+  const usPercentBounded = Math.min(99.9, Math.max(0.1, usPercentRaw));
+  const us = +usPercentBounded.toFixed(1);
+  const dem = +(100 - us).toFixed(1);
+  return { us, dem };
+}
+
 function clearWinProbabilityCache() {
   WIN_PROB_CACHE.key = null;
   WIN_PROB_CACHE.value = null;
@@ -696,10 +704,7 @@ function calculateWinProbabilityComplex(state, historicalGames, probabilityConte
   const beta = Math.min(1, Math.log(observationsInBucket + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));
   const blendedProbUs = (beta * empiricalProbUs) + ((1 - beta) * modelProbUs);
 
-  return {
-    us: +(blendedProbUs * 100).toFixed(1),
-    dem: +((1 - blendedProbUs) * 100).toFixed(1),
-  };
+  return toDisplayProbabilityPercents(blendedProbUs);
 }
 
 function calculateWinProbability(state, historicalGames, probabilityContext = null) {
@@ -742,5 +747,4 @@ function getWinProbability(currentState, historicalGames, probabilityContext = n
   WIN_PROB_CACHE.value = value;
   return value;
 }
-
 

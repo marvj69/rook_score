@@ -656,6 +656,24 @@ test('calculateWinProbabilityComplex favors opponent when trailing with no data'
   assert.equal(result.us + result.dem, 100);
 });
 
+test('calculateWinProbabilityComplex never returns 0% or 100% endpoints', () => {
+  const usLocked = calculateWinProbabilityComplex({
+    rounds: [
+      { runningTotals: { us: 500, dem: 0 } },
+    ],
+  }, []);
+  assert.ok(usLocked.us < 100);
+  assert.ok(usLocked.dem > 0);
+
+  const demLocked = calculateWinProbabilityComplex({
+    rounds: [
+      { runningTotals: { us: 0, dem: 500 } },
+    ],
+  }, []);
+  assert.ok(demLocked.us > 0);
+  assert.ok(demLocked.dem < 100);
+});
+
 test('calculateWinProbability proxies to calculateWinProbabilityComplex', () => {
   const state = {
     rounds: [
