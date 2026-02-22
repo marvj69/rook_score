@@ -400,17 +400,16 @@ function handleRedo() {
   } else if ((redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) || 
              (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500)) {
       if (!mustWinByBid) { gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (lastTotals.us >= 500 || lastTotals.dem >= 500) {
-      if (mustWinByBid) {
-          if ((redoRound.biddingTeam === "us" && lastTotals.us >= 500 && redoRound.usPoints >= redoRound.bidAmount) ||
-              (redoRound.biddingTeam === "dem" && lastTotals.dem >= 500 && redoRound.demPoints >= redoRound.bidAmount)) {
-              gameOver = true; winner = redoRound.biddingTeam; victoryMethod = "Won on Bid";
-          }
-      } else {
-          gameOver = true; winner = lastTotals.us >= lastTotals.dem ? "us" : (lastTotals.dem > lastTotals.us ? "dem" : null);
-          if (winner === null && lastTotals.us === lastTotals.dem) victoryMethod = "Tie at 500+";
-          else if(winner) victoryMethod = "Reached 500+";
-      }
+  } else if (
+      (redoRound.biddingTeam === "us" && lastTotals.us >= 500 && redoRound.usPoints >= redoRound.bidAmount) ||
+      (redoRound.biddingTeam === "dem" && lastTotals.dem >= 500 && redoRound.demPoints >= redoRound.bidAmount)
+  ) {
+      gameOver = true; winner = redoRound.biddingTeam; victoryMethod = "Won on Bid";
+  } else if (
+      (redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) ||
+      (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500)
+  ) {
+      gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team";
   }
 
   updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam });
@@ -673,4 +672,3 @@ function deleteGame(storageKey, index, descriptor) {
 }
 function deleteSavedGame(index) { deleteGame("savedGames", index, "completed game"); }
 function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen game"); }
-
