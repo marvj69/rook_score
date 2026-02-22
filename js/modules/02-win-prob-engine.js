@@ -618,28 +618,42 @@ function bucketScore(diff) {
 
 function getProbabilityCacheKey(historicalGames) {
   if (!Array.isArray(historicalGames) || !historicalGames.length) return '0';
-  const MOD = 2_147_483_647;
-  let newest = 0;
-  let checksum = 0;
+  let hash = 2166136261;
+
+  const hashText = (value) => {
+    const str = String(value ?? "");
+    for (let idx = 0; idx < str.length; idx += 1) {
+      hash ^= str.charCodeAt(idx);
+      hash = Math.imul(hash, 16777619);
+    }
+  };
 
   for (const game of historicalGames) {
-    const ts = Date.parse(game?.timestamp ?? '');
-    if (Number.isFinite(ts)) {
-      newest = Math.max(newest, ts);
-      checksum = (checksum + (ts % MOD)) % MOD;
-    } else {
-      checksum = (checksum + 1) % MOD;
-    }
-
+    const winner = inferWinnerSide(game) || "none";
     const totals = sanitizeTotals(game?.finalScore);
-    checksum = (checksum + totals.us * 31 + totals.dem * 37) % MOD;
+    const rounds = Array.isArray(game?.rounds) ? game.rounds : [];
 
-    if (Array.isArray(game?.rounds)) {
-      checksum = (checksum + game.rounds.length * 13) % MOD;
+    hashText(game?.id || game?.timestamp || "game");
+    hashText(winner);
+    hashText(totals.us);
+    hashText(totals.dem);
+    hashText(rounds.length);
+
+    for (let roundIdx = 0; roundIdx < rounds.length; roundIdx += 1) {
+      const round = rounds[roundIdx];
+      const runningTotals = sanitizeTotals(round?.runningTotals);
+      hashText(roundIdx);
+      hashText(round?.roundIndex ?? "");
+      hashText(round?.biddingTeam || "");
+      hashText(parseFiniteNumber(round?.bidAmount, 0));
+      hashText(parseFiniteNumber(round?.usPoints, 0));
+      hashText(parseFiniteNumber(round?.demPoints, 0));
+      hashText(runningTotals.us);
+      hashText(runningTotals.dem);
     }
   }
 
-  return `${historicalGames.length}|${newest}|${checksum}`;
+  return `${historicalGames.length}|${(hash >>> 0).toString(16)}`;
 }
 
 function buildProbabilityIndex(historicalGames) {
@@ -747,4 +761,3 @@ function getWinProbability(currentState, historicalGames, probabilityContext = n
   WIN_PROB_CACHE.value = value;
   return value;
 }
-
