@@ -1,6 +1,104 @@
 "use strict";
 
 // --- Menu & Modal Toggling ---
+
+const DEALER_INPUT_IDS = ["dealer1", "dealer2", "dealer3", "dealer4"];
+const dealerSuggestionControllers = [];
+
+function destroyDealerSuggestionControllers() {
+  while (dealerSuggestionControllers.length) {
+    const controller = dealerSuggestionControllers.pop();
+    controller?.destroy?.();
+  }
+}
+
+function setDealerSuggestionsVisibility(container, visible) {
+  if (!container) return;
+  container.classList.toggle("hidden", !visible);
+}
+
+function renderDealerSuggestionItems(container, suggestions, onSelect) {
+  if (!container) return;
+  if (!suggestions.length) {
+    container.innerHTML = "";
+    setDealerSuggestionsVisibility(container, false);
+    return;
+  }
+
+  container.innerHTML = suggestions
+    .map(name => `<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:text-white dark:hover:bg-gray-600 dark:focus:bg-gray-600" data-suggested-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
+    .join("");
+  setDealerSuggestionsVisibility(container, true);
+
+  Array.from(container.querySelectorAll("button[data-suggested-name]")).forEach((button) => {
+    const handleSelect = (event) => {
+      event.preventDefault();
+      onSelect(button.dataset.suggestedName || "");
+    };
+    if (typeof window !== "undefined" && "PointerEvent" in window) {
+      button.addEventListener("pointerdown", handleSelect);
+    } else {
+      button.addEventListener("mousedown", handleSelect);
+      button.addEventListener("touchstart", handleSelect, { passive: false });
+    }
+  });
+}
+
+function createDealerSuggestionController(inputId) {
+  const input = document.getElementById(inputId);
+  const container = document.getElementById(`${inputId}Suggestions`);
+  if (!input || !container) return null;
+
+  let blurTimeoutId = null;
+
+  const updateSuggestions = () => {
+    const orderedSuggestions = refreshPlayerSuggestions();
+    const filteredSuggestions = getFilteredPlayerSuggestions(orderedSuggestions, input.value, 6)
+      .filter(name => name.toLowerCase() !== sanitizePlayerName(input.value).toLowerCase());
+
+    renderDealerSuggestionItems(container, filteredSuggestions, (selectedName) => {
+      input.value = selectedName;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      setDealerSuggestionsVisibility(container, false);
+      input.focus();
+    });
+  };
+
+  const handleFocus = () => updateSuggestions();
+  const handleInput = () => updateSuggestions();
+  const handleBlur = () => {
+    clearTimeout(blurTimeoutId);
+    blurTimeoutId = window.setTimeout(() => setDealerSuggestionsVisibility(container, false), 120);
+  };
+
+  input.addEventListener("focus", handleFocus);
+  input.addEventListener("input", handleInput);
+  input.addEventListener("blur", handleBlur);
+
+  return {
+    destroy() {
+      clearTimeout(blurTimeoutId);
+      input.removeEventListener("focus", handleFocus);
+      input.removeEventListener("input", handleInput);
+      input.removeEventListener("blur", handleBlur);
+      container.innerHTML = "";
+      setDealerSuggestionsVisibility(container, false);
+    },
+    update: updateSuggestions,
+  };
+}
+
+function setupDealerNameSuggestions() {
+  destroyDealerSuggestionControllers();
+  DEALER_INPUT_IDS.forEach((inputId) => {
+    const controller = createDealerSuggestionController(inputId);
+    if (controller) {
+      dealerSuggestionControllers.push(controller);
+      controller.update();
+    }
+  });
+}
+
 function toggleMenu(e) {
   if (e) e.stopPropagation();
   const menu = document.getElementById("menu");
@@ -63,9 +161,14 @@ function openDealerOrderModal() {
   const form = document.getElementById("dealerOrderForm");
   if (form) form.reset();
   refreshPlayerSuggestions();
+  setupDealerNameSuggestions();
   openModal("dealerOrderModal");
+  document.getElementById("dealer1")?.focus();
 }
-function closeDealerOrderModal() { closeModal("dealerOrderModal"); }
+function closeDealerOrderModal() {
+  destroyDealerSuggestionControllers();
+  closeModal("dealerOrderModal");
+}
 function openDealerPairSelectionModal() {
   // Populate the button text with dealer names
   if (state.dealers && state.dealers.length === 4) {

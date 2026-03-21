@@ -230,5 +230,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getWinProbability,
     calculateWinProbabilityComplex,
     calculateWinProbability,
+    getOrderedPlayerSuggestions,
+    getFilteredPlayerSuggestions,
   };
 }

@@ -387,21 +387,46 @@ function buildNameRecencyMaps(teamsObj = null) {
 
   return { playerRecency, teamRecency };
 }
-function refreshPlayerSuggestions() {
+function getOrderedPlayerSuggestions() {
   const teamsObj = getTeamsObject();
   const { playerRecency } = buildNameRecencyMaps(teamsObj);
 
+  return Array.from(playerRecency.entries())
+    .sort((a, b) => {
+      const diff = b[1] - a[1];
+      if (diff) return diff;
+      return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
+    })
+    .map(([name]) => name);
+}
+function getFilteredPlayerSuggestions(suggestions, query = '', limit = 6) {
+  const normalizedQuery = sanitizePlayerName(query).toLowerCase();
+  const uniqueSuggestions = [];
+  const seen = new Set();
+
+  suggestions.forEach((name) => {
+    const cleaned = sanitizePlayerName(name);
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) return;
+    if (normalizedQuery && !key.includes(normalizedQuery)) return;
+    seen.add(key);
+    uniqueSuggestions.push(cleaned);
+  });
+
+  return uniqueSuggestions.slice(0, limit);
+}
+function refreshPlayerSuggestions() {
+  const orderedSuggestions = getOrderedPlayerSuggestions();
+
   const datalist = document.getElementById("playerNameSuggestions");
   if (datalist) {
-    datalist.innerHTML = Array.from(playerRecency.entries())
-      .sort((a, b) => {
-        const diff = b[1] - a[1];
-        if (diff) return diff;
-        return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
-      })
-      .map(([name]) => `<option value="${name.replace(/"/g, '&quot;')}"></option>`)
+    datalist.innerHTML = orderedSuggestions
+      .map(name => `<option value="${name.replace(/"/g, '&quot;')}"></option>`)
       .join("\n");
   }
+
+  return orderedSuggestions;
 }
 function populateTeamSelects() {
   const teamsObj = getTeamsObject();
