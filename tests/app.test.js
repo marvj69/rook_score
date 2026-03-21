@@ -208,6 +208,7 @@ const {
   getProbabilityContext,
   calculateWinProbabilityComplex,
   calculateWinProbability,
+  getFilteredPlayerSuggestions,
 } = require('../js/app.js');
 
 const resetState = () => {
@@ -284,6 +285,25 @@ test('buildTeamKey lowercases sorted player names', () => {
   assert.equal(buildTeamKey(['Alice', 'bob']), 'alice||bob');
   assert.equal(buildTeamKey(['', '']), '');
 });
+test('getFilteredPlayerSuggestions returns recent matching names without duplicates', () => {
+  const suggestions = getFilteredPlayerSuggestions([
+    ' Alice ',
+    'bob',
+    'ALICE',
+    'Bobby',
+    'Carol',
+    '',
+  ], 'bo', 5);
+
+  assert.deepEqual(suggestions, ['bob', 'Bobby']);
+});
+
+test('getFilteredPlayerSuggestions limits blank-query results to the requested size', () => {
+  const suggestions = getFilteredPlayerSuggestions(['Alice', 'Bob', 'Carol', 'Diane'], '', 2);
+
+  assert.deepEqual(suggestions, ['Alice', 'Bob']);
+});
+
 
 test('parseLegacyTeamName handles separators and fallbacks', () => {
   assert.deepEqual(parseLegacyTeamName('Alice & Bob'), ['Alice', 'Bob']);
