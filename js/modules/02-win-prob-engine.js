@@ -610,10 +610,11 @@ function getModelProbabilitySnapshotForState(currentState, model = getActiveRunt
 }
 
 function bucketScore(diff) {
-  const sign = diff < 0 ? -1 : 1;
-  const abs = Math.min(Math.abs(diff), 180);   // >=180 => final bucket
-  const band = Math.floor(abs / 20) * 20;      // 0-19,20-39,...160-179
-  return sign * band;                          // e.g. -40 or 120
+  const value = parseFiniteNumber(diff, 0);
+  if (value === 0) return 0;
+  const sign = value < 0 ? -1 : 1;
+  const band = Math.min(Math.ceil(Math.abs(value) / 20) * 20, 180);
+  return sign * band;
 }
 
 function getProbabilityCacheKey(historicalGames) {
@@ -669,9 +670,9 @@ function buildProbabilityIndex(historicalGames) {
     if (!g || !Array.isArray(g.rounds) || !g.rounds.length || !g.finalScore) return;
 
     const finalTotals = sanitizeTotals(g.finalScore);
-    const usWins = finalTotals.us > finalTotals.dem;
-    const demWins = finalTotals.dem > finalTotals.us;
-    const winners = usWins ? ['us'] : demWins ? ['dem'] : ['us', 'dem'];
+    const winner = inferWinnerSide(g);
+    const winners = winner ? [winner] : (finalTotals.us === finalTotals.dem ? ['us', 'dem'] : []);
+    if (!winners.length) return;
     const weightEach = winners.length === 2 ? 0.5 : 1;
 
     g.rounds.forEach((r, idx) => {
@@ -731,6 +732,9 @@ function buildWinProbabilityCacheKey(currentState, historicalGames, probabilityC
   const prevRound = rounds.length > 1 ? rounds[rounds.length - 2] : null;
   const lastTotals = sanitizeTotals(lastRound?.runningTotals);
   const prevTotals = sanitizeTotals(prevRound?.runningTotals);
+  const roundIndex = rounds.length > 0 ? rounds.length - 1 : 0;
+  const features = extractModelFeaturesFromRoundContext(roundIndex, lastRound, prevRound);
+  const featureSignature = MODEL_FEATURE_SET.map(name => parseFiniteNumber(features[name], 0)).join(",");
   const gamesKey = getProbabilityCacheKey(historicalGames);
   const context = probabilityContext || getProbabilityContext(historicalGames);
   const modelId = context.model?.modelId || getActiveRuntimeModel().modelId;
@@ -742,6 +746,7 @@ function buildWinProbabilityCacheKey(currentState, historicalGames, probabilityC
     lastTotals.dem,
     prevTotals.us,
     prevTotals.dem,
+    featureSignature,
     gamesKey,
     modelId,
     personalizationSignature,

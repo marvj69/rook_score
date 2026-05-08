@@ -108,7 +108,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
     let bucketDescription = "";
 
     if (bucketSize === 0) {
-      bucketDescription = "Tied games (0 points)";
+      bucketDescription = "Tied games";
     } else if (bucketSize <= 130) {
       bucketDescription = `Close games (${bucketRange})`;
     } else if (bucketSize <= 180) {
@@ -327,16 +327,9 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
 function getBucketRange(bucketedScore) {
   const abs = Math.abs(bucketedScore);
   if (abs === 0) return "0";
-  if (abs === 20) return "0-19";
-  if (abs === 40) return "20-39";
-  if (abs === 60) return "40-59";
-  if (abs === 80) return "60-79";
-  if (abs === 100) return "80-99";
-  if (abs === 120) return "100-119";
-  if (abs === 140) return "120-139";
-  if (abs === 160) return "140-159";
-  if (abs === 180) return "160+";
-  return `${abs}`;
+  if (abs === 180) return "161+";
+  const lower = abs - 19;
+  return `${lower}-${abs}`;
 }
 function buildNameRecencyMaps(teamsObj = null) {
   const playerRecency = new Map();

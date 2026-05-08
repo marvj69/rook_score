@@ -211,6 +211,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getGameTeamDisplay,
     playersEqual,
     bucketScore,
+    getBucketRange,
     buildProbabilityIndex,
     MODEL_FEATURE_SET,
     FALLBACK_RUNTIME_MODEL,

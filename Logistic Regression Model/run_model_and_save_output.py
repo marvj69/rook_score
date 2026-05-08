@@ -78,6 +78,25 @@ def safe_float(value: object) -> float:
         return 0.0
 
 
+def safe_round_index(round_obj: Dict, fallback: int) -> int:
+    try:
+        value = round_obj.get("roundIndex")
+        if value is None:
+            return fallback
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def normalize_bidding_team(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower()
+    if normalized in {"us", "dem"}:
+        return normalized
+    return ""
+
+
 def parse_timestamp(value: Optional[str]) -> datetime:
     if not value:
         return datetime.min.replace(tzinfo=timezone.utc)
@@ -130,10 +149,13 @@ def extract_round_dataset(game_data: List[Dict]) -> RoundDataset:
     for game_index, game in enumerate(game_data):
         label = 1.0 if game.get("winner") == "us" else 0.0
         previous_diff = 0.0
-        rounds = sorted(game.get("rounds", []), key=lambda item: int(item.get("roundIndex", 0)))
+        rounds = sorted(
+            enumerate(game.get("rounds", [])),
+            key=lambda item: (safe_round_index(item[1], item[0]), item[0]),
+        )
 
-        for round_obj in rounds:
-            round_index = int(round_obj.get("roundIndex", 0))
+        for fallback_index, round_obj in rounds:
+            round_index = safe_round_index(round_obj, fallback_index)
             totals = round_obj.get("runningTotals", {})
             us_total = safe_float(totals.get("us"))
             dem_total = safe_float(totals.get("dem"))
@@ -143,7 +165,7 @@ def extract_round_dataset(game_data: List[Dict]) -> RoundDataset:
             previous_diff = diff
 
             bid_amount = safe_float(round_obj.get("bidAmount"))
-            bidding_team = round_obj.get("biddingTeam")
+            bidding_team = normalize_bidding_team(round_obj.get("biddingTeam"))
             bidding_team_sign = 1.0 if bidding_team == "us" else (-1.0 if bidding_team == "dem" else 0.0)
 
             us_points = safe_float(round_obj.get("usPoints"))

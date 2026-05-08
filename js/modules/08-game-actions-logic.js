@@ -120,6 +120,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   }
   const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
   const newRound = {
+    roundIndex: rounds.length,
     biddingTeam,
     bidAmount: numericBid,
     usPoints: usEarned,
@@ -310,7 +311,7 @@ function handleFormSubmit(e, skipZeroCheck = false) {
 
   const lastTotals = getLastRunningTotals();
   const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
-  const newRound = { biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
+  const newRound = { roundIndex: rounds.length, biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
   const updatedRounds = [...rounds, newRound];
 
   const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);

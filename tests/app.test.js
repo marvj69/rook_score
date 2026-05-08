@@ -194,6 +194,7 @@ const {
   getGameTeamDisplay,
   playersEqual,
   bucketScore,
+  getBucketRange,
   buildProbabilityIndex,
   MODEL_FEATURE_SET,
   FALLBACK_RUNTIME_MODEL,
@@ -356,18 +357,26 @@ test('playersEqual ignores ordering but respects exact casing', () => {
 });
 
 test('bucketScore groups differences into twenty point buckets with caps', () => {
-  assert.equal(bucketScore(19), 0);
+  assert.equal(bucketScore(1), 20);
+  assert.equal(bucketScore(19), 20);
   assert.equal(bucketScore(20), 20);
-  assert.equal(bucketScore(-37), -20);
+  assert.equal(bucketScore(21), 40);
+  assert.equal(bucketScore(-1), -20);
+  assert.equal(bucketScore(-37), -40);
   assert.equal(bucketScore(999), 180);
 });
 
-test('bucketScore returns zero for ties and caps large negative swings', () => {
+test('bucketScore reserves zero for ties and caps large negative swings', () => {
   assert.equal(bucketScore(0), 0);
-  const smallNegative = bucketScore(-5);
-  assert.ok(smallNegative === 0);
-  assert.ok(Object.is(smallNegative, -0));
+  assert.equal(bucketScore(-5), -20);
   assert.equal(bucketScore(-999), -180);
+});
+
+test('getBucketRange labels score buckets with matching signed bucket semantics', () => {
+  assert.equal(getBucketRange(0), '0');
+  assert.equal(getBucketRange(20), '1-20');
+  assert.equal(getBucketRange(-40), '21-40');
+  assert.equal(getBucketRange(180), '161+');
 });
 
 test('model feature set includes all expected runtime features', () => {
@@ -464,6 +473,19 @@ test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
   }
 });
 
+test('buildProbabilityIndex uses explicit saved winner over final score leader', () => {
+  const historicalGames = [
+    {
+      winner: 'us',
+      finalScore: { us: 480, dem: 520 },
+      rounds: [{ runningTotals: { us: 10, dem: 0 } }],
+    },
+  ];
+
+  const table = buildProbabilityIndex(historicalGames);
+  assert.deepEqual(table['0|20'], { us: 2, dem: 1 });
+});
+
 test('buildProbabilityIndex weights games equally and skips invalid games', () => {
   resetState();
   const fixedNow = new Date('2025-01-15T00:00:00Z').valueOf();
@@ -540,6 +562,25 @@ test('buildProbabilityIndex does not bias ties toward a team', () => {
   } finally {
     Date.now = originalNow;
   }
+});
+
+test('calculateWinProbabilityComplex keeps small leads separated by team', () => {
+  const historicalGames = Array.from({ length: 30 }, (_, index) => ({
+    winner: 'us',
+    finalScore: { us: 500 + index, dem: 300 },
+    rounds: [{ runningTotals: { us: 10, dem: 0 } }],
+  }));
+  const usSmallLead = { rounds: [{ runningTotals: { us: 10, dem: 0 } }] };
+  const demSmallLead = { rounds: [{ runningTotals: { us: 0, dem: 10 } }] };
+
+  const table = buildProbabilityIndex(historicalGames);
+  assert.deepEqual(table['0|20'], { us: 31, dem: 1 });
+  assert.equal(table['0|-20'], undefined);
+
+  const usLeadProb = calculateWinProbabilityComplex(usSmallLead, historicalGames);
+  const demLeadProb = calculateWinProbabilityComplex(demSmallLead, historicalGames);
+  assert.ok(usLeadProb.us > 90);
+  assert.ok(demLeadProb.us < usLeadProb.us);
 });
 
 test('calculateWinProbabilityComplex blends empirical and model probabilities', () => {
@@ -799,6 +840,41 @@ test('win probability cache key and output change when personalization parameter
 
   const first = getWinProbability(state, historicalGames, contextA);
   const second = getWinProbability(state, historicalGames, contextB);
+  assert.notEqual(first.us, second.us);
+});
+
+test('win probability cache key changes when current round model features change', () => {
+  const historicalGames = [];
+  const context = { model: FALLBACK_RUNTIME_MODEL, personalization: null };
+  const directBidState = {
+    rounds: [
+      {
+        runningTotals: { us: 160, dem: 140 },
+        bidAmount: 120,
+        biddingTeam: 'us',
+        usPoints: 160,
+        demPoints: 140,
+      },
+    ],
+  };
+  const higherBidSameScoreState = {
+    rounds: [
+      {
+        runningTotals: { us: 160, dem: 140 },
+        bidAmount: 180,
+        biddingTeam: 'dem',
+        usPoints: 140,
+        demPoints: 160,
+      },
+    ],
+  };
+
+  const keyA = buildWinProbabilityCacheKey(directBidState, historicalGames, context);
+  const keyB = buildWinProbabilityCacheKey(higherBidSameScoreState, historicalGames, context);
+  assert.notEqual(keyA, keyB);
+
+  const first = getWinProbability(directBidState, historicalGames, context);
+  const second = getWinProbability(higherBidSameScoreState, historicalGames, context);
   assert.notEqual(first.us, second.us);
 });
 
