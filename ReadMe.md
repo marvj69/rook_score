@@ -190,26 +190,39 @@ A modern web browser. No complex build steps are required for local development 
 
 ### Running Locally
 1.  Clone or download this repository.
-2.  Simply open the `index.html` file in your web browser.
+2.  Simply open the `index.html` file in your web browser for local-only scoring.
+3.  To test Firebase cloud sync locally, run the app through Vercel with the Firebase environment variables below.
+
+### Vercel Environment Variables
+Firebase cloud sync is configured through a Vercel serverless endpoint instead of hardcoded source values. Add these variables in Vercel for Production, Preview, and Development as needed:
+
+```text
+FIREBASE_API_KEY
+FIREBASE_AUTH_DOMAIN
+FIREBASE_PROJECT_ID
+FIREBASE_STORAGE_BUCKET
+FIREBASE_MESSAGING_SENDER_ID
+FIREBASE_APP_ID
+```
+
+For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
+
+```bash
+npx vercel dev
+```
+
+Opening `index.html` directly still works for local scoring, but Google sign-in and Firestore sync require the Vercel `/api/firebase-config` endpoint.
+
+### GitHub Pages
+The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` using the endpoint's CORS allowlist. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint's allowlist or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` in Vercel.
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:
 1.  Go to the [Firebase Console](https://console.firebase.google.com/).
 2.  Create a new Firebase project.
 3.  Add a Web app to your project.
-4.  Copy the Firebase configuration object provided.
-5.  In `index.html`, find the `firebaseConfig` object (around line 700) and replace it with your project's configuration.
-    ```javascript
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-    ```
-6.  **Enable Firebase Services:**
+4.  Copy the Firebase configuration values into the matching Vercel environment variables listed above.
+5.  **Enable Firebase Services:**
     *   **Authentication:** Enable "Google" and "Anonymous" sign-in methods in the Firebase Authentication section.
     *   **Firestore:** Create a Firestore database in "Production mode".
         *   **Security Rules:** For basic functionality, you can start with rules that allow authenticated users to read/write their own data. A common pattern is:
@@ -225,6 +238,7 @@ If you want to use your own Firebase backend:
             }
             ```
             Apply these rules in the "Rules" tab of your Firestore database.
+    *   **API key restriction:** Firebase web app API keys are visible to browsers at runtime. In Google Cloud Console, restrict the key to the required Firebase APIs and your approved HTTP referrers, then rotate any key that was previously committed or deployed publicly.
 
 ## Contributing
 

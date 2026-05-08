@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v1.6.0-b2";
+const CACHE_NAME = "rook-cache-v1.6.0-b4";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -32,6 +32,13 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const requestUrl = new URL(event.request.url);
+
+  if (requestUrl.origin === self.location.origin && requestUrl.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   if (event.request.url.endsWith(".map")) {
     event.respondWith(
       Promise.resolve(new Response("", { status: 204, headers: { "Content-Type": "application/json" } }))
