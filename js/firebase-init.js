@@ -55,6 +55,16 @@ function serializeForLocalStorage(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+function getSafeProfileImageUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) return "";
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "https:" ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
 function updateAuthUI(user) {
   const authLabel = document.getElementById("authLabel");
   if (!authLabel) return;
@@ -63,10 +73,23 @@ function updateAuthUI(user) {
   authLabel.style.alignItems = '';
 
   if (user && !user.isAnonymous) {
-    const photoUrl = user.photoURL ? `<img src="${user.photoURL}" alt="Profile" style="display:inline-block;width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-left:8px;">` : '';
-    authLabel.innerHTML = `Sign Out ${photoUrl}`.trim();
+    authLabel.textContent = "Sign Out";
     authLabel.style.display = 'inline-flex';
     authLabel.style.alignItems = 'center';
+    const photoUrl = getSafeProfileImageUrl(user.photoURL);
+    if (photoUrl) {
+      const img = document.createElement("img");
+      img.src = photoUrl;
+      img.alt = "Profile";
+      img.referrerPolicy = "no-referrer";
+      img.style.display = "inline-block";
+      img.style.width = "24px";
+      img.style.height = "24px";
+      img.style.borderRadius = "50%";
+      img.style.verticalAlign = "middle";
+      img.style.marginLeft = "8px";
+      authLabel.appendChild(img);
+    }
   }
 }
 

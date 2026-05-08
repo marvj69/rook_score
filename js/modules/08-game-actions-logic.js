@@ -11,6 +11,8 @@ function handleCheatFlag() {
 function openTableTalkModal() {
   const usTeamName = state.usTeamName || "Us";
   const demTeamName = state.demTeamName || "Dem";
+  const usTeamDisplay = escapeHtml(usTeamName);
+  const demTeamDisplay = escapeHtml(demTeamName);
 
   const modalHtml = `
     <div id="tableTalkModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="tableTalkModalTitle">
@@ -23,13 +25,13 @@ function openTableTalkModal() {
               onclick="applyTableTalkPenalty('us')" 
               class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
               style="background-color: var(--primary-color);">
-              ${usTeamName}
+              ${usTeamDisplay}
             </button>
             <button 
               onclick="applyTableTalkPenalty('dem')" 
               class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
               style="background-color: var(--accent-color);">
-              ${demTeamName}
+              ${demTeamDisplay}
             </button>
           </div>
           <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">

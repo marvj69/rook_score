@@ -43,11 +43,26 @@ function sanitizePlayerName(name) {
   return (typeof name === "string" ? name : "").trim().replace(/\s+/g, " ");
 }
 
+const HTML_ESCAPE_CHARS = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 function escapeHtml(text) {
   if (typeof text !== "string") return "";
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return text.replace(/[&<>"']/g, char => HTML_ESCAPE_CHARS[char]);
+}
+
+function escapeHtmlValue(value) {
+  if (value === null || value === undefined) return "";
+  return escapeHtml(String(value));
+}
+
+function escapeAttribute(value) {
+  return escapeHtmlValue(value);
 }
 
 function ensurePlayersArray(input) {
@@ -120,4 +135,3 @@ function playersEqual(a, b) {
   const [b1, b2] = canonicalizePlayers(b);
   return a1 === b1 && a2 === b2;
 }
-

@@ -1,0 +1,12 @@
+{
+  "name": "rook-score",
+  "version": "1.5.5",
+  "private": true,
+  "scripts": {
+    "build:css": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c ./tailwind.config.cjs -i ./css/tailwind.input.css -o ./css/tailwind.css --minify",
+    "test": "node --test tests/app.test.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

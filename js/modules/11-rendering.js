@@ -17,10 +17,12 @@ function renderApp() {
   if (biddingTeam && (bidAmount || (showCustomBid && customBidValue))) {
       const currentBidDisplayAmount = bidAmount || customBidValue;
       const currentBiddingTeamName = biddingTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
+      const currentBiddingTeamDisplay = escapeHtmlValue(currentBiddingTeamName);
+      const currentBidAmountDisplay = escapeHtmlValue(currentBidDisplayAmount);
       const arrow = biddingTeam === "us" ? "←" : "→";
       const teamColor = biddingTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
       if (validateBid(currentBidDisplayAmount) === "") { // Only display if valid
-          lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidDisplayAmount} <span>${arrow}</span></span></div>`;
+          lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
       }
   }
   // If not, show "Last Bid" from the last completed round
@@ -29,9 +31,11 @@ function renderApp() {
       const lastBidAmount = lastRound.bidAmount;
       const lastBidTeam = lastRound.biddingTeam;
       const teamName = lastBidTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
+      const teamDisplay = escapeHtmlValue(teamName);
+      const lastBidAmountDisplay = escapeHtmlValue(lastBidAmount);
       const arrow = lastBidTeam === "us" ? "←" : "→";
       const teamColor = lastBidTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
-      lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamName}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmount} <span>${arrow}</span></span></div>`;
+      lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmountDisplay} <span>${arrow}</span></span></div>`;
   }
 
 
@@ -89,6 +93,8 @@ function renderApp() {
 function renderTeamCard(teamKey, score, winProb) {
   const isSelected = state.biddingTeam === teamKey;
   const teamLabel = teamKey === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
+  const teamLabelDisplay = escapeHtmlValue(teamLabel);
+  const teamLabelAttr = escapeAttribute(teamLabel);
   const colorClass = teamKey === "us" ? "bg-primary" : "bg-accent";
   const selectedEffect = isSelected ? "sunken-selected" : "";
   let winProbDisplay = "";
@@ -106,9 +112,9 @@ function renderTeamCard(teamKey, score, winProb) {
     <button type="button"
     class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all rounded-xl shadow-md flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2"
     onclick="handleTeamClick('${teamKey}')"
-    aria-pressed="${isSelected}" aria-label="Select ${teamLabel}">
+    aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center">
-<h2 class="text-base sm:text-xl font-semibold truncate max-w-[100px] sm:max-w-[120px]">${teamLabel}</h2>
+<h2 class="text-base sm:text-xl font-semibold truncate max-w-[100px] sm:max-w-[120px]">${teamLabelDisplay}</h2>
 <p class="text-2xl font-bold">${score}</p>
 ${winProbDisplay}
     </div>
@@ -125,7 +131,7 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
     </div>`;
 }
 function renderErrorAlert(errorMessage) {
-  return `<div role="alert" class="flex items-center border border-red-400 rounded-xl p-4 bg-red-50 text-red-700 space-x-3 dark:bg-red-900/50 dark:border-red-600 dark:text-red-300">${Icons.AlertCircle}<div class="flex-1">${errorMessage}</div></div>`;
+  return `<div role="alert" class="flex items-center border border-red-400 rounded-xl p-4 bg-red-50 text-red-700 space-x-3 dark:bg-red-900/50 dark:border-red-600 dark:text-red-300">${Icons.AlertCircle}<div class="flex-1">${escapeHtmlValue(errorMessage)}</div></div>`;
 }
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
@@ -134,6 +140,8 @@ function renderScoreInputCard() {
   scoreCardHasAnimated = true;
   const hasBid = bidAmount || (showCustomBid && validateBid(customBidValue) === "");
   const biddingTeamDisplayName = biddingTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
+  const biddingTeamDisplayText = escapeHtmlValue(biddingTeamDisplayName);
+  const customBidValueAttr = escapeAttribute(customBidValue);
   const focusRingColor = biddingTeam === "us" ? "focus:ring-blue-500 dark:focus:ring-blue-400" : "focus:ring-red-500 dark:focus:ring-red-400";
   const penaltyActive = pendingPenalty && pendingPenalty.team === biddingTeam && pendingPenalty.type === "cheat";
   const penaltyBtnClass = penaltyActive
@@ -143,7 +151,7 @@ function renderScoreInputCard() {
   return `
     <div class="${fadeClass} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
       <div class="border-b border-gray-200 p-3 flex justify-between items-center dark:border-gray-700">
-        <h2 class="text-lg font-bold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayName}</h2>
+        <h2 class="text-lg font-bold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
         <div class="flex space-x-2">
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""} title="Undo">${Icons.Undo}Undo</button>
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""} title="Redo">${Icons.Redo}Redo</button>
@@ -166,10 +174,10 @@ function renderScoreInputCard() {
                 const btnBase = `px-3 py-1.5 text-sm font-medium threed rounded-lg transition focus:outline-none focus:ring-2 ${focusRingColor}`;
                 const btnActive = `${biddingTeam === "us" ? "bg-primary" : "bg-accent"} text-white shadow hover:brightness-95`;
                 const btnInactive = `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`;
-                return `<button type="button" class="${btnBase} ${isActive ? btnActive : btnInactive}" onclick="handleBidSelect('${b}')" aria-pressed="${isActive}">${b === "other" ? "Other" : b}</button>`;
+                return `<button type="button" class="${btnBase} ${isActive ? btnActive : btnInactive}" onclick="handleBidSelect('${escapeAttribute(b)}')" aria-pressed="${isActive}">${b === "other" ? "Other" : escapeHtmlValue(b)}</button>`;
               }).join("")}
             </div>
-            ${showCustomBid ? `<div class="mt-2"><input type="number" inputmode="numeric" pattern="[0-9]*" step="5" value="${customBidValue}" oninput="handleCustomBidChange(event)" placeholder="Enter custom bid" class="w-full sm:w-1/2 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" /></div>` : ""}
+            ${showCustomBid ? `<div class="mt-2"><input type="number" inputmode="numeric" pattern="[0-9]*" step="5" value="${customBidValueAttr}" oninput="handleCustomBidChange(event)" placeholder="Enter custom bid" class="w-full sm:w-1/2 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" /></div>` : ""}
           </div>
           ${(bidAmount || (showCustomBid && customBidValue && validateBid(customBidValue)==="")) ? renderPointsInput() : ""}
         </form>
@@ -181,6 +189,10 @@ function renderPointsInput() {
   const biddingTeamName = biddingTeam === "us" ? (usTeamName || "Us") : (demTeamName || "Dem");
   const nonBiddingTeamName = biddingTeam === "us" ? (demTeamName || "Dem") : (usTeamName || "Us");
   const labelText = enterBidderPoints ? `${biddingTeamName} Points (Bidding)` : `${nonBiddingTeamName} Points (Non-Bidding)`;
+  const biddingTeamDisplay = escapeHtmlValue(biddingTeamName);
+  const nonBiddingTeamDisplay = escapeHtmlValue(nonBiddingTeamName);
+  const labelDisplay = escapeHtmlValue(labelText);
+  const ephemeralPointsAttr = escapeAttribute(ephemeralPoints);
 
   // Determine active button based on whose points are being entered
   const biddingTeamButtonActive = enterBidderPoints;
@@ -197,14 +209,14 @@ function renderPointsInput() {
       <div>
         <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">Enter Points For</label>
         <div class="flex gap-3">
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamName}</button>
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamName}</button>
+          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
+          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
         </div>
       </div>
       <div>
-        <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelText}</label>
+        <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
         <div class="flex flex-col sm:flex-row sm:items-center sm:gap-5">
-          <input id="pointsInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="360" step="5" value="${ephemeralPoints}" oninput="ephemeralPoints = this.value" placeholder="Enter points" class="w-full sm:flex-grow border border-gray-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+          <input id="pointsInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="360" step="5" value="${ephemeralPointsAttr}" oninput="ephemeralPoints = this.value" placeholder="Enter points" class="w-full sm:flex-grow border border-gray-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
           <button type="submit" class="mt-2 sm:mt-0 bg-blue-600 text-white px-4 py-1.5 text-sm rounded-xl shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit</button>
         </div>
       </div>
@@ -362,6 +374,10 @@ function renderHistoryCard() {
   const { rounds, usTeamName, demTeamName } = state;
   const labelUs = usTeamName || "Us";
   const labelDem = demTeamName || "Dem";
+  const labelUsDisplay = escapeHtmlValue(labelUs);
+  const labelDemDisplay = escapeHtmlValue(labelDem);
+  const labelUsAttr = escapeAttribute(labelUs);
+  const labelDemAttr = escapeAttribute(labelDem);
   if (!rounds.length) return ""; // Don't render if no history
 
   // Check if we should show the probability dropdown button
@@ -369,9 +385,9 @@ function renderHistoryCard() {
   const currentTotals = getLastRunningTotals();
   const pointDiffRaw = currentTotals.us - currentTotals.dem;
   const pointDiffDisplay = pointDiffRaw > 0
-    ? `${labelUs} +${pointDiffRaw}`
+    ? `${labelUsDisplay} +${pointDiffRaw}`
     : pointDiffRaw < 0
-      ? `${labelDem} +${Math.abs(pointDiffRaw)}`
+      ? `${labelDemDisplay} +${Math.abs(pointDiffRaw)}`
       : "Tied";
   const pointDiffColorClass = pointDiffRaw > 0
     ? "text-primary"
@@ -408,30 +424,31 @@ function renderHistoryCard() {
           </p>
         </div>
         <div class="grid grid-cols-3 gap-2 mt-3 font-medium text-gray-600 dark:text-white text-sm sm:text-base">
-          <div class="text-left truncate">${labelUs}</div>
+          <div class="text-left truncate">${labelUsDisplay}</div>
           <div class="text-center">Bid</div>
-          <div class="text-right truncate">${labelDem}</div>
+          <div class="text-right truncate">${labelDemDisplay}</div>
         </div>
       </div>
       <div class="p-4 max-h-60 overflow-y-auto no-scrollbar">
         <div class="space-y-2">
           ${rounds.map((round, idx) => {
             const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);
+            const biddingTeamLabelAttr = escapeAttribute(biddingTeamLabel);
             const bidValue = Number.isFinite(Number(round.bidAmount)) ? round.bidAmount : 0;
             const usValue = Number.isFinite(Number(round.runningTotals?.us)) ? round.runningTotals.us : 0;
             const demValue = Number.isFinite(Number(round.runningTotals?.dem)) ? round.runningTotals.dem : 0;
             const bidInput = isHistoryCellEditing(idx, "bid")
               ? `<input id="history-edit-${idx}-bid" type="number" inputmode="numeric" class="w-16 bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${bidValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'bid')" onblur="commitHistoryEdit(${idx}, 'bid', this.value)" />`
-              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabel} bid for round ${idx + 1}">${bidValue}</button>`;
+              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabelAttr} bid for round ${idx + 1}">${bidValue}</button>`;
             const bidContent = round.biddingTeam === "us"
               ? `<div class="flex items-center justify-center gap-1"><span class="text-gray-800 dark:text-white">←</span>${bidInput}</div>`
               : `<div class="flex items-center justify-center gap-1">${bidInput}<span class="text-gray-800 dark:text-white">→</span></div>`;
             const usScoreContent = isHistoryCellEditing(idx, "us")
               ? `<input id="history-edit-${idx}-us" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${usValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'us')" onblur="commitHistoryEdit(${idx}, 'us', this.value)" />`
-              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUs} score for round ${idx + 1}">${usValue}</button>`;
+              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUsAttr} score for round ${idx + 1}">${usValue}</button>`;
             const demScoreContent = isHistoryCellEditing(idx, "dem")
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
-              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDem} score for round ${idx + 1}">${demValue}</button>`;
+              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
               <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm">
                 <div class="text-left">${usScoreContent}</div>
@@ -462,6 +479,8 @@ function renderHistoryCard() {
 function renderGameOverOverlay() {
   if (!state.gameOver) return "";
   const winnerLabel = state.winner === "us" ? (state.usTeamName || "Us") : (state.winner === "dem" ? (state.demTeamName || "Dem") : "It's a Tie");
+  const winnerDisplay = escapeHtmlValue(winnerLabel);
+  const victoryMethodDisplay = escapeHtmlValue(state.victoryMethod || 'Game Ended');
   return `
 <div data-overlay="gameover"
      class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-md flex items-center justify-center p-4"
@@ -470,8 +489,8 @@ function renderGameOverOverlay() {
       <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-xl shadow-lg text-center">
         <div class="p-6">
           <h2 id="gameOverTitle" class="text-3xl font-bold mb-2 animate-fadeIn text-gray-800 dark:text-white">Game Over!</h2>
-          <p class="text-xl mb-1 animate-fadeIn text-gray-700 dark:text-white">${winnerLabel} Wins!</p>
-          <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400">(${state.victoryMethod || 'Game Ended'})</p>
+          <p class="text-xl mb-1 animate-fadeIn text-gray-700 dark:text-white">${winnerDisplay} Wins!</p>
+          <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400">(${victoryMethodDisplay})</p>
           <div class="flex space-x-4 justify-center">
             <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-6 py-3 rounded-xl shadow hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed" type="button">Fix Score</button>
             <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-6 py-3 rounded-xl shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed" type="button">Save Game</button>
@@ -484,10 +503,16 @@ function renderGameOverOverlay() {
 // (renderReadOnlyGameDetails, renderSavedGames, renderFreezerGames, renderStatisticsContent, renderTeamStatsTable - these remain substantial and are called by modal openers)
 function renderReadOnlyGameDetails(game) {
   const { rounds, timestamp, usTeamName, demTeamName, durationMs, winner, finalScore, victoryMethod } = game;
-  const usDisp = usTeamName || "Us", demDisp = demTeamName || "Dem";
-  const usScore = finalScore?.us || 0, demScore = finalScore?.dem || 0;
+  const usDisp = getGameTeamDisplay(game, "us") || usTeamName || "Us";
+  const demDisp = getGameTeamDisplay(game, "dem") || demTeamName || "Dem";
+  const usDisplay = escapeHtmlValue(usDisp);
+  const demDisplay = escapeHtmlValue(demDisp);
+  const finalTotals = sanitizeTotals(finalScore);
+  const usScore = finalTotals.us, demScore = finalTotals.dem;
   const usWinner = winner === "us", demWinner = winner === "dem";
   const dateStr = new Date(timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
+  const dateDisplay = escapeHtmlValue(dateStr);
+  const victoryMethodDisplay = escapeHtmlValue(victoryMethod);
 
   // Determine sandbag for winner
   let sandbagResult = "N/A";
@@ -502,16 +527,18 @@ function renderReadOnlyGameDetails(game) {
   const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
 
   const roundHtml = (rounds || []).map((r, idx) => {
+      const runningTotals = sanitizeTotals(r.runningTotals);
       const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
+      const bidTeamDisplay = escapeHtmlValue(bidTeam);
       const arrow = r.biddingTeam === "us" ? "←" : "→";
-      const bidDisplay = `${r.bidAmount} ${arrow}`;
+      const bidDisplay = `${escapeHtmlValue(r.bidAmount)} ${arrow}`;
       return `
       <div class="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm sm:text-base mb-2">
-        <div class="text-left font-medium col-span-1 ${r.biddingTeam === "us" && r.usPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${r.runningTotals.us}</div>
+        <div class="text-left font-medium col-span-1 ${r.biddingTeam === "us" && r.usPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${runningTotals.us}</div>
         <div class="text-center text-gray-600 dark:text-gray-300 text-xs sm:text-sm col-span-3">
-          <span class="bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full">${bidTeam} bid ${bidDisplay}</span>
+          <span class="bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full">${bidTeamDisplay} bid ${bidDisplay}</span>
         </div>
-        <div class="text-right font-medium col-span-1 ${r.biddingTeam === "dem" && r.demPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${r.runningTotals.dem}</div>
+        <div class="text-right font-medium col-span-1 ${r.biddingTeam === "dem" && r.demPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${runningTotals.dem}</div>
       </div>`;
   }).join("");
 
@@ -519,21 +546,21 @@ function renderReadOnlyGameDetails(game) {
     <div class="space-y-4"> <!-- Reduced vertical spacing -->
       <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 shadow-sm"> <!-- Reduced padding -->
         <div class="flex flex-col sm:flex-row justify-between items-center mb-2"> <!-- Reduced margin -->
-          <h4 class="text-xl font-bold text-gray-800 dark:text-white text-center sm:text-left">${usDisp} vs ${demDisp}</h4>
-          <span class="bg-blue-100 text-blue-800 text-xs font-medium px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300">${dateStr}</span>
+          <h4 class="text-xl font-bold text-gray-800 dark:text-white text-center sm:text-left">${usDisplay} vs ${demDisplay}</h4>
+          <span class="bg-blue-100 text-blue-800 text-xs font-medium px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300">${dateDisplay}</span>
         </div>
         <div class="flex justify-around items-center text-center">
           <div class="${usWinner ? 'text-green-500 dark:text-green-400' : 'text-gray-800 dark:text-white'}">
-            <div class="text-sm">${usDisp}</div><div class="text-2xl font-bold">${usScore}</div>
+            <div class="text-sm">${usDisplay}</div><div class="text-2xl font-bold">${usScore}</div>
             ${usWinner ? '<div class="text-xs font-medium">WINNER</div>' : ''}
           </div>
           <div class="text-gray-400 dark:text-gray-500 text-lg">vs</div>
           <div class="${demWinner ? 'text-green-500 dark:text-green-400' : 'text-gray-800 dark:text-white'}">
-            <div class="text-sm">${demDisp}</div><div class="text-2xl font-bold">${demScore}</div>
+            <div class="text-sm">${demDisplay}</div><div class="text-2xl font-bold">${demScore}</div>
             ${demWinner ? '<div class="text-xs font-medium">WINNER</div>' : ''}
           </div>
         </div>
-        ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethod})</p>` : ''}
+        ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethodDisplay})</p>` : ''}
       </div>
       <div class="flex flex-row gap-2 sm:gap-4 mb-1"> <!-- Side by side, tighter gap -->
         <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start"> <!-- Tighter padding -->

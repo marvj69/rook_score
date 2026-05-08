@@ -69,6 +69,10 @@ function generateProbabilityBreakdown() {
 }
 
 function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum, probabilityContext, modelSnapshot) {
+  const labelUsDisplay = escapeHtmlValue(labelUs || "Us");
+  const labelDemDisplay = escapeHtmlValue(labelDem || "Dem");
+  const leadLabelDisplay = scoreDiff > 0 ? labelUsDisplay : labelDemDisplay;
+
   // Get the probability table for complex analysis
   const games = Array.isArray(historicalGames) ? historicalGames : [];
   const cacheKey = getProbabilityCacheKey(games);
@@ -221,11 +225,11 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         <div class="flex items-center justify-center gap-6 text-lg">
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded-full bg-primary"></div>
-            <span class="font-semibold text-white">${labelUs}: ${winProb.us.toFixed(1)}%</span>
+            <span class="font-semibold text-white">${labelUsDisplay}: ${winProb.us.toFixed(1)}%</span>
           </div>
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded-full bg-accent"></div>
-            <span class="font-semibold text-white">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
+            <span class="font-semibold text-white">${labelDemDisplay}: ${winProb.dem.toFixed(1)}%</span>
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -240,14 +244,14 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
             <div class="font-medium text-gray-700 dark:text-gray-300">Score Classification</div>
-            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${bucketAnalysis.bucketDescription}</div>
+            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${escapeHtmlValue(bucketAnalysis.bucketDescription)}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
             <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
-            ${Math.abs(scoreDiff) > 0 ? `(${Math.abs(scoreDiff)} point ${scoreDiff > 0 ? labelUs : labelDem} lead)` : '(Tied)'}
+            ${Math.abs(scoreDiff) > 0 ? `(${Math.abs(scoreDiff)} point ${leadLabelDisplay} lead)` : '(Tied)'}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Bucketed as: ${bucketAnalysis.bucketRange} • Round ${roundsPlayed}
+            Bucketed as: ${escapeHtmlValue(bucketAnalysis.bucketRange)} • Round ${roundsPlayed}
           </div>
         </div>
       </div>
@@ -265,7 +269,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
             <strong>Data:</strong> ${historicalAnalysis.totalObservations} observations in this exact round + bucket
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${historicalAnalysis.explanation}
+            ${escapeHtmlValue(historicalAnalysis.explanation)}
           </div>
         </div>
 
@@ -288,13 +292,13 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
             <div class="font-medium text-gray-700 dark:text-gray-300">Per-User Calibration</div>
-            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">${personalizationAnalysis.status}</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">${escapeHtmlValue(personalizationAnalysis.status)}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            ${personalizationAnalysis.detail}
+            ${escapeHtmlValue(personalizationAnalysis.detail)}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${personalizationAnalysis.effectText}
+            ${escapeHtmlValue(personalizationAnalysis.effectText)}
           </div>
         </div>
       </div>
@@ -422,7 +426,7 @@ function refreshPlayerSuggestions() {
   const datalist = document.getElementById("playerNameSuggestions");
   if (datalist) {
     datalist.innerHTML = orderedSuggestions
-      .map(name => `<option value="${name.replace(/"/g, '&quot;')}"></option>`)
+      .map(name => `<option value="${escapeAttribute(name)}"></option>`)
       .join("\n");
   }
 
@@ -581,4 +585,3 @@ function handleBugReportClick() {
     }
     window.location.href = mailtoLink;
 }
-

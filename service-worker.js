@@ -1,21 +1,38 @@
-const CACHE_NAME = "rook-cache-v1.6.0-b4";
+const CACHE_NAME = "rook-cache-v1.6.1";
 const OFFLINE_URL = "index.html"; // Use relative path
+
+const moduleFiles = [
+  "./js/modules/00-config.js",
+  "./js/modules/01-state-and-win-prob-render.js",
+  "./js/modules/02-win-prob-engine.js",
+  "./js/modules/03-storage-icons-presets.js",
+  "./js/modules/04-theme-ui-helpers.js",
+  "./js/modules/05-game-state-management.js",
+  "./js/modules/06-team-stats-helpers.js",
+  "./js/modules/07-menu-modal.js",
+  "./js/modules/08-game-actions-logic.js",
+  "./js/modules/09-settings-validation-misc.js",
+  "./js/modules/10-probability-breakdown.js",
+  "./js/modules/11-rendering.js",
+  "./js/modules/12-saved-games-and-stats-modals.js",
+  "./js/modules/13-settings-loading.js",
+  "./js/modules/14-initialization-and-exports.js"
+];
 
 const urlsToCache = [
   "./", // Root path
   "./index.html",
+  "./css/tailwind.css",
   "./css/app.css",
   "./js/app.js",
   "./js/model_runtime_v1.json",
-  "./js/tailwind-config.js",
   "./js/firebase-init.js",
   "./manifest.json",
   "./icons/icon-192x192.png",
   "./icons/icon-512x512.png",
   "./service-worker.js",
-  "./vendor/tailwindcdn.js",
   "./vendor/canvas-confetti.min.js"
-];
+].concat(moduleFiles);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

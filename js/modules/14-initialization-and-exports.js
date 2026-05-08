@@ -200,6 +200,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     sanitizePlayerName,
     escapeHtml,
+    escapeHtmlValue,
+    escapeAttribute,
     ensurePlayersArray,
     canonicalizePlayers,
     formatTeamDisplay,

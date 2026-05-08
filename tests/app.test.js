@@ -183,6 +183,8 @@ setupDomStubs();
 const {
   sanitizePlayerName,
   escapeHtml,
+  escapeHtmlValue,
+  escapeAttribute,
   ensurePlayersArray,
   canonicalizePlayers,
   formatTeamDisplay,
@@ -813,7 +815,14 @@ test('escapeHtml handles empty strings', () => {
   assert.equal(escapeHtml(''), '');
 });
 
-// Note: Full XSS escaping tests require a real DOM environment.
-// The escapeHtml function uses document.createElement which properly
-// escapes HTML entities in a browser context. In production, dealer
-// names are escaped before being inserted into innerHTML.
+test('escapeHtml escapes text that could break out of templates', () => {
+  assert.equal(
+    escapeHtml('<img src=x onerror="alert(1)"> & Tom\'s'),
+    '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; Tom&#39;s',
+  );
+});
+
+test('escapeAttribute escapes non-string values through the value helper', () => {
+  assert.equal(escapeHtmlValue(180), '180');
+  assert.equal(escapeAttribute('" onclick="alert(1)'), '&quot; onclick=&quot;alert(1)');
+});

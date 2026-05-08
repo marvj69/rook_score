@@ -87,27 +87,32 @@ function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchM
   const emptyMessageEl = document.getElementById(emptyMessageId);
   if (emptyMessageEl) emptyMessageEl.classList.toggle('hidden', sortedEntries.length > 0);
 
-  container.innerHTML = listHtml || (!normalizedTerm ? '' : `<p class="text-gray-500 col-span-full text-center">${emptySearchMessage} "${displaySearch}".</p>`);
+  container.innerHTML = listHtml || (!normalizedTerm ? '' : `<p class="text-gray-500 col-span-full text-center">${escapeHtmlValue(emptySearchMessage)} "${escapeHtmlValue(displaySearch)}".</p>`);
 }
 
 function buildSavedGameCard(game, originalIndex) {
   const usDisplay = getGameTeamDisplay(game, 'us');
   const demDisplay = getGameTeamDisplay(game, 'dem');
-  const usScore = game.finalScore?.us ?? 0;
-  const demScore = game.finalScore?.dem ?? 0;
+  const usDisplayText = escapeHtmlValue(usDisplay);
+  const demDisplayText = escapeHtmlValue(demDisplay);
+  const finalTotals = sanitizeTotals(game.finalScore);
+  const usScore = finalTotals.us;
+  const demScore = finalTotals.dem;
   const usWon = game.winner === 'us';
   const demWon = game.winner === 'dem';
   const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
+  const timestampText = escapeHtmlValue(timestamp);
+  const victoryMethodText = escapeHtmlValue(game.victoryMethod);
 
   return `
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
-      ${usWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplay}</div>` : ''}
-      ${demWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplay}</div>` : ''}
+      ${usWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplayText}</div>` : ''}
+      ${demWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplayText}</div>` : ''}
       <div class="p-5">
         <div class="flex justify-between items-start mb-2">
           <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
-            <div class="text-sm text-gray-500 dark:text-gray-400">${timestamp}</div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400">${timestampText}</div>
           </div>
           <div class="flex space-x-1">
             <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
@@ -115,11 +120,11 @@ function buildSavedGameCard(game, originalIndex) {
           </div>
         </div>
         <div class="text-sm">
-          <span class="${usWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplay}: ${usScore}</span> |
-          <span class="${demWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplay}: ${demScore}</span>
+          <span class="${usWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplayText}: ${usScore}</span> |
+          <span class="${demWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplayText}: ${demScore}</span>
         </div>
         <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-          ${game.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${game.victoryMethod}</span>` : ''}
+          ${game.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${victoryMethodText}</span>` : ''}
           ${game.durationMs ? `<span>${formatDuration(game.durationMs)}</span>` : ''}
         </div>
       </div>
@@ -129,23 +134,29 @@ function buildSavedGameCard(game, originalIndex) {
 function buildFreezerGameCard(game, originalIndex) {
   const usDisplay = getGameTeamDisplay(game, 'us');
   const demDisplay = getGameTeamDisplay(game, 'dem');
-  const usScore = game.finalScore?.us ?? 0;
-  const demScore = game.finalScore?.dem ?? 0;
+  const usDisplayText = escapeHtmlValue(usDisplay);
+  const demDisplayText = escapeHtmlValue(demDisplay);
+  const finalTotals = sanitizeTotals(game.finalScore);
+  const usScore = finalTotals.us;
+  const demScore = finalTotals.dem;
   const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
   const leadInfo = usScore > demScore
     ? `${usDisplay} leads by ${usScore - demScore}`
     : demScore > usScore
       ? `${demDisplay} leads by ${demScore - usScore}`
       : 'Tied';
+  const leadInfoText = escapeHtmlValue(leadInfo);
+  const timestampText = escapeHtmlValue(timestamp);
+  const lastBidText = escapeHtmlValue(game.lastBid);
 
   return `
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
-      <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfo}</div>
+      <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfoText}</div>
       <div class="p-5">
         <div class="flex justify-between items-start mb-2">
           <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplay} vs ${demDisplay}</h3>
-            <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestamp}</div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestampText}</div>
           </div>
           <div class="flex space-x-1">
             <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
@@ -153,10 +164,10 @@ function buildFreezerGameCard(game, originalIndex) {
           </div>
         </div>
         <div class="text-sm text-gray-700 dark:text-gray-300">
-          <span>${usDisplay}: ${usScore}</span> | <span>${demDisplay}: ${demScore}</span>
+          <span>${usDisplayText}: ${usScore}</span> | <span>${demDisplayText}: ${demScore}</span>
         </div>
         <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-          ${game.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${game.lastBid}</span>` : ''}
+          ${game.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${lastBidText}</span>` : ''}
           ${game.accumulatedTime ? `<span>Played: ${formatDuration(game.accumulatedTime)}</span>` : ''}
         </div>
       </div>
@@ -262,8 +273,8 @@ function renderStatisticsContent() {
         <div class="flex items-center">
           <div class="p-1.5 bg-${color}-500 rounded-lg text-white">${iconSvg}</div>
           <div class="ml-2 min-w-0">
-            <p class="text-xs uppercase font-semibold text-gray-500 dark:text-gray-400">${title}</p>
-            <p class="text-lg font-bold text-gray-900 dark:text-white leading-tight">${value}</p>
+            <p class="text-xs uppercase font-semibold text-gray-500 dark:text-gray-400">${escapeHtmlValue(title)}</p>
+            <p class="text-lg font-bold text-gray-900 dark:text-white leading-tight">${escapeHtmlValue(value)}</p>
           </div>
         </div>
       </div>`;
@@ -397,8 +408,10 @@ function renderEntityStatisticsContent(mode, entity) {
 
   const displayName = entity.name || (mode === 'teams' ? deriveTeamDisplay(entity.players, 'Unnamed Team') : sanitizePlayerName(entity.name) || 'Unnamed Player');
   const playersDisplay = mode === 'teams' ? formatTeamDisplay(entity.players || []) : '';
+  const displayNameText = escapeHtmlValue(displayName);
+  const playersDisplayText = escapeHtmlValue(playersDisplay);
   const helperText = mode === 'teams' && playersDisplay
-    ? `<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Players: ${playersDisplay}</p>`
+    ? `<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Players: ${playersDisplayText}</p>`
     : '';
 
   const statEntries = [
@@ -429,8 +442,8 @@ function renderEntityStatisticsContent(mode, entity) {
 
   const detailRows = statEntries.map(entry => `
     <div class="flex items-center justify-between py-2">
-      <dt class="text-sm font-medium text-gray-600 dark:text-gray-300">${entry.label}</dt>
-      <dd class="text-sm text-gray-900 dark:text-gray-100">${formatValue(entry.value)}</dd>
+      <dt class="text-sm font-medium text-gray-600 dark:text-gray-300">${escapeHtmlValue(entry.label)}</dt>
+      <dd class="text-sm text-gray-900 dark:text-gray-100">${escapeHtmlValue(formatValue(entry.value))}</dd>
     </div>
   `).join('');
 
@@ -441,15 +454,15 @@ function renderEntityStatisticsContent(mode, entity) {
     { label: '360s', value: statEntries[13].value },
   ].map(card => `
     <div class="rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
-      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">${card.label}</p>
-      <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">${formatValue(card.value)}</p>
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">${escapeHtmlValue(card.label)}</p>
+      <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">${escapeHtmlValue(formatValue(card.value))}</p>
     </div>
   `).join('');
 
   container.innerHTML = `
     <div class="space-y-6">
       <div>
-        <h3 class="text-2xl font-bold text-gray-900 dark:text-white">${displayName}</h3>
+        <h3 class="text-2xl font-bold text-gray-900 dark:text-white">${displayNameText}</h3>
         ${helperText}
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -736,20 +749,25 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
     let statVal = lookup[additionalStatKey] ?? '0';
     if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
 
-    const entityKey = item.key;
-    const displayName = item.name || (mode === 'teams' ? deriveTeamDisplay(item.players, 'Unnamed Team') : sanitizePlayerName(item.name) || 'Unnamed Player');
-    const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
-    const secondaryLine = mode === 'teams' && playersDisplay && playersDisplay !== displayName
-      ? `<span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">${playersDisplay}</span>`
-      : '';
-    tableHTML += `<tr class="${rowClass}">
-      <td class="py-3 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">
-        <button type="button"
-          class="stats-entity-trigger group flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 -mx-2 -my-1.5 text-left transition-colors hover:bg-gray-100/70 active:bg-gray-200/70 dark:hover:bg-gray-600/40 dark:active:bg-gray-600/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-400"
-          data-entity-mode="${mode}" data-entity-key="${entityKey}" aria-haspopup="dialog">
-          <span class="min-w-0">
-            <span class="block font-semibold text-blue-600 group-hover:text-blue-500 dark:text-blue-300 dark:group-hover:text-blue-200 truncate">${displayName}</span>
-            ${secondaryLine}
+	    const entityKey = item.key;
+	    const displayName = item.name || (mode === 'teams' ? deriveTeamDisplay(item.players, 'Unnamed Team') : sanitizePlayerName(item.name) || 'Unnamed Player');
+	    const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
+	    const entityKeyAttr = escapeAttribute(entityKey);
+	    const displayNameText = escapeHtmlValue(displayName);
+	    const playersDisplayText = escapeHtmlValue(playersDisplay);
+	    const winPercentText = escapeHtmlValue(item.winPercent);
+	    const statValText = escapeHtmlValue(statVal);
+	    const secondaryLine = mode === 'teams' && playersDisplay && playersDisplay !== displayName
+	      ? `<span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">${playersDisplayText}</span>`
+	      : '';
+	    tableHTML += `<tr class="${rowClass}">
+	      <td class="py-3 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">
+	        <button type="button"
+	          class="stats-entity-trigger group flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 -mx-2 -my-1.5 text-left transition-colors hover:bg-gray-100/70 active:bg-gray-200/70 dark:hover:bg-gray-600/40 dark:active:bg-gray-600/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-400"
+	          data-entity-mode="${mode}" data-entity-key="${entityKeyAttr}" aria-haspopup="dialog">
+	          <span class="min-w-0">
+	            <span class="block font-semibold text-blue-600 group-hover:text-blue-500 dark:text-blue-300 dark:group-hover:text-blue-200 truncate">${displayNameText}</span>
+	            ${secondaryLine}
           </span>
           <span class="mt-0.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500 dark:text-gray-500 dark:group-hover:text-gray-400">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -758,8 +776,8 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
           </span>
         </button>
       </td>
-      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${item.winPercent}%</td>
-      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statVal}</td>`;
+	      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${winPercentText}%</td>
+	      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statValText}</td>`;
     tableHTML += `</tr>`;
   });
 
