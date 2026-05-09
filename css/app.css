@@ -903,6 +903,17 @@ html, body {height:100%; overflow:hidden; overscroll-behavior:none;}
   justify-content: center;
 }
 
+.stats-modal,
+.stats-modal__shell,
+.stats-modal__scroll,
+#teamStatsTableWrapper,
+.stats-results,
+.stats-table-view,
+.stats-table-shell {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .stats-modal__scroll {
   scroll-padding-bottom: 5rem;
 }
@@ -1144,6 +1155,7 @@ body.liquid-glass .stats-sort-toggle {
   cursor: pointer;
   text-align: left;
   width: 100%;
+  min-width: 0;
   font-family: inherit;
   color: inherit;
 }
@@ -1200,7 +1212,8 @@ body.liquid-glass .stats-row-card {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .stats-row-card__metric {
   display: flex;
@@ -1223,6 +1236,10 @@ body.liquid-glass .stats-row-card {
   color: #111827;
   line-height: 1.15;
   margin-top: 0.05rem;
+  max-width: 4.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dark .stats-row-card__metric-value { color: #f8fafc; }
 .stats-row-card__metric-value--warn {
@@ -1304,6 +1321,8 @@ body.liquid-glass .stats-row-card {
   border-collapse: separate;
   border-spacing: 0 0.4rem;
   width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
 }
 .stats-table thead th {
   text-align: left;
@@ -1315,8 +1334,14 @@ body.liquid-glass .stats-row-card {
   padding: 0.4rem 0.85rem;
 }
 .dark .stats-table thead th { color: rgba(203, 213, 225, 0.75); }
-.stats-table__th-name { padding-left: 1rem !important; }
-.stats-table__th { text-align: center !important; }
+.stats-table__th-name {
+  width: 52%;
+  padding-left: 1rem !important;
+}
+.stats-table__th {
+  width: 21%;
+  text-align: center !important;
+}
 .stats-table__th-icon { width: 1.5rem; }
 .stats-table__row {
   background: rgba(255, 255, 255, 0.92);
@@ -1340,6 +1365,7 @@ body.liquid-glass .stats-table__row {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  min-width: 0;
   border-radius: 0.75rem 0 0 0.75rem;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
   border-left: 1px solid rgba(15, 23, 42, 0.06);
@@ -1349,6 +1375,7 @@ body.liquid-glass .stats-table__row {
   padding: 0.7rem 0.85rem;
   text-align: center;
   vertical-align: middle;
+  min-width: 0;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
@@ -1370,23 +1397,36 @@ body.liquid-glass .stats-table__row {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
 }
 .stats-table__name {
+  display: block;
   font-weight: 600;
   font-size: 0.95rem;
   color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dark .stats-table__name { color: #f8fafc; }
 .stats-table__sub {
+  display: block;
   font-size: 0.72rem;
   color: #6b7280;
   margin-top: 0.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dark .stats-table__sub { color: rgba(156, 163, 175, 1); }
 .stats-table__metric {
+  display: block;
   font-weight: 700;
   font-size: 0.9rem;
   color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dark .stats-table__metric { color: #f8fafc; }
 

@@ -886,7 +886,7 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
       ${cards}
     </div>
     <div class="stats-table-view">
-      <div class="overflow-x-auto -mx-2 sm:mx-0">
+      <div class="stats-table-shell">
         <table class="stats-table min-w-full">
           <thead>
             <tr>
