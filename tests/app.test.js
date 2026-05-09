@@ -307,6 +307,12 @@ test('getFilteredPlayerSuggestions limits blank-query results to the requested s
   assert.deepEqual(suggestions, ['Alice', 'Bob']);
 });
 
+test('getFilteredPlayerSuggestions excludes names already chosen elsewhere', () => {
+  const suggestions = getFilteredPlayerSuggestions(['Alice', 'Bob', 'Carol', 'Diane'], '', 6, [' bob ', 'DIANE']);
+
+  assert.deepEqual(suggestions, ['Alice', 'Carol']);
+});
+
 
 test('parseLegacyTeamName handles separators and fallbacks', () => {
   assert.deepEqual(parseLegacyTeamName('Alice & Bob'), ['Alice', 'Bob']);

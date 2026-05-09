@@ -396,8 +396,13 @@ function getOrderedPlayerSuggestions() {
     })
     .map(([name]) => name);
 }
-function getFilteredPlayerSuggestions(suggestions, query = '', limit = 6) {
+function getFilteredPlayerSuggestions(suggestions, query = '', limit = 6, excludedNames = []) {
   const normalizedQuery = sanitizePlayerName(query).toLowerCase();
+  const excludedKeys = new Set(
+    Array.from(excludedNames || [])
+      .map(name => sanitizePlayerName(name).toLowerCase())
+      .filter(Boolean)
+  );
   const uniqueSuggestions = [];
   const seen = new Set();
 
@@ -406,6 +411,7 @@ function getFilteredPlayerSuggestions(suggestions, query = '', limit = 6) {
     if (!cleaned) return;
     const key = cleaned.toLowerCase();
     if (seen.has(key)) return;
+    if (excludedKeys.has(key)) return;
     if (normalizedQuery && !key.includes(normalizedQuery)) return;
     seen.add(key);
     uniqueSuggestions.push(cleaned);

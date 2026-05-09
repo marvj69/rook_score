@@ -3,6 +3,7 @@
 // --- Menu & Modal Toggling ---
 
 const DEALER_INPUT_IDS = ["dealer1", "dealer2", "dealer3", "dealer4"];
+const DEALER_SUGGESTION_LIMIT = 6;
 const dealerSuggestionControllers = [];
 
 function destroyDealerSuggestionControllers() {
@@ -12,9 +13,84 @@ function destroyDealerSuggestionControllers() {
   }
 }
 
+function getDealerInput(inputId) {
+  return document.getElementById(inputId);
+}
+
+function getDealerInputName(inputId) {
+  return sanitizePlayerName(getDealerInput(inputId)?.value || "");
+}
+
+function getDealerExcludedNames(activeInputId) {
+  return DEALER_INPUT_IDS
+    .filter(inputId => inputId !== activeInputId)
+    .map(getDealerInputName)
+    .filter(Boolean);
+}
+
+function hasDuplicateDealerNames(dealers) {
+  const seen = new Set();
+  return dealers.some((dealer) => {
+    const key = sanitizePlayerName(dealer).toLowerCase();
+    if (!key) return false;
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
+  });
+}
+
+function shouldUseMobileDealerLayout() {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(max-width: 640px), (pointer: coarse)").matches;
+}
+
+function shouldAutoFocusDealerInput() {
+  return !(typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(pointer: coarse)").matches);
+}
+
+function scrollDealerElementIntoView(element) {
+  if (!element || !shouldUseMobileDealerLayout()) return;
+  window.setTimeout(() => {
+    element.scrollIntoView?.({ block: "center", inline: "nearest" });
+  }, 80);
+}
+
+function focusNextDealerField(currentInputId) {
+  const currentIndex = DEALER_INPUT_IDS.indexOf(currentInputId);
+  const followingIds = currentIndex >= 0 ? DEALER_INPUT_IDS.slice(currentIndex + 1) : [];
+  const nextInputId = followingIds.find(inputId => !getDealerInputName(inputId)) || followingIds[0];
+  const nextInput = nextInputId ? getDealerInput(nextInputId) : null;
+
+  if (nextInput) {
+    window.setTimeout(() => {
+      nextInput.focus();
+      scrollDealerElementIntoView(nextInput);
+    }, 0);
+    return;
+  }
+
+  const submitButton = document.getElementById("dealerOrderSubmitBtn")
+    || document.querySelector("#dealerOrderForm button[type='submit']");
+  window.setTimeout(() => submitButton?.focus(), 0);
+}
+
+function hideDealerSuggestionsExcept(activeInputId = "") {
+  DEALER_INPUT_IDS.forEach((inputId) => {
+    if (inputId === activeInputId) return;
+    setDealerSuggestionsVisibility(document.getElementById(`${inputId}Suggestions`), false);
+  });
+}
+
 function setDealerSuggestionsVisibility(container, visible) {
   if (!container) return;
   container.classList.toggle("hidden", !visible);
+  const inputId = container.id?.replace(/Suggestions$/, "");
+  if (inputId) {
+    document.getElementById(inputId)?.setAttribute("aria-expanded", visible ? "true" : "false");
+  }
 }
 
 function renderDealerSuggestionItems(container, suggestions, onSelect) {
@@ -26,53 +102,79 @@ function renderDealerSuggestionItems(container, suggestions, onSelect) {
   }
 
   container.innerHTML = suggestions
-    .map(name => `<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:text-white dark:hover:bg-gray-600 dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
+    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:text-white dark:hover:bg-gray-600 dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
     .join("");
   setDealerSuggestionsVisibility(container, true);
 
   Array.from(container.querySelectorAll("button[data-suggested-name]")).forEach((button) => {
+    let selected = false;
     const handleSelect = (event) => {
-      event.preventDefault();
+      event?.preventDefault?.();
+      if (selected) return;
+      selected = true;
       onSelect(button.dataset.suggestedName || "");
     };
     if (typeof window !== "undefined" && "PointerEvent" in window) {
       button.addEventListener("pointerdown", handleSelect);
+      button.addEventListener("click", handleSelect);
     } else {
       button.addEventListener("mousedown", handleSelect);
       button.addEventListener("touchstart", handleSelect, { passive: false });
+      button.addEventListener("click", handleSelect);
     }
   });
 }
 
 function createDealerSuggestionController(inputId) {
-  const input = document.getElementById(inputId);
+  const input = getDealerInput(inputId);
   const container = document.getElementById(`${inputId}Suggestions`);
   if (!input || !container) return null;
 
   let blurTimeoutId = null;
 
   const updateSuggestions = () => {
+    clearTimeout(blurTimeoutId);
+    hideDealerSuggestionsExcept(inputId);
     const orderedSuggestions = refreshPlayerSuggestions();
-    const filteredSuggestions = getFilteredPlayerSuggestions(orderedSuggestions, input.value, 6)
-      .filter(name => name.toLowerCase() !== sanitizePlayerName(input.value).toLowerCase());
+    const currentName = sanitizePlayerName(input.value).toLowerCase();
+    const filteredSuggestions = getFilteredPlayerSuggestions(
+      orderedSuggestions,
+      input.value,
+      DEALER_SUGGESTION_LIMIT,
+      getDealerExcludedNames(inputId)
+    ).filter(name => name.toLowerCase() !== currentName);
 
     renderDealerSuggestionItems(container, filteredSuggestions, (selectedName) => {
       input.value = selectedName;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       setDealerSuggestionsVisibility(container, false);
-      input.focus();
+      focusNextDealerField(inputId);
     });
   };
 
-  const handleFocus = () => updateSuggestions();
+  const handleFocus = () => {
+    updateSuggestions();
+    scrollDealerElementIntoView(input);
+  };
   const handleInput = () => updateSuggestions();
+  const handleKeydown = (event) => {
+    if (event.key === "Escape") {
+      setDealerSuggestionsVisibility(container, false);
+      return;
+    }
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    setDealerSuggestionsVisibility(container, false);
+    if (getDealerInputName(inputId)) focusNextDealerField(inputId);
+  };
   const handleBlur = () => {
     clearTimeout(blurTimeoutId);
-    blurTimeoutId = window.setTimeout(() => setDealerSuggestionsVisibility(container, false), 120);
+    blurTimeoutId = window.setTimeout(() => setDealerSuggestionsVisibility(container, false), 180);
   };
 
   input.addEventListener("focus", handleFocus);
   input.addEventListener("input", handleInput);
+  input.addEventListener("keydown", handleKeydown);
   input.addEventListener("blur", handleBlur);
 
   return {
@@ -80,6 +182,7 @@ function createDealerSuggestionController(inputId) {
       clearTimeout(blurTimeoutId);
       input.removeEventListener("focus", handleFocus);
       input.removeEventListener("input", handleInput);
+      input.removeEventListener("keydown", handleKeydown);
       input.removeEventListener("blur", handleBlur);
       container.innerHTML = "";
       setDealerSuggestionsVisibility(container, false);
@@ -94,7 +197,6 @@ function setupDealerNameSuggestions() {
     const controller = createDealerSuggestionController(inputId);
     if (controller) {
       dealerSuggestionControllers.push(controller);
-      controller.update();
     }
   });
 }
@@ -163,7 +265,12 @@ function openDealerOrderModal() {
   refreshPlayerSuggestions();
   setupDealerNameSuggestions();
   openModal("dealerOrderModal");
-  document.getElementById("dealer1")?.focus();
+  const firstDealerInput = getDealerInput("dealer1");
+  if (shouldAutoFocusDealerInput()) {
+    firstDealerInput?.focus();
+  } else {
+    scrollDealerElementIntoView(firstDealerInput);
+  }
 }
 function closeDealerOrderModal() {
   destroyDealerSuggestionControllers();
@@ -215,6 +322,11 @@ function handleDealerOrderSubmit(event) {
   }
   
   const dealers = [dealer1, dealer2, dealer3, dealer4];
+  if (hasDuplicateDealerNames(dealers)) {
+    alert("Each dealer needs a different name.");
+    return;
+  }
+
   updateState({ dealers });
   saveCurrentGameState();
   closeDealerOrderModal();

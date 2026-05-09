@@ -569,6 +569,73 @@ html.dark nav ul li label:hover { /* Added label for dark mode toggle consistenc
   margin: 1rem auto; /* Centering and spacing */
   max-height: calc(100vh - 2rem); /* Prevent overflow */
 }
+.dealer-order-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dealer-order-content {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.dealer-name-field {
+  position: relative;
+}
+.dealer-name-input {
+  min-height: 46px;
+  font-size: 16px;
+  touch-action: manipulation;
+}
+.dealer-suggestions {
+  max-height: min(12rem, 34vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.dealer-suggestion-option {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+  touch-action: manipulation;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+.dealer-suggestion-option:last-child {
+  border-bottom: 0;
+}
+.dealer-action-button {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+@media (max-width: 640px) {
+  #dealerOrderModal.dealer-order-modal {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+  }
+  #dealerOrderModal .dealer-order-dialog {
+    margin: 0 auto;
+    max-height: calc(100vh - 1.5rem);
+  }
+  @supports (height: 100dvh) {
+    #dealerOrderModal .dealer-order-dialog {
+      max-height: calc(100dvh - 1.5rem);
+    }
+  }
+  #dealerOrderModal .dealer-order-content {
+    padding: 1.25rem;
+  }
+  #dealerOrderModal .dealer-order-form {
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  }
+  #dealerOrderModal .dealer-suggestions {
+    max-height: min(9.5rem, 30vh);
+  }
+  #dealerOrderModal .dealer-action-button {
+    flex: 1 1 0;
+  }
+}
 #confirmationModal { /* Ensure confirmation modal is on top */
   z-index: 9999;
 }
