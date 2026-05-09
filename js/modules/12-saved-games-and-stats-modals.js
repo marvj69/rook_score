@@ -255,6 +255,85 @@ function sortStatisticsData(statsData, sortKey, metricKey) {
   return sorted;
 }
 // --- Statistics Modal Rendering ---
+const STATS_METRIC_CONFIG = {
+  games: {
+    label: 'Games',
+    long: 'Games Played',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>',
+  },
+  timePlayed: {
+    label: 'Time',
+    long: 'Time Played',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+  },
+  avgBid: {
+    label: 'Avg Bid',
+    long: 'Average Bid',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 12v2m9-9a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+  },
+  bidSuccessPct: {
+    label: 'Bid Win %',
+    long: 'Bid Success Rate',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+  },
+  sandbagger: {
+    label: 'Sandbag',
+    long: 'Sandbagger',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>',
+  },
+  '360s': {
+    label: '360s',
+    long: 'Perfect 360s',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.05 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>',
+  },
+};
+
+const STATS_SORT_ORDER = ['recent', 'most', 'least'];
+const STATS_SORT_CONFIG = {
+  recent: { label: 'Recent', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+  most: { label: 'Most', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>' },
+  least: { label: 'Least', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>' },
+};
+
+function getEntityInitials(displayName, players) {
+  if (Array.isArray(players) && players.length) {
+    const initials = players
+      .map(p => sanitizePlayerName(p))
+      .filter(Boolean)
+      .map(p => p.charAt(0).toUpperCase())
+      .slice(0, 2);
+    if (initials.length) return initials.join('');
+  }
+  const cleaned = (displayName || '').trim();
+  if (!cleaned) return '?';
+  const parts = cleaned.split(/[\s&/+,]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
+function getWinPctTier(percent) {
+  const value = Number(typeof percent === 'string' ? percent.replace('%', '') : percent);
+  if (!Number.isFinite(value)) return 'neutral';
+  if (value >= 60) return 'high';
+  if (value >= 40) return 'mid';
+  return 'low';
+}
+
+function getMetricDisplay(metricKey, item) {
+  switch (metricKey) {
+    case 'games': return String(item.gamesPlayed ?? 0);
+    case '360s': return String(item.count360 ?? 0);
+    case 'avgBid': return item.avgBid ?? 'N/A';
+    case 'bidSuccessPct':
+      return item.bidSuccessPct === 'N/A' || item.bidSuccessPct === undefined
+        ? 'N/A'
+        : `${item.bidSuccessPct}%`;
+    case 'sandbagger': return item.sandbagger ?? 'No';
+    case 'timePlayed': return formatDuration(item.totalTimeMs ?? 0);
+    default: return '0';
+  }
+}
+
 function renderStatisticsContent() {
   const stats = getStatistics();
   const contentEl = document.getElementById("statisticsModalContent");
@@ -266,109 +345,128 @@ function renderStatisticsContent() {
   }
 
   if (!stats.totalGames && !stats.teamsData.length) {
-    contentEl.innerHTML = `<div class="py-8 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg><p class="mt-4 text-gray-600 dark:text-gray-400 text-lg">No stats yet. Play some games!</p><button onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">Start New Game</button></div>`;
-  } else {
-    const statCard = (title, value, iconSvg, color) => `
-      <div class="bg-gradient-to-br from-${color}-50 to-${color}-100 dark:from-gray-700 dark:to-gray-800 rounded-lg p-2 shadow-sm">
-        <div class="flex items-center">
-          <div class="p-1.5 bg-${color}-500 rounded-lg text-white">${iconSvg}</div>
-          <div class="ml-2 min-w-0">
-            <p class="text-xs uppercase font-semibold text-gray-500 dark:text-gray-400">${escapeHtmlValue(title)}</p>
-            <p class="text-lg font-bold text-gray-900 dark:text-white leading-tight">${escapeHtmlValue(value)}</p>
-          </div>
+    contentEl.innerHTML = `
+      <div class="stats-empty">
+        <span class="stats-empty__icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        </span>
+        <h3 class="stats-empty__title">No stats yet</h3>
+        <p class="stats-empty__body">Play a few games and your team and player performance will appear here.</p>
+        <button type="button" onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-lg shadow-sm transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
+          Start a Game
+        </button>
+      </div>`;
+    return;
+  }
+
+  const segmented = `
+    <div class="stats-segmented" role="tablist" aria-label="Statistics view">
+      <button type="button" class="stats-segmented__option" role="tab" data-stats-view="teams" aria-pressed="${statsViewMode === 'teams'}" aria-selected="${statsViewMode === 'teams'}">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        Teams
+      </button>
+      <button type="button" class="stats-segmented__option" role="tab" data-stats-view="players" aria-pressed="${statsViewMode === 'players'}" aria-selected="${statsViewMode === 'players'}">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        Individuals
+      </button>
+    </div>`;
+
+  const chips = Object.entries(STATS_METRIC_CONFIG).map(([key, conf]) => `
+    <button type="button" class="stats-chip" data-stats-metric="${escapeAttribute(key)}" aria-pressed="${statsMetricKey === key}">
+      ${conf.icon}
+      <span>${escapeHtmlValue(conf.label)}</span>
+    </button>`).join('');
+
+  const sortConf = STATS_SORT_CONFIG[statsSortKey] || STATS_SORT_CONFIG.recent;
+  const filterRow = `
+    <div class="stats-filter-row">
+      <div class="stats-chip-rail-wrap" aria-label="Metric filter">
+        <div class="stats-chip-rail" role="tablist">${chips}</div>
+      </div>
+      <button type="button" class="stats-sort-toggle" id="statsSortToggle" aria-label="Cycle sort: currently ${escapeAttribute(sortConf.label)}">
+        <span class="stats-sort-toggle__icon">${sortConf.icon}</span>
+        <span>${escapeHtmlValue(sortConf.label)}</span>
+      </button>
+    </div>`;
+
+  const controlsBlock = `<div class="stats-controls bg-white dark:bg-gray-800">${segmented}${filterRow}</div>`;
+
+  const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
+  const sortedStats = sortStatisticsData(statsDataForMode, statsSortKey, statsMetricKey);
+  const tableHtml = renderStatsTable(statsViewMode, sortedStats, statsMetricKey);
+
+  contentEl.innerHTML = `${controlsBlock}<div id="teamStatsTableWrapper" class="stats-results">${tableHtml}</div>`;
+
+  if (footerEl && stats.totalGames > 0) {
+    footerEl.innerHTML = `
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-card--blue">
+          <span class="kpi-card__accent"></span>
+          <span class="kpi-card__label">Avg Bid</span>
+          <span class="kpi-card__value">${escapeHtmlValue(stats.overallAverageBid)}</span>
+        </div>
+        <div class="kpi-card kpi-card--purple">
+          <span class="kpi-card__accent"></span>
+          <span class="kpi-card__label">Time Played</span>
+          <span class="kpi-card__value">${escapeHtmlValue(formatDuration(stats.totalTimePlayedMs))}</span>
+        </div>
+        <div class="kpi-card kpi-card--green">
+          <span class="kpi-card__accent"></span>
+          <span class="kpi-card__label">Games</span>
+          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalGames))}</span>
         </div>
       </div>`;
-
-    const icons = {
-      avgBid: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>',
-      timePlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
-      gamesPlayed: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>',
-    };
-
-    const viewSelector = `<div class="mb-4"><label for="statsViewModeSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Show statistics for</label><div class="relative"><select id="statsViewModeSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="teams"${statsViewMode === 'teams' ? ' selected' : ''}>Teams</option><option value="players"${statsViewMode === 'players' ? ' selected' : ''}>Individuals</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
-
-    const metricOptions = ['games', 'timePlayed', 'avgBid', 'bidSuccessPct', 'sandbagger', '360s']
-      .map(opt => {
-        let label = '';
-        switch (opt) {
-          case 'games':
-            label = 'Games Played';
-            break;
-          case 'timePlayed':
-            label = 'Time Played';
-            break;
-          case 'avgBid':
-            label = 'Avg Bid';
-            break;
-          case 'bidSuccessPct':
-            label = 'Bid Success %';
-            break;
-          case 'sandbagger':
-            label = 'Sandbagger?';
-            break;
-          default:
-            label = '360s';
-        }
-        return `<option value="${opt}"${statsMetricKey === opt ? ' selected' : ''}>${label}</option>`;
-      })
-      .join('');
-    const metricLabel = statsViewMode === 'teams' ? 'Team statistic' : 'Individual statistic';
-    const statSelector = `<div class="mb-4"><label for="additionalStatSelector" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">${metricLabel}</label><div class="relative"><select id="additionalStatSelector" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400">${metricOptions}</select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
-
-    const sortSelector = `<div class="mb-2"><label for="statsSortSelect" class="block text-sm font-medium text-gray-700 dark:text-white mb-2">Sort by</label><div class="relative"><select id="statsSortSelect" class="appearance-none block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg py-2.5 px-3 text-gray-700 dark:text-white leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:focus:ring-blue-400"><option value="recent"${statsSortKey === 'recent' ? ' selected' : ''}>Recency</option><option value="most"${statsSortKey === 'most' ? ' selected' : ''}>Most</option><option value="least"${statsSortKey === 'least' ? ' selected' : ''}>Least</option></select><div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300"><svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div></div></div>`;
-
-    const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
-    const sortedStats = sortStatisticsData(statsDataForMode, statsSortKey, statsMetricKey);
-    const statsTableHtml = renderStatsTable(statsViewMode, sortedStats, statsMetricKey);
-    const controlsBlock = `<div class="stats-controls bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">${viewSelector}${statSelector}${sortSelector}</div>`;
-    const hint = `<p class="mt-3 text-xs text-gray-500 dark:text-gray-400">Tap a ${statsViewMode === 'teams' ? 'team' : 'player'} to see full details.</p>`;
-
-    contentEl.innerHTML = `${controlsBlock}${hint}<div id="teamStatsTableWrapper" class="pb-6">${statsTableHtml}</div>`;
-
-    if (footerEl && stats.totalGames > 0) {
-      footerEl.innerHTML = `<div class="grid grid-cols-3 gap-2">
-        ${statCard("Avg Bid", stats.overallAverageBid, icons.avgBid, "blue")}
-        ${statCard("Time Played", formatDuration(stats.totalTimePlayedMs), icons.timePlayed, "purple")}
-        ${statCard("Games Played", stats.totalGames, icons.gamesPlayed, "green")}
-      </div>`;
-      footerEl.classList.remove("hidden");
-    }
+    footerEl.classList.remove("hidden");
   }
-  const viewModeSelect = document.getElementById('statsViewModeSelect');
-  if (viewModeSelect) {
-    viewModeSelect.value = statsViewMode;
-    viewModeSelect.addEventListener('change', e => {
-      statsViewMode = e.target.value === 'players' ? 'players' : 'teams';
-      renderStatisticsContent();
-    });
-  }
-  const selector = document.getElementById("additionalStatSelector");
-  if (selector) {
-      selector.value = statsMetricKey;
-      selector.addEventListener("change", function () {
-          statsMetricKey = this.value;
-          const latestStats = getStatistics();
-          const data = statsViewMode === 'players' ? latestStats.playersData : latestStats.teamsData;
-          const sortedData = sortStatisticsData(data, statsSortKey, statsMetricKey);
-          document.getElementById("teamStatsTableWrapper").innerHTML = renderStatsTable(statsViewMode, sortedData, statsMetricKey);
-          ensureStatisticsEntityInteraction();
-      });
-  }
-  const sortSelect = document.getElementById("statsSortSelect");
-  if (sortSelect) {
-    sortSelect.value = statsSortKey;
-    sortSelect.addEventListener("change", function () {
-      statsSortKey = this.value;
-      renderStatisticsContent();
-    });
-  }
+
+  bindStatsControlHandlers();
   ensureStatisticsEntityInteraction();
+}
+
+function bindStatsControlHandlers() {
+  document.querySelectorAll('[data-stats-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-stats-view') === 'players' ? 'players' : 'teams';
+      if (next === statsViewMode) return;
+      statsViewMode = next;
+      renderStatisticsContent();
+    });
+  });
+
+  document.querySelectorAll('[data-stats-metric]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-stats-metric');
+      if (!next || next === statsMetricKey) return;
+      statsMetricKey = next;
+      const latest = getStatistics();
+      const data = statsViewMode === 'players' ? latest.playersData : latest.teamsData;
+      const sorted = sortStatisticsData(data, statsSortKey, statsMetricKey);
+      const wrapper = document.getElementById('teamStatsTableWrapper');
+      if (wrapper) wrapper.innerHTML = renderStatsTable(statsViewMode, sorted, statsMetricKey);
+      document.querySelectorAll('[data-stats-metric]').forEach(el => {
+        el.setAttribute('aria-pressed', String(el.getAttribute('data-stats-metric') === statsMetricKey));
+      });
+      ensureStatisticsEntityInteraction();
+    });
+  });
+
+  const sortToggle = document.getElementById('statsSortToggle');
+  if (sortToggle) {
+    sortToggle.addEventListener('click', () => {
+      const idx = STATS_SORT_ORDER.indexOf(statsSortKey);
+      const nextIdx = idx === -1 ? 0 : (idx + 1) % STATS_SORT_ORDER.length;
+      statsSortKey = STATS_SORT_ORDER[nextIdx];
+      renderStatisticsContent();
+    });
+  }
 }
 
 function ensureStatisticsEntityInteraction() {
   const container = document.getElementById("statisticsModalContent");
   if (!container || container.dataset.entityClickBound === 'true') return;
   container.addEventListener('click', handleStatisticsEntityClick);
+  container.addEventListener('keydown', handleStatisticsEntityKeydown);
   container.dataset.entityClickBound = 'true';
 }
 
@@ -376,6 +474,19 @@ function handleStatisticsEntityClick(event) {
   const trigger = event.target.closest('.stats-entity-trigger');
   if (!trigger) return;
   event.preventDefault();
+  triggerEntityStatistics(trigger);
+}
+
+function handleStatisticsEntityKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const trigger = event.target.closest('.stats-entity-trigger');
+  if (!trigger) return;
+  if (trigger.tagName === 'BUTTON') return;
+  event.preventDefault();
+  triggerEntityStatistics(trigger);
+}
+
+function triggerEntityStatistics(trigger) {
   const mode = trigger.getAttribute('data-entity-mode');
   const key = trigger.getAttribute('data-entity-key');
   if (!mode || !key) return;
@@ -403,76 +514,112 @@ function renderEntityStatisticsContent(mode, entity) {
   if (!container) return;
   const titleEl = document.getElementById('entityStatisticsModalTitle');
   if (titleEl) {
-    titleEl.textContent = mode === 'players' ? 'Player Statistics' : 'Team Statistics';
+    titleEl.textContent = mode === 'players' ? 'Player Stats' : 'Team Stats';
   }
 
-  const displayName = entity.name || (mode === 'teams' ? deriveTeamDisplay(entity.players, 'Unnamed Team') : sanitizePlayerName(entity.name) || 'Unnamed Player');
+  const displayName = entity.name || (mode === 'teams'
+    ? deriveTeamDisplay(entity.players, 'Unnamed Team')
+    : sanitizePlayerName(entity.name) || 'Unnamed Player');
   const playersDisplay = mode === 'teams' ? formatTeamDisplay(entity.players || []) : '';
-  const displayNameText = escapeHtmlValue(displayName);
-  const playersDisplayText = escapeHtmlValue(playersDisplay);
-  const helperText = mode === 'teams' && playersDisplay
-    ? `<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Players: ${playersDisplayText}</p>`
-    : '';
+  const initials = getEntityInitials(displayName, mode === 'teams' ? entity.players : null);
+  const winPctRaw = Number(entity.winPercent);
+  const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
+  const winTier = getWinPctTier(entity.winPercent);
+  const wlRecord = `${entity.wins ?? 0}–${entity.losses ?? 0}`;
 
-  const statEntries = [
-    { label: 'Games Played', value: entity.gamesPlayed ?? 0 },
-    { label: 'Wins', value: entity.wins ?? 0 },
-    { label: 'Losses', value: entity.losses ?? 0 },
-    { label: 'Win %', value: entity.winPercent ? `${entity.winPercent}${entity.winPercent.toString().includes('%') ? '' : '%'}` : '0%' },
-    { label: 'Average Bid', value: entity.avgBid ?? 'N/A' },
-    { label: 'Total Bid Amount', value: entity.totalBidAmount ?? 0 },
-    { label: 'Bids Made', value: entity.bidsMade ?? 0 },
-    { label: 'Bids Succeeded', value: entity.bidsSucceeded ?? 0 },
-    { label: 'Bid Success %', value: entity.bidSuccessPct === 'N/A' ? 'N/A' : `${entity.bidSuccessPct}${entity.bidSuccessPct.toString().includes('%') ? '' : '%'}` },
-    { label: 'Hands Played', value: entity.handsPlayed ?? 0 },
-    { label: 'Hands Won', value: entity.handsWon ?? 0 },
-    { label: 'Sandbag Games', value: entity.sandbagGames ?? 0 },
-    { label: 'Sandbagger Flag', value: entity.sandbagger ?? 'No' },
-    { label: 'Perfect 360s', value: entity.count360 ?? 0 },
-    { label: 'Total Time Played', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : 'N/A' },
-    { label: 'Last Played', value: entity.lastPlayed ? formatTimestamp(entity.lastPlayed) : 'Unknown' },
-  ];
+  const formatNumber = (val) => (typeof val === 'number' && Number.isFinite(val)) ? val.toLocaleString() : val;
+  const sandbagBadge = (entity.sandbagger === 'Yes')
+    ? '<span class="entity-badge--yes">Yes</span>'
+    : '<span class="entity-badge--no">No</span>';
 
-  const formatValue = (val) => {
-    if (typeof val === 'number' && Number.isFinite(val)) {
-      return val.toLocaleString();
-    }
-    return val;
-  };
-
-  const detailRows = statEntries.map(entry => `
-    <div class="flex items-center justify-between py-2">
-      <dt class="text-sm font-medium text-gray-600 dark:text-gray-300">${escapeHtmlValue(entry.label)}</dt>
-      <dd class="text-sm text-gray-900 dark:text-gray-100">${escapeHtmlValue(formatValue(entry.value))}</dd>
-    </div>
-  `).join('');
+  const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
+    ? `<p class="entity-hero__sub">${escapeHtmlValue(playersDisplay)}</p>`
+    : `<p class="entity-hero__sub">${mode === 'teams' ? 'Team' : 'Player'} · ${escapeHtmlValue(wlRecord)} record</p>`;
 
   const quickStats = [
-    { label: 'Win %', value: statEntries[3].value },
-    { label: 'Games', value: statEntries[0].value },
-    { label: 'Total Time', value: statEntries[14].value },
-    { label: '360s', value: statEntries[13].value },
+    { label: 'Games', value: formatNumber(entity.gamesPlayed ?? 0) },
+    { label: 'Win %', value: `${entity.winPercent ?? '0.0'}%` },
+    { label: 'Time', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : '—' },
+    { label: '360s', value: formatNumber(entity.count360 ?? 0) },
   ].map(card => `
-    <div class="rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
-      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">${escapeHtmlValue(card.label)}</p>
-      <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">${escapeHtmlValue(formatValue(card.value))}</p>
-    </div>
-  `).join('');
+    <div class="entity-quickstat">
+      <span class="entity-quickstat__label">${escapeHtmlValue(card.label)}</span>
+      <span class="entity-quickstat__value">${escapeHtmlValue(card.value)}</span>
+    </div>`).join('');
+
+  const sections = [
+    {
+      title: 'Performance',
+      rows: [
+        { label: 'Wins', value: formatNumber(entity.wins ?? 0) },
+        { label: 'Losses', value: formatNumber(entity.losses ?? 0) },
+        { label: 'Win %', value: `${entity.winPercent ?? '0.0'}%` },
+        { label: 'Hands Played', value: formatNumber(entity.handsPlayed ?? 0) },
+        { label: 'Hands Won', value: formatNumber(entity.handsWon ?? 0) },
+      ],
+    },
+    {
+      title: 'Bidding',
+      rows: [
+        { label: 'Average Bid', value: entity.avgBid ?? 'N/A' },
+        { label: 'Bids Made', value: formatNumber(entity.bidsMade ?? 0) },
+        { label: 'Bids Succeeded', value: formatNumber(entity.bidsSucceeded ?? 0) },
+        { label: 'Bid Success %', value: entity.bidSuccessPct === 'N/A' || entity.bidSuccessPct === undefined ? 'N/A' : `${entity.bidSuccessPct}%` },
+        { label: 'Total Bid Amount', value: formatNumber(entity.totalBidAmount ?? 0) },
+      ],
+    },
+    {
+      title: 'Highlights',
+      rows: [
+        { label: 'Perfect 360s', value: formatNumber(entity.count360 ?? 0) },
+        { label: 'Sandbag Games', value: formatNumber(entity.sandbagGames ?? 0) },
+        { label: 'Sandbagger', value: sandbagBadge, raw: true },
+      ],
+    },
+    {
+      title: 'Activity',
+      rows: [
+        { label: 'Total Time', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : 'N/A' },
+        { label: 'Last Played', value: entity.lastPlayed ? formatTimestamp(entity.lastPlayed) : 'Unknown' },
+      ],
+    },
+  ];
+
+  const sectionsHtml = sections.map(section => `
+    <div class="entity-section">
+      <p class="entity-section__title">${escapeHtmlValue(section.title)}</p>
+      <dl class="entity-section__list">
+        ${section.rows.map(row => `
+          <div class="entity-section__row">
+            <dt class="entity-section__label">${escapeHtmlValue(row.label)}</dt>
+            <dd class="entity-section__value">${row.raw ? row.value : escapeHtmlValue(String(row.value))}</dd>
+          </div>`).join('')}
+      </dl>
+    </div>`).join('');
 
   container.innerHTML = `
-    <div class="space-y-6">
-      <div>
-        <h3 class="text-2xl font-bold text-gray-900 dark:text-white">${displayNameText}</h3>
-        ${helperText}
-      </div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="entity-detail">
+      <section class="entity-hero">
+        <span class="stats-initials stats-initials--lg" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+        <div class="entity-hero__text">
+          <h3 class="entity-hero__name">${escapeHtmlValue(displayName)}</h3>
+          ${subline}
+        </div>
+        <div class="entity-hero__win">
+          <span class="entity-hero__win-label">Win Rate</span>
+          <span class="entity-hero__win-value win-tier-${winTier}">${escapeHtmlValue(String(entity.winPercent ?? '0.0'))}%</span>
+          <span class="entity-hero__win-bar" aria-hidden="true">
+            <span class="entity-hero__win-bar-fill" style="--win-pct: ${Math.max(0, Math.min(100, winPct))}%;"></span>
+          </span>
+        </div>
+      </section>
+      <div class="entity-quickstats">
         ${quickStats}
       </div>
-      <dl class="divide-y divide-gray-200 dark:divide-gray-700 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        ${detailRows}
-      </dl>
-    </div>
-  `;
+      <div class="entity-sections">
+        ${sectionsHtml}
+      </div>
+    </div>`;
 }
 function getStatistics() {
   const savedGames = getLocalStorage("savedGames", []).filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
@@ -723,64 +870,134 @@ function isGameSandbagForTeamKey(game, teamPlayers, threshold = 2) {
   return sandbagOpportunities >= threshold;
 }
 function renderStatsTable(mode, statsData, additionalStatKey) {
-  const headers = { games: "Games", avgBid: "Avg Bid", bidSuccessPct: "Bid Success %", sandbagger: "Sandbagger?", "360s": "360s", timePlayed: "Time Played" };
+  const metricConf = STATS_METRIC_CONFIG[additionalStatKey] || { label: 'Stat', long: 'Stat' };
   const nameHeader = mode === 'teams' ? 'Team' : 'Player';
+
   if (!statsData || !statsData.length) {
     const emptyLabel = mode === 'teams' ? 'No team stats yet.' : 'No individual stats yet.';
-    return `<p class="text-center text-gray-500 dark:text-gray-400 mt-4">${emptyLabel}</p>`;
+    return `<p class="stats-results__empty">${emptyLabel}</p>`;
   }
 
-  let tableHTML = `<div id="teamStatsTableContainer" class="mt-4"><div class="overflow-x-auto -mx-4 sm:mx-0"><div class="inline-block min-w-full align-middle"><table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600"><thead><tr>
-      <th scope="col" class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 sticky left-0 z-10">${nameHeader}</th>
-      <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">Win %</th>
-      <th scope="col" class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">${headers[additionalStatKey] || 'Stat'}</th>`;
-  tableHTML += `</tr></thead><tbody class="divide-y divide-gray-200 dark:divide-gray-600 bg-white dark:bg-gray-800">`;
+  const cards = statsData.map(item => buildStatsRowCard(mode, item, additionalStatKey)).join('');
+  const tableRows = statsData.map((item, index) => buildStatsTableRow(mode, item, additionalStatKey, index)).join('');
 
-  statsData.forEach((item, index) => {
-    const rowClass = index % 2 === 0 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700";
-    const lookup = {
-      games: item.gamesPlayed,
-      '360s': item.count360,
-      avgBid: item.avgBid,
-      bidSuccessPct: item.bidSuccessPct,
-      sandbagger: item.sandbagger,
-      timePlayed: formatDuration(item.totalTimeMs),
-    };
-    let statVal = lookup[additionalStatKey] ?? '0';
-    if (additionalStatKey.includes('Pct') && typeof statVal === 'string' && !statVal.includes('%') && statVal !== 'N/A') statVal += '%';
+  return `
+    <div class="stats-cards-view stats-rows" role="list" aria-label="${escapeAttribute(nameHeader + ' statistics')}">
+      ${cards}
+    </div>
+    <div class="stats-table-view">
+      <div class="overflow-x-auto -mx-2 sm:mx-0">
+        <table class="stats-table min-w-full">
+          <thead>
+            <tr>
+              <th scope="col" class="stats-table__th-name">${escapeHtmlValue(nameHeader)}</th>
+              <th scope="col" class="stats-table__th">Win %</th>
+              <th scope="col" class="stats-table__th">${escapeHtmlValue(metricConf.long)}</th>
+              <th scope="col" class="stats-table__th-icon" aria-hidden="true"></th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
 
-	    const entityKey = item.key;
-	    const displayName = item.name || (mode === 'teams' ? deriveTeamDisplay(item.players, 'Unnamed Team') : sanitizePlayerName(item.name) || 'Unnamed Player');
-	    const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
-	    const entityKeyAttr = escapeAttribute(entityKey);
-	    const displayNameText = escapeHtmlValue(displayName);
-	    const playersDisplayText = escapeHtmlValue(playersDisplay);
-	    const winPercentText = escapeHtmlValue(item.winPercent);
-	    const statValText = escapeHtmlValue(statVal);
-	    const secondaryLine = mode === 'teams' && playersDisplay && playersDisplay !== displayName
-	      ? `<span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">${playersDisplayText}</span>`
-	      : '';
-	    tableHTML += `<tr class="${rowClass}">
-	      <td class="py-3 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sticky left-0 z-10 ${rowClass}">
-	        <button type="button"
-	          class="stats-entity-trigger group flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 -mx-2 -my-1.5 text-left transition-colors hover:bg-gray-100/70 active:bg-gray-200/70 dark:hover:bg-gray-600/40 dark:active:bg-gray-600/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-blue-400"
-	          data-entity-mode="${mode}" data-entity-key="${entityKeyAttr}" aria-haspopup="dialog">
-	          <span class="min-w-0">
-	            <span class="block font-semibold text-blue-600 group-hover:text-blue-500 dark:text-blue-300 dark:group-hover:text-blue-200 truncate">${displayNameText}</span>
-	            ${secondaryLine}
-          </span>
-          <span class="mt-0.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500 dark:text-gray-500 dark:group-hover:text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </span>
-        </button>
+function buildStatsRowCard(mode, item, additionalStatKey) {
+  const metricConf = STATS_METRIC_CONFIG[additionalStatKey] || { label: 'Stat', long: 'Stat' };
+  const entityKey = item.key;
+  const displayName = item.name || (mode === 'teams'
+    ? deriveTeamDisplay(item.players, 'Unnamed Team')
+    : sanitizePlayerName(item.name) || 'Unnamed Player');
+  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
+  const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
+  const winPctRaw = Number(item.winPercent);
+  const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
+  const winTier = getWinPctTier(item.winPercent);
+  const metricVal = getMetricDisplay(additionalStatKey, item);
+  const isSandbag = additionalStatKey === 'sandbagger' && metricVal === 'Yes';
+  const wlRecord = `${item.wins ?? 0}–${item.losses ?? 0}`;
+
+  const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
+    ? `<span class="stats-row-card__sub">${escapeHtmlValue(playersDisplay)}</span>`
+    : `<span class="stats-row-card__sub">${escapeHtmlValue(wlRecord)} · ${item.gamesPlayed ?? 0} game${(item.gamesPlayed ?? 0) === 1 ? '' : 's'}</span>`;
+
+  const metricBadge = isSandbag
+    ? `<span class="stats-row-card__metric-value stats-row-card__metric-value--warn">Yes</span>`
+    : `<span class="stats-row-card__metric-value">${escapeHtmlValue(metricVal)}</span>`;
+
+  return `
+    <button type="button"
+      class="stats-row-card stats-entity-trigger"
+      data-entity-mode="${escapeAttribute(mode)}"
+      data-entity-key="${escapeAttribute(entityKey)}"
+      aria-haspopup="dialog"
+      role="listitem">
+      <span class="stats-row-card__main">
+        <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+        <span class="stats-row-card__title">
+          <span class="stats-row-card__name">${escapeHtmlValue(displayName)}</span>
+          ${subline}
+        </span>
+      </span>
+      <span class="stats-row-card__metrics">
+        <span class="win-chip win-chip--${winTier}" aria-label="Win percent ${escapeAttribute(String(winPct))} percent">
+          <span class="win-chip__bar" style="--win-pct: ${Math.max(0, Math.min(100, winPct))}%;"></span>
+          <span class="win-chip__value">${escapeHtmlValue(String(item.winPercent))}%</span>
+        </span>
+        <span class="stats-row-card__metric">
+          <span class="stats-row-card__metric-label">${escapeHtmlValue(metricConf.label)}</span>
+          ${metricBadge}
+        </span>
+        <span class="stats-row-card__chevron" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </span>
+    </button>`;
+}
+
+function buildStatsTableRow(mode, item, additionalStatKey, index) {
+  const entityKey = item.key;
+  const displayName = item.name || (mode === 'teams'
+    ? deriveTeamDisplay(item.players, 'Unnamed Team')
+    : sanitizePlayerName(item.name) || 'Unnamed Player');
+  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
+  const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
+  const winPctRaw = Number(item.winPercent);
+  const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
+  const winTier = getWinPctTier(item.winPercent);
+  const metricVal = getMetricDisplay(additionalStatKey, item);
+  const isSandbag = additionalStatKey === 'sandbagger' && metricVal === 'Yes';
+  const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
+    ? `<span class="stats-table__sub">${escapeHtmlValue(playersDisplay)}</span>`
+    : '';
+
+  return `
+    <tr class="stats-table__row stats-entity-trigger"
+      data-entity-mode="${escapeAttribute(mode)}"
+      data-entity-key="${escapeAttribute(entityKey)}"
+      tabindex="0"
+      role="button"
+      aria-haspopup="dialog">
+      <td class="stats-table__td-name">
+        <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+        <span class="stats-table__name-block">
+          <span class="stats-table__name">${escapeHtmlValue(displayName)}</span>
+          ${subline}
+        </span>
       </td>
-	      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${winPercentText}%</td>
-	      <td class="whitespace-nowrap px-3 py-3.5 text-sm text-center text-gray-700 dark:text-gray-300">${statValText}</td>`;
-    tableHTML += `</tr>`;
-  });
-
-  tableHTML += `</tbody></table></div></div></div>`;
-  return tableHTML;
+      <td class="stats-table__td">
+        <span class="win-chip win-chip--${winTier}">
+          <span class="win-chip__bar" style="--win-pct: ${Math.max(0, Math.min(100, winPct))}%;"></span>
+          <span class="win-chip__value">${escapeHtmlValue(String(item.winPercent))}%</span>
+        </span>
+      </td>
+      <td class="stats-table__td">${
+        isSandbag
+          ? '<span class="entity-badge--yes">Yes</span>'
+          : `<span class="stats-table__metric">${escapeHtmlValue(metricVal)}</span>`
+      }</td>
+      <td class="stats-table__td-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </td>
+    </tr>`;
 }

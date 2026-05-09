@@ -283,24 +283,24 @@
     </div>
 
     <!-- Statistics Modal -->
-    <div id="statisticsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="statisticsModalTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1" onclick="if (event.target === this) closeStatisticsModal();">
-      <div class="relative mx-auto my-4 w-full max-w-md bg-white rounded-xl shadow-lg dark:bg-gray-800 overflow-hidden flex flex-col" style="max-height: 90vh;">
-        <header class="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-          <h2 id="statisticsModalTitle" class="text-xl font-bold text-gray-800 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>Statistics</h2>
-          <button type="button" onclick="closeStatisticsModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg p-2 -mr-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+    <div id="statisticsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal stats-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="statisticsModalTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1" onclick="if (event.target === this) closeStatisticsModal();">
+      <div class="stats-modal__shell relative mx-auto my-4 w-full max-w-lg bg-white rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden flex flex-col" style="max-height: 90vh;">
+        <header class="stats-modal__header sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 sm:px-6 py-3.5 flex justify-between items-center">
+          <h2 id="statisticsModalTitle" class="text-lg sm:text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2"><span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-blue-500/15 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg></span>Statistics</h2>
+          <button type="button" onclick="closeStatisticsModal()" class="stats-modal__close text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-2 -mr-2" aria-label="Close Statistics"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         </header>
-        <div id="statisticsModalScroll" class="p-4 sm:p-6 overflow-y-auto no-scrollbar flex-1 min-h-0"><div id="statisticsModalContent"></div></div>
+        <div id="statisticsModalScroll" class="stats-modal__scroll p-4 sm:p-6 overflow-y-auto no-scrollbar flex-1 min-h-0"><div id="statisticsModalContent"></div></div>
         <div id="statisticsModalFooter" class="hidden stats-footer px-4 sm:px-6"></div>
       </div>
     </div>
     <!-- Entity Statistics Modal -->
-    <div id="entityStatisticsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="entityStatisticsModalTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1" onclick="if (event.target === this) closeEntityStatisticsModal();">
-      <div class="relative mx-auto my-4 w-full max-w-xl bg-white rounded-2xl shadow-2xl dark:bg-gray-800 overflow-hidden" style="max-height: 90vh;">
-        <header class="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-          <h2 id="entityStatisticsModalTitle" class="text-xl font-semibold text-gray-800 dark:text-white">Entity Statistics</h2>
-          <button type="button" onclick="closeEntityStatisticsModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg p-2 -mr-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+    <div id="entityStatisticsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal stats-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="entityStatisticsModalTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1" onclick="if (event.target === this) closeEntityStatisticsModal();">
+      <div class="stats-modal__shell relative mx-auto my-4 w-full max-w-xl bg-white rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden flex flex-col" style="max-height: 90vh;">
+        <header class="stats-modal__header sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 sm:px-6 py-3.5 flex justify-between items-center">
+          <h2 id="entityStatisticsModalTitle" class="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white">Statistics</h2>
+          <button type="button" onclick="closeEntityStatisticsModal()" class="stats-modal__close text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-2 -mr-2" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         </header>
-        <div id="entityStatisticsModalContent" class="p-6 bg-gray-50 dark:bg-gray-900/40 overflow-y-auto" style="max-height: calc(90vh - 70px);"></div>
+        <div id="entityStatisticsModalContent" class="stats-modal__scroll p-4 sm:p-6 bg-gray-50 dark:bg-gray-900/40 overflow-y-auto flex-1 min-h-0"></div>
       </div>
     </div>
 
