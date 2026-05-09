@@ -102,7 +102,7 @@ function validatePoints(pointsStr) {
 
 // --- Misc UI & Utility ---
 function showVersionNum() {
-  alert("Version 1.5.5 (Build 1) Adds a new glass-like feel, point differential display, individual statistics, cleaner team handling & more bug fixes / UI improvements.");
+  alert(APP_RELEASE_SUMMARY);
 }
 // Time protection constants
 const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
@@ -155,4 +155,3 @@ function formatDuration(ms) {
   }
   return `${mins}m`;
 }
-

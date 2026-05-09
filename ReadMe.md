@@ -48,14 +48,14 @@
 *   **Bug Reporting:** Easy "Create Bug Report Email" option with pre-filled device and app state info.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New (Latest Updates)
+## 🚀 What's New in 2.0
 
-*   **Resume Paper Games:** New modal lets you set player names, enter current scores, and continue a game that started on paper.
+*   **Refreshed Statistics Experience:** Cleaner team and player stat views with a more polished, mobile-friendly modal.
+*   **Resume Paper Games:** Set player names, enter current scores, and continue a game that started on paper.
 *   **Dealer Tools:** Capture the four-player dealing order, auto-create teams by pairing across the table, and show the active dealer badge during play.
-*   **Misdeal Support:** Optional setting surfaces a Misdeal button to skip to the next dealer without changing scores.
-*   **Table-Talk Options:** Configure whether table-talk deducts the bid amount or a custom point value per infraction.
-*   **Player-Level Insights:** Statistics view now supports switching between team and individual player stats.
-*   **Performance & UX:** Additional polish to modals, onboarding cards, and status indicators.
+*   **Misdeal & Table-Talk Controls:** Skip misdeal hands without changing scores, and configure table-talk penalties as either bid-based or fixed-point deductions.
+*   **Win Probability Upgrade:** Runtime model loading, cache handling, and edge-case behavior are more reliable during live games.
+*   **Cloud & Offline Hardening:** Firebase config delivery, anonymous sync, production assets, and PWA cache behavior are tightened up for the 2.0 release.
 
 ## 🛠️ Tech Stack
 

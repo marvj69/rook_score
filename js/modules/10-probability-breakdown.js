@@ -536,10 +536,10 @@ function handleTeamSelectionSubmit(e) {
   pendingGameAction = null;
 }
 function getDeviceDetails() {
-  let appVersion = "N/A";
+  let appVersion = typeof APP_VERSION !== "undefined" ? APP_VERSION : "N/A";
   try {
-      const verEl = document.querySelector('.absolute.top-0.right-0 p');
-      if (verEl && verEl.textContent.includes('version')) appVersion = verEl.textContent.trim();
+      const verEl = document.querySelector("#versionBadge p");
+      if (verEl && verEl.textContent.trim()) appVersion = verEl.textContent.trim();
   } catch (e) { console.warn("Could not get app version:", e); }
 
   let fbStatus = "N/A", fbUserId = "N/A", fbIsAnon = "N/A";
