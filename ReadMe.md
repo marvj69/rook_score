@@ -213,6 +213,9 @@ npx vercel dev
 
 Opening `index.html` directly still works for local scoring, but Google sign-in and Firestore sync require the Vercel `/api/firebase-config` endpoint.
 
+### Google Analytics
+Google Analytics is loaded from `js/analytics.js` on the GitHub Pages host for `https://marvj69.github.io/rook_score/` using the GA4 web stream Measurement ID `G-MCY1GMM4L5`.
+
 ### GitHub Pages
 The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` using the endpoint's CORS allowlist. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint's allowlist or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` in Vercel.
 
