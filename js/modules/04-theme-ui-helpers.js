@@ -7,7 +7,7 @@ function enforceDarkMode() {
     root.classList.add("dark");
   }
   const metaTheme = document.querySelector('meta[name="theme-color"]');
-  if (metaTheme) metaTheme.setAttribute("content", "#111827");
+  if (metaTheme) metaTheme.setAttribute("content", "#24284f");
   // Remove legacy flag so we're not tempted to read it elsewhere.
   localStorage.removeItem("darkModeEnabled");
 }
@@ -200,4 +200,3 @@ function showSaveIndicator(message = "Saved") {
   el.classList.add("show");
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.classList.add("hidden"), 150); }, 1000);
 }
-
