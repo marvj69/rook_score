@@ -490,10 +490,7 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   if (!state.rounds.length) return;
 
   showSaveIndicator("Getting Location...");
-  const completedLocation = await captureGameLocation({
-    promptFallback: true,
-    fallbackLocation: null,
-  });
+  const completedLocation = await captureGameLocation();
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
@@ -580,10 +577,7 @@ async function freezeCurrentGame() {
     gameName = `FROZEN-${new Date().toLocaleTimeString()}`;
   }
 
-  const frozenLocation = await captureGameLocation({
-      promptFallback: true,
-      fallbackLocation: state.gameLocation,
-  });
+  const frozenLocation = await captureGameLocation();
   const frozenAt = new Date().toISOString();
   const frozenGame = {
       name: gameName,

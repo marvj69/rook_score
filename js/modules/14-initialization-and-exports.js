@@ -213,6 +213,7 @@ if (typeof module !== 'undefined' && module.exports) {
     createManualGameLocationRecord,
     getStoredLocationDisplay,
     getGameLocationDisplay,
+    captureGameLocation,
     playersEqual,
     renderReadOnlyGameDetails,
     buildSavedGameCard,

@@ -196,6 +196,7 @@ const {
   createManualGameLocationRecord,
   getStoredLocationDisplay,
   getGameLocationDisplay,
+  captureGameLocation,
   playersEqual,
   renderReadOnlyGameDetails,
   buildSavedGameCard,
@@ -297,6 +298,27 @@ test('manual game location records and game display prefer completed location', 
     }),
     '55 Lake St, Marquette, MI',
   );
+});
+
+test('captureGameLocation does not prompt when automatic location is unavailable', async () => {
+  let promptCalled = false;
+  const originalPrompt = window.prompt;
+  window.prompt = () => {
+    promptCalled = true;
+    return 'Should Not Be Used, Detroit, MI';
+  };
+
+  try {
+    const location = await captureGameLocation();
+    assert.equal(location, null);
+    assert.equal(promptCalled, false);
+  } finally {
+    if (originalPrompt === undefined) {
+      delete window.prompt;
+    } else {
+      window.prompt = originalPrompt;
+    }
+  }
 });
 
 test('saved and freezer game cards render formatted location details', () => {

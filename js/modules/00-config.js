@@ -356,22 +356,11 @@ async function reverseGeocodeGameLocation(position) {
   }
 }
 
-function promptForGameLocation(defaultLocation = "") {
-  const promptFn = typeof window !== "undefined" && typeof window.prompt === "function"
-    ? window.prompt.bind(window)
-    : null;
-  if (!promptFn) return null;
-  const entered = promptFn("Enter game location as Street, City, ST", defaultLocation || "");
-  return createManualGameLocationRecord(entered);
-}
-
-async function captureGameLocation(options = {}) {
-  const { promptFallback = true, fallbackLocation = null } = options;
+async function captureGameLocation() {
   const position = await requestBrowserCoordinates();
   const geocoded = await reverseGeocodeGameLocation(position);
   if (geocoded) return geocoded;
-  if (!promptFallback) return null;
-  return promptForGameLocation(getStoredLocationDisplay(fallbackLocation));
+  return null;
 }
 
 function playersEqual(a, b) {
