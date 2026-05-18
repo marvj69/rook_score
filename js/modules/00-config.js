@@ -11,6 +11,8 @@ const PRO_MODE_KEY = "proModeEnabled";
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
 const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";
+const GAME_LOCATION_TIMEOUT_MS = 6500;
+const GAME_LOCATION_REVERSE_GEOCODE_TIMEOUT_MS = 5500;
 const PROB_CACHE = new Map();   // memoise across calls
 const LOCAL_STORAGE_CACHE = new Map();
 const WIN_PROB_CACHE = { key: null, value: null };
@@ -39,6 +41,61 @@ const DEFAULT_STATE = {
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
   misdealCount: 0,
+  gameLocation: null,
+};
+
+const US_STATE_ABBREVIATIONS = {
+  alabama: "AL",
+  alaska: "AK",
+  arizona: "AZ",
+  arkansas: "AR",
+  california: "CA",
+  colorado: "CO",
+  connecticut: "CT",
+  delaware: "DE",
+  florida: "FL",
+  georgia: "GA",
+  hawaii: "HI",
+  idaho: "ID",
+  illinois: "IL",
+  indiana: "IN",
+  iowa: "IA",
+  kansas: "KS",
+  kentucky: "KY",
+  louisiana: "LA",
+  maine: "ME",
+  maryland: "MD",
+  massachusetts: "MA",
+  michigan: "MI",
+  minnesota: "MN",
+  mississippi: "MS",
+  missouri: "MO",
+  montana: "MT",
+  nebraska: "NE",
+  nevada: "NV",
+  "new hampshire": "NH",
+  "new jersey": "NJ",
+  "new mexico": "NM",
+  "new york": "NY",
+  "north carolina": "NC",
+  "north dakota": "ND",
+  ohio: "OH",
+  oklahoma: "OK",
+  oregon: "OR",
+  pennsylvania: "PA",
+  "rhode island": "RI",
+  "south carolina": "SC",
+  "south dakota": "SD",
+  tennessee: "TN",
+  texas: "TX",
+  utah: "UT",
+  vermont: "VT",
+  virginia: "VA",
+  washington: "WA",
+  "west virginia": "WV",
+  wisconsin: "WI",
+  wyoming: "WY",
+  "district of columbia": "DC",
 };
 
 function sanitizePlayerName(name) {
@@ -130,6 +187,191 @@ function getGameTeamDisplay(game, side) {
   const canonicalPlayers = canonicalizePlayers(playersField);
   const nameField = side === 'us' ? (game.usTeamName || game.usName) : (game.demTeamName || game.demName);
   return deriveTeamDisplay(canonicalPlayers, nameField || fallback) || fallback;
+}
+
+function cleanLocationPiece(value) {
+  return (typeof value === "string" ? value : "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/,+$/g, "");
+}
+
+function normalizeStateCode(value) {
+  const cleaned = cleanLocationPiece(value);
+  if (!cleaned) return "";
+  const isoMatch = cleaned.match(/^US[-_ ]([A-Z]{2})$/i);
+  if (isoMatch) return isoMatch[1].toUpperCase();
+  const compact = cleaned.replace(/\./g, "").toUpperCase();
+  if (/^[A-Z]{2}$/.test(compact)) return compact;
+  return US_STATE_ABBREVIATIONS[cleaned.toLowerCase()] || compact;
+}
+
+function formatGameLocationParts(parts = {}) {
+  const street = cleanLocationPiece(parts.street);
+  const city = cleanLocationPiece(parts.city);
+  const stateCode = normalizeStateCode(parts.state || parts.stateCode || parts.stateName);
+  if (!city || !stateCode) return "";
+  return [street, city, stateCode].filter(Boolean).join(", ");
+}
+
+function getStreetFromAddress(address = {}) {
+  const houseNumber = cleanLocationPiece(address.house_number);
+  const road = cleanLocationPiece(
+    address.road ||
+    address.pedestrian ||
+    address.footway ||
+    address.path ||
+    address.cycleway ||
+    address.neighbourhood ||
+    address.suburb ||
+    address.name
+  );
+  if (houseNumber && road) return `${houseNumber} ${road}`;
+  return road || houseNumber;
+}
+
+function getCityFromAddress(address = {}) {
+  return cleanLocationPiece(
+    address.city ||
+    address.town ||
+    address.village ||
+    address.hamlet ||
+    address.municipality ||
+    address.locality ||
+    address.county
+  );
+}
+
+function createGameLocationRecord({ street = "", city = "", state = "", latitude = null, longitude = null, source = "manual" } = {}) {
+  const formatted = formatGameLocationParts({ street, city, state });
+  if (!formatted) return null;
+  const record = {
+    formatted,
+    street: cleanLocationPiece(street),
+    city: cleanLocationPiece(city),
+    state: normalizeStateCode(state),
+    capturedAt: new Date().toISOString(),
+    source,
+  };
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    record.latitude = Number(latitude.toFixed(6));
+    record.longitude = Number(longitude.toFixed(6));
+  }
+  return record;
+}
+
+function createManualGameLocationRecord(input) {
+  const cleaned = cleanLocationPiece(input);
+  if (!cleaned) return null;
+  const parts = cleaned.split(",").map(cleanLocationPiece).filter(Boolean);
+  if (parts.length >= 3) {
+    const state = parts.pop();
+    const city = parts.pop();
+    const street = parts.join(", ");
+    const structured = createGameLocationRecord({ street, city, state, source: "manual" });
+    if (structured) return structured;
+  }
+  return {
+    formatted: cleaned,
+    street: "",
+    city: "",
+    state: "",
+    capturedAt: new Date().toISOString(),
+    source: "manual",
+  };
+}
+
+function getStoredLocationDisplay(location) {
+  if (!location) return "";
+  if (typeof location === "string") return cleanLocationPiece(location);
+  if (typeof location !== "object") return "";
+  if (location.formatted) return cleanLocationPiece(location.formatted);
+  return formatGameLocationParts(location);
+}
+
+function getGameLocationDisplay(game) {
+  if (!game || typeof game !== "object") return "";
+  return getStoredLocationDisplay(
+    game.location ||
+    game.completedLocation ||
+    game.gameLocation ||
+    game.frozenLocation ||
+    game.lastFrozenLocation
+  );
+}
+
+function requestBrowserCoordinates(timeoutMs = GAME_LOCATION_TIMEOUT_MS) {
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  if (!nav || !nav.geolocation || typeof nav.geolocation.getCurrentPosition !== "function") {
+    return Promise.resolve(null);
+  }
+  return new Promise(resolve => {
+    nav.geolocation.getCurrentPosition(
+      position => resolve(position),
+      error => {
+        console.warn("Game location unavailable.", error);
+        resolve(null);
+      },
+      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 10 * 60 * 1000 }
+    );
+  });
+}
+
+async function reverseGeocodeGameLocation(position) {
+  if (!position || !position.coords || typeof fetch !== "function") return null;
+  const { latitude, longitude } = position.coords;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const params = new URLSearchParams({
+    format: "jsonv2",
+    lat: String(latitude),
+    lon: String(longitude),
+    addressdetails: "1",
+    zoom: "18",
+  });
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), GAME_LOCATION_REVERSE_GEOCODE_TIMEOUT_MS) : null;
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: controller ? controller.signal : undefined,
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const address = payload && payload.address ? payload.address : {};
+    const state = address["ISO3166-2-lvl4"] || address.state_code || address.state;
+    return createGameLocationRecord({
+      street: getStreetFromAddress(address),
+      city: getCityFromAddress(address),
+      state,
+      latitude,
+      longitude,
+      source: "geolocation",
+    });
+  } catch (error) {
+    console.warn("Reverse geocoding game location failed.", error);
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function promptForGameLocation(defaultLocation = "") {
+  const promptFn = typeof window !== "undefined" && typeof window.prompt === "function"
+    ? window.prompt.bind(window)
+    : null;
+  if (!promptFn) return null;
+  const entered = promptFn("Enter game location as Street, City, ST", defaultLocation || "");
+  return createManualGameLocationRecord(entered);
+}
+
+async function captureGameLocation(options = {}) {
+  const { promptFallback = true, fallbackLocation = null } = options;
+  const position = await requestBrowserCoordinates();
+  const geocoded = await reverseGeocodeGameLocation(position);
+  if (geocoded) return geocoded;
+  if (!promptFallback) return null;
+  return promptForGameLocation(getStoredLocationDisplay(fallbackLocation));
 }
 
 function playersEqual(a, b) {

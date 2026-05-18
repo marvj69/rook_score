@@ -471,7 +471,7 @@ function handleGameOverFixClick(e) {
   handleUndo();
 }
 
-function handleManualSaveGame() { // Called after team names confirmed or if already set
+async function handleManualSaveGame() { // Called after team names confirmed or if already set
   if (!state.usTeamName || !state.demTeamName) {
     pendingGameAction = "save";
     
@@ -489,6 +489,11 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
   }
   if (!state.rounds.length) return;
 
+  showSaveIndicator("Getting Location...");
+  const completedLocation = await captureGameLocation({
+    promptFallback: true,
+    fallbackLocation: null,
+  });
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
@@ -510,6 +515,8 @@ function handleManualSaveGame() { // Called after team names confirmed or if alr
       startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
+      location: completedLocation,
+      completedLocation,
       // Simplified playerStats, more complex stats are in general statistics
       playerStats: { 
           [usDisplay]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
@@ -549,11 +556,12 @@ function handleFreezerGame() {
 function confirmFreeze() {
    openConfirmationModal(
       "Freeze this game? It will be moved to Freezer Games and current game will reset.",
-      () => { freezeCurrentGame(); closeConfirmationModal(); closeMenuOverlay(); },
+      async () => { closeConfirmationModal(); closeMenuOverlay(); await freezeCurrentGame(); },
       closeConfirmationModal
   );
 }
-function freezeCurrentGame() {
+async function freezeCurrentGame() {
+  showSaveIndicator("Getting Location...");
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
@@ -572,6 +580,11 @@ function freezeCurrentGame() {
     gameName = `FROZEN-${new Date().toLocaleTimeString()}`;
   }
 
+  const frozenLocation = await captureGameLocation({
+      promptFallback: true,
+      fallbackLocation: state.gameLocation,
+  });
+  const frozenAt = new Date().toISOString();
   const frozenGame = {
       name: gameName,
       usName: usDisplay,
@@ -585,7 +598,11 @@ function freezeCurrentGame() {
       winner: null, victoryMethod: null, // Game is not over
       rounds: state.rounds,
       startingTotals: sanitizeTotals(state.startingTotals),
-      timestamp: new Date().toISOString(),
+      timestamp: frozenAt,
+      frozenAt,
+      location: frozenLocation,
+      frozenLocation,
+      gameLocation: frozenLocation,
       accumulatedTime: finalAccumulated,
       // Store necessary state to resume
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
@@ -635,7 +652,8 @@ function loadFreezerGame(index) {
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],
-          misdealCount: chosen.misdealCount || 0
+          misdealCount: chosen.misdealCount || 0,
+          gameLocation: chosen.location || chosen.frozenLocation || chosen.gameLocation || null
       });
       freezerGames.splice(index, 1); // Remove from freezer
       setLocalStorage("freezerGames", freezerGames);

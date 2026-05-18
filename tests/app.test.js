@@ -192,7 +192,14 @@ const {
   parseLegacyTeamName,
   deriveTeamDisplay,
   getGameTeamDisplay,
+  formatGameLocationParts,
+  createManualGameLocationRecord,
+  getStoredLocationDisplay,
+  getGameLocationDisplay,
   playersEqual,
+  renderReadOnlyGameDetails,
+  buildSavedGameCard,
+  buildFreezerGameCard,
   bucketScore,
   getBucketRange,
   buildProbabilityIndex,
@@ -266,6 +273,68 @@ test('ensurePlayersArray always returns two sanitized names', () => {
 
   const fallback = ensurePlayersArray(null);
   assert.deepEqual(fallback, ['', '']);
+});
+
+test('formatGameLocationParts normalizes street city and state code', () => {
+  assert.equal(
+    formatGameLocationParts({ street: ' 123 Main St ', city: ' Detroit ', state: 'Michigan' }),
+    '123 Main St, Detroit, MI',
+  );
+  assert.equal(
+    formatGameLocationParts({ street: 'W Capitol Dr', city: 'Milwaukee', state: 'wi' }),
+    'W Capitol Dr, Milwaukee, WI',
+  );
+});
+
+test('manual game location records and game display prefer completed location', () => {
+  const manual = createManualGameLocationRecord(' 55 Lake St, Marquette, Michigan ');
+  assert.equal(manual.formatted, '55 Lake St, Marquette, MI');
+  assert.equal(getStoredLocationDisplay(manual), '55 Lake St, Marquette, MI');
+  assert.equal(
+    getGameLocationDisplay({
+      frozenLocation: createManualGameLocationRecord('12 Frozen Rd, Green Bay, WI'),
+      location: manual,
+    }),
+    '55 Lake St, Marquette, MI',
+  );
+});
+
+test('saved and freezer game cards render formatted location details', () => {
+  const completedGame = {
+    usTeamName: 'Alice & Bob',
+    demTeamName: 'Cara & Dan',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Cara', 'Dan'],
+    winner: 'us',
+    victoryMethod: 'Won on Bid',
+    timestamp: '2026-05-18T14:00:00.000Z',
+    durationMs: 600000,
+    finalScore: { us: 520, dem: 220 },
+    rounds: [{ bidAmount: 120, biddingTeam: 'us', usPoints: 130, demPoints: 50, runningTotals: { us: 520, dem: 220 } }],
+    frozenLocation: createManualGameLocationRecord('10 Frozen Rd, Lansing, MI'),
+    location: createManualGameLocationRecord('100 Final St, Detroit, MI'),
+  };
+  const freezerGame = {
+    usName: 'Eve & Finn',
+    demName: 'Gina & Hank',
+    usPlayers: ['Eve', 'Finn'],
+    demPlayers: ['Gina', 'Hank'],
+    timestamp: '2026-05-18T14:00:00.000Z',
+    finalScore: { us: 180, dem: 60 },
+    lastBid: '130 (Eve & Finn)',
+    accumulatedTime: 300000,
+    frozenLocation: createManualGameLocationRecord('200 Freeze Ave, Madison, WI'),
+  };
+
+  const completedCard = buildSavedGameCard(completedGame, 0);
+  const freezerCard = buildFreezerGameCard(freezerGame, 0);
+  const detailsHtml = renderReadOnlyGameDetails(completedGame);
+
+  assert.match(completedCard, /Location: 100 Final St, Detroit, MI/);
+  assert.doesNotMatch(completedCard, /10 Frozen Rd/);
+  assert.match(freezerCard, /Last frozen at: 200 Freeze Ave, Madison, WI/);
+  assert.match(detailsHtml, /<span class="text-xs font-semibold text-gray-800 dark:text-white">Location<\/span>/);
+  assert.match(detailsHtml, /100 Final St, Detroit, MI/);
 });
 
 test('sanitizePlayerName returns empty string for non-string values', () => {
