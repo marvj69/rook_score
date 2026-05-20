@@ -657,23 +657,6 @@ html.dark nav ul li label:hover { /* Added label for dark mode toggle consistenc
 #viewSavedGameModal {
   z-index: 9996; /* Above savedGamesModal and themeModal, below teamSelection and confirmation */
 }
-@media (max-width: 640px) {
-  #viewSavedGameModal {
-    align-items: flex-start;
-    overflow-y: auto;
-    padding: max(0.75rem, env(safe-area-inset-top)) 0.5rem max(0.75rem, env(safe-area-inset-bottom));
-    -webkit-overflow-scrolling: touch;
-  }
-  #viewSavedGameModal > div {
-    margin: 0 auto;
-    max-height: calc(100vh - 1.5rem);
-  }
-  @supports (height: 100dvh) {
-    #viewSavedGameModal > div {
-      max-height: calc(100dvh - 1.5rem);
-    }
-  }
-}
 #presetEditorModal {
   z-index: 9997; /* Ensures bid preset editor overlays the settings modal */
 }

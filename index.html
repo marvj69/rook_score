@@ -196,15 +196,15 @@
     </div>
 
     <!-- View Saved Game Modal -->
-    <div id="viewSavedGameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-2 sm:p-4 modal" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle" tabindex="-1">
-      <div class="bg-white w-full max-w-4xl rounded-xl shadow-lg overflow-hidden dark:bg-gray-800 max-h-[95vh] sm:max-h-[90vh] flex flex-col">
-        <header class="flex justify-between items-center p-4 sm:p-5 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
-          <h3 id="viewSavedGameTitle" class="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">Game Details</h3>
-          <button id="closeViewSavedGameModalBtn" class="text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 p-1 rounded-lg dark:text-white dark:hover:text-gray-300" aria-label="Close View Saved Game Modal" type="button">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+    <div id="viewSavedGameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal stats-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1">
+      <div class="stats-modal__shell relative mx-auto my-4 w-full max-w-lg bg-white rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden flex flex-col" style="max-height: 90vh;">
+        <header class="stats-modal__header sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 sm:px-6 py-3.5 flex justify-between items-center">
+          <h3 id="viewSavedGameTitle" class="text-lg sm:text-xl font-bold text-gray-800 dark:text-white">Game Details</h3>
+          <button id="closeViewSavedGameModalBtn" class="stats-modal__close text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-2 -mr-2" aria-label="Close View Saved Game Modal" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </header>
-        <div id="viewSavedGameDetails" class="p-4 sm:p-5 space-y-6 overflow-y-auto flex-grow min-h-0"></div>
+        <div id="viewSavedGameDetails" class="stats-modal__scroll p-4 sm:p-6 space-y-6 overflow-y-auto no-scrollbar flex-1 min-h-0"></div>
       </div>
     </div>
 
