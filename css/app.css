@@ -913,7 +913,7 @@ html, body {height:100%; overflow:hidden; overscroll-behavior:none;}
 .stats-modal__shell,
 .stats-modal__scroll,
 #teamStatsTableWrapper,
-.stats-results,
+.stats-,
 .stats-table-view,
 .stats-table-shell {
   max-width: 100%;
@@ -1127,7 +1127,10 @@ body.liquid-glass .stats-sort-toggle {
 }
 
 /* Results area */
-.stats-results { padding-bottom: 1.5rem; }
+.stats-results {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
 .stats-results__empty {
   text-align: center;
   color: #6b7280;
