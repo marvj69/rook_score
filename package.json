@@ -3,6 +3,8 @@
   "version": "2.0.0",
   "private": true,
   "scripts": {
+    "build": "npm run build:js && npm run build:css",
+    "build:js": "node scripts/build-js-bundle.mjs",
     "build:css": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c ./tailwind.config.cjs -i ./css/tailwind.input.css -o ./css/tailwind.css --minify",
     "test": "node --test tests/app.test.js"
   },

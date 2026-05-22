@@ -3,6 +3,40 @@
 // --- Rendering Functions ---
 // (renderApp, renderTeamCard, renderRoundCard, renderErrorAlert, renderScoreInputCard, renderPointsInput, renderHistoryCard, renderGameOverOverlay, renderReadOnlyGameDetails, renderSavedGames, renderFreezerGames, renderStatisticsContent, renderTeamStatsTable)
 // These are substantial and involve generating HTML. They are defined below.
+let confettiLoadPromise = null;
+
+function loadConfettiScript() {
+  if (typeof window !== "undefined" && typeof window.confetti === "function") {
+    return Promise.resolve(window.confetti);
+  }
+  if (confettiLoadPromise) return confettiLoadPromise;
+  if (typeof document === "undefined" || !document.head || typeof document.createElement !== "function") {
+    return Promise.resolve(null);
+  }
+
+  confettiLoadPromise = new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "vendor/canvas-confetti.min.js";
+    script.async = true;
+    script.onload = () => resolve(typeof window !== "undefined" && typeof window.confetti === "function" ? window.confetti : null);
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+  return confettiLoadPromise;
+}
+
+function launchGameOverConfetti() {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return;
+  }
+  loadConfettiScript().then((confettiFn) => {
+    if (typeof confettiFn === "function") {
+      confettiFn({ particleCount: 200, spread: 70, origin: { y: 0.6 }, disableForReducedMotion: true });
+    }
+  });
+}
+
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver, lastBidAmount, lastBidTeam } = state;
   const totals = getCurrentTotals();
@@ -87,7 +121,7 @@ function renderApp() {
   `;
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
-    if (typeof confetti === 'function') confetti({ particleCount: 200, spread: 70, origin: { y: 0.6 } });
+    launchGameOverConfetti();
   }
 }
 function renderTeamCard(teamKey, score, winProb) {

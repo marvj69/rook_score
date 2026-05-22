@@ -72,6 +72,28 @@ const RUNTIME_MODEL_STATE = {
 };
 let runtimeModelLoadPromise = null;
 const PERSONALIZATION_STATE_CACHE = { key: null, value: null };
+const PROBABILITY_GAMES_HASH_CACHE = typeof WeakMap === "function" ? new WeakMap() : null;
+
+const scheduleIdleWork = typeof requestIdleCallback === "function"
+  ? (callback) => requestIdleCallback(callback, { timeout: 1200 })
+  : (callback) => setTimeout(() => callback({ didTimeout: true, timeRemaining: () => 0 }), 0);
+let pendingPersonalizationRefreshHandle = null;
+let pendingPersonalizationRefresh = null;
+
+function createNeutralPersonalizationRecord(model, gamesHash, dataset) {
+  return {
+    schemaVersion: PROBABILITY_PERSONALIZATION_SCHEMA_VERSION,
+    modelId: model.modelId,
+    slope: 1,
+    intercept: 0,
+    roundSamples: dataset.roundSamples,
+    gameSamples: dataset.gameSamples,
+    gamesHash,
+    updatedAt: new Date().toISOString(),
+    baseLogLoss: 0,
+    personalizedLogLoss: 0,
+  };
+}
 
 function parseFiniteNumber(value, fallback = 0) {
   const num = Number(value);
@@ -122,6 +144,15 @@ function clearWinProbabilityCache() {
 function clearPersonalizationStateCache() {
   PERSONALIZATION_STATE_CACHE.key = null;
   PERSONALIZATION_STATE_CACHE.value = null;
+}
+
+function invalidateProbabilityCachesForGames(games = null) {
+  PROB_CACHE.clear();
+  clearWinProbabilityCache();
+  clearPersonalizationStateCache();
+  if (games && typeof games === "object" && PROBABILITY_GAMES_HASH_CACHE) {
+    PROBABILITY_GAMES_HASH_CACHE.delete(games);
+  }
 }
 
 function getActiveRuntimeModel() {
@@ -513,8 +544,12 @@ function getPersonalizationSignature(record, modelId = getActiveRuntimeModel().m
 
 function createPersonalizationRecord(historicalGames, model = getActiveRuntimeModel(), gamesHash = getProbabilityCacheKey(historicalGames)) {
   const dataset = buildPersonalizationDataset(historicalGames, model);
-  const fitResult = fitPersonalizationCalibration(dataset.logits, dataset.labels);
   const hasEnoughData = dataset.gameSamples >= PERSONALIZATION_MIN_GAMES && dataset.roundSamples >= PERSONALIZATION_MIN_ROUNDS;
+  if (!hasEnoughData) {
+    return createNeutralPersonalizationRecord(model, gamesHash, dataset);
+  }
+
+  const fitResult = fitPersonalizationCalibration(dataset.logits, dataset.labels);
   const usePersonalization = hasEnoughData && fitResult.accepted;
 
   return {
@@ -558,6 +593,24 @@ function ensureProbabilityPersonalizationForGames(historicalGames, model = getAc
 
 function refreshProbabilityPersonalizationFromSavedGames(savedGames = getLocalStorage("savedGames", []), options = {}) {
   return ensureProbabilityPersonalizationForGames(savedGames, getActiveRuntimeModel(), options);
+}
+
+function scheduleProbabilityPersonalizationRefresh(savedGames = getLocalStorage("savedGames", []), options = {}) {
+  pendingPersonalizationRefresh = {
+    savedGames,
+    options: {
+      ...(pendingPersonalizationRefresh?.options || {}),
+      ...options,
+      force: !!(pendingPersonalizationRefresh?.options?.force || options.force),
+    },
+  };
+  if (pendingPersonalizationRefreshHandle !== null) return;
+  pendingPersonalizationRefreshHandle = scheduleIdleWork(() => {
+    const job = pendingPersonalizationRefresh || { savedGames, options };
+    pendingPersonalizationRefreshHandle = null;
+    pendingPersonalizationRefresh = null;
+    refreshProbabilityPersonalizationFromSavedGames(job.savedGames, job.options);
+  });
 }
 
 function getProbabilityContext(historicalGames, options = {}) {
@@ -619,6 +672,11 @@ function bucketScore(diff) {
 
 function getProbabilityCacheKey(historicalGames) {
   if (!Array.isArray(historicalGames) || !historicalGames.length) return '0';
+  if (PROBABILITY_GAMES_HASH_CACHE) {
+    const cachedHash = PROBABILITY_GAMES_HASH_CACHE.get(historicalGames);
+    if (cachedHash) return cachedHash;
+  }
+
   let hash = 2166136261;
 
   const hashText = (value) => {
@@ -654,7 +712,11 @@ function getProbabilityCacheKey(historicalGames) {
     }
   }
 
-  return `${historicalGames.length}|${(hash >>> 0).toString(16)}`;
+  const cacheKey = `${historicalGames.length}|${(hash >>> 0).toString(16)}`;
+  if (PROBABILITY_GAMES_HASH_CACHE) {
+    PROBABILITY_GAMES_HASH_CACHE.set(historicalGames, cacheKey);
+  }
+  return cacheKey;
 }
 
 function buildProbabilityIndex(historicalGames) {

@@ -6,6 +6,10 @@ function setLocalStorage(key, value) {
     const serialized = JSON.stringify(value);
     localStorage.setItem(key, serialized);
     LOCAL_STORAGE_CACHE.set(key, { raw: serialized, parsed: value });
+    if (key === "savedGames") {
+      if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames(value);
+      if (typeof clearStatisticsCache === "function") clearStatisticsCache();
+    }
     if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
       setTimeout(() => {
@@ -21,6 +25,10 @@ function removeLocalStorageKey(key) {
   try {
     localStorage.removeItem(key);
     LOCAL_STORAGE_CACHE.delete(key);
+    if (key === "savedGames") {
+      if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames();
+      if (typeof clearStatisticsCache === "function") clearStatisticsCache();
+    }
     if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       setTimeout(() => {
         window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
@@ -223,4 +231,3 @@ function savePresets() {
   scheduleRender();
   showSaveIndicator("Bid presets updated");
 }
-

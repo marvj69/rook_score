@@ -3,6 +3,7 @@ module.exports = {
   content: [
     "./index.html",
     "./js/**/*.js",
+    "!./js/app.bundle.js",
   ],
   safelist: [
     "from-blue-50",

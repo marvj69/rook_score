@@ -1,6 +1,14 @@
 "use strict";
 
 // --- Saved Games Modal (New Functions) ---
+const STATS_RESULT_CACHE = { key: null, value: null };
+let gamesFilterRenderScheduled = false;
+
+function clearStatisticsCache() {
+  STATS_RESULT_CACHE.key = null;
+  STATS_RESULT_CACHE.value = null;
+}
+
 function switchGamesTab(tabType) {
   const completedTab = document.getElementById('completedGamesTab');
   const freezerTab = document.getElementById('freezerGamesTab');
@@ -31,7 +39,14 @@ function updateGamesCount() {
   document.getElementById('noCompletedGamesMessage').classList.toggle('hidden', savedGames.length > 0);
   document.getElementById('noFreezerGamesMessage').classList.toggle('hidden', freezerGames.length > 0);
 }
-function filterGames() { renderGamesWithFilter(); }
+function filterGames() {
+  if (gamesFilterRenderScheduled) return;
+  gamesFilterRenderScheduled = true;
+  scheduleFrame(() => {
+    gamesFilterRenderScheduled = false;
+    renderGamesWithFilter();
+  });
+}
 function sortGames() { renderGamesWithFilter(); }
 function renderGamesWithFilter() {
   const rawSearchValue = document.getElementById('gameSearchInput').value || '';
@@ -627,6 +642,11 @@ function renderEntityStatisticsContent(mode, entity) {
     </div>`;
 }
 function getStatistics() {
+  const savedGamesRaw = localStorage.getItem("savedGames") || "";
+  if (STATS_RESULT_CACHE.key === savedGamesRaw && STATS_RESULT_CACHE.value) {
+    return STATS_RESULT_CACHE.value;
+  }
+
   const savedGames = getLocalStorage("savedGames", []).filter(g => g && Array.isArray(g.rounds) && g.rounds.length > 0);
 
   const teamStatsMap = new Map();
@@ -836,13 +856,16 @@ function getStatistics() {
     };
   }).sort((a, b) => b.lastPlayed - a.lastPlayed);
 
-  return {
+  const result = {
     totalGames: savedGames.length,
     overallAverageBid: totalBids > 0 ? (sumOfBids / totalBids).toFixed(0) : 'N/A',
     teamsData,
     playersData,
     totalTimePlayedMs: totalGameDuration,
   };
+  STATS_RESULT_CACHE.key = savedGamesRaw;
+  STATS_RESULT_CACHE.value = result;
+  return result;
 }
 
 function isGameSandbagForTeamKey(game, teamPlayers, threshold = 2) {

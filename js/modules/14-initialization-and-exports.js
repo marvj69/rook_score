@@ -11,9 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCustomThemeColors(); // Custom primary/accent
   loadCurrentGameState(); // Load after theme
   loadSettings(); // Load settings after game state
-  refreshProbabilityPersonalizationFromSavedGames(getLocalStorage("savedGames", []));
+  scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []));
   loadRuntimeModel().then(() => {
-    refreshProbabilityPersonalizationFromSavedGames(getLocalStorage("savedGames", []));
+    scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
     scheduleRender();
   });
 
@@ -195,6 +195,20 @@ function handleTeamSelectionCancel() {
     document.addEventListener("touchend", onTouchEnd, { passive: true });
 })();
 
+// Expose integration hooks used by firebase-init.js, which runs as an ES module.
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    DEFAULT_STATE,
+    getLocalStorage,
+    loadCurrentGameState,
+    renderApp,
+    initializeTheme,
+    initializeCustomThemeColors,
+    loadSettings,
+    updateProModeUI,
+  });
+}
+
 // Expose selected helpers when running in a Node/CommonJS environment (e.g. tests)
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -235,6 +249,7 @@ if (typeof module !== 'undefined' && module.exports) {
     fitPersonalizationCalibration,
     ensureProbabilityPersonalizationForGames,
     refreshProbabilityPersonalizationFromSavedGames,
+    scheduleProbabilityPersonalizationRefresh,
     getProbabilityContext,
     getModelProbabilitySnapshotForState,
     buildWinProbabilityCacheKey,

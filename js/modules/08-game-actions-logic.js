@@ -523,7 +523,7 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   const savedGames = getLocalStorage("savedGames", []);
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
-  refreshProbabilityPersonalizationFromSavedGames(savedGames, { force: true });
+  scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
   showSaveIndicator("Game Saved!");
   resetGame(); // Resets state and clears active game from storage
   confettiTriggered = false;

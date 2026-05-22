@@ -11,10 +11,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rook" />
   <link rel="icon" href="icons/icon-192x192.png" /> <!-- Kept for PWA functionality -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
   <link rel="stylesheet" href="css/tailwind.css" />
   <link rel="stylesheet" href="css/app.css" />
   <script src="js/analytics.js" defer></script>
-  <script src="vendor/canvas-confetti.min.js"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen transition-colors duration-300 liquid-glass theme-blue-red" id="bodyRoot">
     <!-- Hamburger Icon -->
@@ -569,21 +570,7 @@
 </div>
 </div>
 
+    <script src="js/app.bundle.js" defer></script>
     <script type="module" src="js/firebase-init.js"></script>
-    <script src="js/modules/00-config.js"></script>
-    <script src="js/modules/01-state-and-win-prob-render.js"></script>
-    <script src="js/modules/02-win-prob-engine.js"></script>
-    <script src="js/modules/03-storage-icons-presets.js"></script>
-    <script src="js/modules/04-theme-ui-helpers.js"></script>
-    <script src="js/modules/05-game-state-management.js"></script>
-    <script src="js/modules/06-team-stats-helpers.js"></script>
-    <script src="js/modules/07-menu-modal.js"></script>
-    <script src="js/modules/08-game-actions-logic.js"></script>
-    <script src="js/modules/09-settings-validation-misc.js"></script>
-    <script src="js/modules/10-probability-breakdown.js"></script>
-    <script src="js/modules/11-rendering.js"></script>
-    <script src="js/modules/12-saved-games-and-stats-modals.js"></script>
-    <script src="js/modules/13-settings-loading.js"></script>
-    <script src="js/modules/14-initialization-and-exports.js"></script>
 </body>
 </html>

@@ -1,23 +1,5 @@
-const CACHE_NAME = "rook-cache-v2.0.10";
+const CACHE_NAME = "rook-cache-v2.0.11";
 const OFFLINE_URL = "index.html"; // Use relative path
-
-const moduleFiles = [
-  "./js/modules/00-config.js",
-  "./js/modules/01-state-and-win-prob-render.js",
-  "./js/modules/02-win-prob-engine.js",
-  "./js/modules/03-storage-icons-presets.js",
-  "./js/modules/04-theme-ui-helpers.js",
-  "./js/modules/05-game-state-management.js",
-  "./js/modules/06-team-stats-helpers.js",
-  "./js/modules/07-menu-modal.js",
-  "./js/modules/08-game-actions-logic.js",
-  "./js/modules/09-settings-validation-misc.js",
-  "./js/modules/10-probability-breakdown.js",
-  "./js/modules/11-rendering.js",
-  "./js/modules/12-saved-games-and-stats-modals.js",
-  "./js/modules/13-settings-loading.js",
-  "./js/modules/14-initialization-and-exports.js"
-];
 
 const urlsToCache = [
   "./", // Root path
@@ -25,6 +7,7 @@ const urlsToCache = [
   "./css/tailwind.css",
   "./css/app.css",
   "./js/analytics.js",
+  "./js/app.bundle.js",
   "./js/app.js",
   "./js/model_runtime_v1.json",
   "./js/firebase-init.js",
@@ -33,7 +16,50 @@ const urlsToCache = [
   "./icons/icon-512x512.png",
   "./service-worker.js",
   "./vendor/canvas-confetti.min.js"
-].concat(moduleFiles);
+];
+
+async function getCachedOfflineShell() {
+  return (await caches.match(OFFLINE_URL))
+    || (await caches.match("./index.html"))
+    || (await caches.match("./"));
+}
+
+function fetchAndCache(request, cacheRequest = request) {
+  return fetch(request).then((networkResponse) => {
+    if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
+      return caches.open(CACHE_NAME).then((cache) => {
+        cache.put(cacheRequest, networkResponse.clone());
+        return networkResponse;
+      });
+    }
+    return networkResponse;
+  });
+}
+
+async function staleWhileRevalidate(event) {
+  const { request } = event;
+  const cachedResponse = await caches.match(request);
+  const networkPromise = fetchAndCache(request).catch(() => null);
+
+  if (cachedResponse) {
+    event.waitUntil(networkPromise.then(() => undefined));
+    return cachedResponse;
+  }
+
+  const networkResponse = await networkPromise;
+  if (networkResponse) return networkResponse;
+  return new Response("", { status: 504, statusText: "Offline" });
+}
+
+async function navigationResponse(event) {
+  const cachedShell = await getCachedOfflineShell();
+  const networkPromise = fetchAndCache(event.request, OFFLINE_URL).catch(() => null);
+  event.waitUntil(networkPromise.then(() => undefined));
+
+  if (cachedShell) return cachedShell;
+  const networkResponse = await networkPromise;
+  return networkResponse || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -50,9 +76,13 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+
   const requestUrl = new URL(event.request.url);
 
-  if (requestUrl.origin === self.location.origin && requestUrl.pathname.startsWith("/api/")) {
+  if (requestUrl.origin !== self.location.origin) return;
+
+  if (requestUrl.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request));
     return;
   }
@@ -66,37 +96,9 @@ self.addEventListener("fetch", (event) => {
 
   // Handle navigation requests
   if (event.request.mode === "navigate") {
-    event.respondWith(
-     fetch(event.request)
-       .then((networkResponse) => {
-         // put fresh index.html in the current versioned cache
-         return caches.open(CACHE_NAME).then((cache) => {
-           cache.put(OFFLINE_URL, networkResponse.clone());
-           return networkResponse;
-         });
-       })
-       .catch(() => caches.match(OFFLINE_URL)) // offline fallback
-   );
+    event.respondWith(navigationResponse(event));
   } else {
-    // Handle other assets (scripts, images, etc.)
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        
-        return fetch(event.request).then((networkResponse) => {
-          // Cache successful same-origin responses for future offline use
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return networkResponse;
-        });
-      })
-    );
+    event.respondWith(staleWhileRevalidate(event));
   }
 });
 
