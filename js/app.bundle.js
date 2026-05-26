@@ -128,6 +128,68 @@ function escapeAttribute(value) {
   return escapeHtmlValue(value);
 }
 
+function getRookRoundCount(game = {}) {
+  return Array.isArray(game.rounds) ? game.rounds.length : 0;
+}
+
+function getRookDurationBucket(durationMs) {
+  const value = Number(durationMs);
+  if (!Number.isFinite(value) || value < 0) return "unknown";
+  const minutes = Math.floor(value / 60000);
+  if (minutes < 15) return "under_15m";
+  if (minutes < 30) return "15_29m";
+  if (minutes < 45) return "30_44m";
+  if (minutes < 60) return "45_59m";
+  if (minutes < 90) return "60_89m";
+  if (minutes < 120) return "90_119m";
+  return "120m_plus";
+}
+
+function getRookVictoryMethodLabel(victoryMethod) {
+  const value = String(victoryMethod || "").toLowerCase();
+  if (value.includes("spread")) return "point_spread";
+  if (value.includes("set")) return "set_other_team";
+  if (value.includes("bid")) return "won_on_bid";
+  return "unknown";
+}
+
+function getRookGameEventParams(game = state, overrides = {}) {
+  const durationMs = Object.prototype.hasOwnProperty.call(overrides, "durationMs")
+    ? overrides.durationMs
+    : game.accumulatedTime;
+  const params = {
+    round_count: getRookRoundCount(game),
+    duration_bucket: getRookDurationBucket(durationMs),
+    pro_mode: Boolean(
+      Object.prototype.hasOwnProperty.call(overrides, "pro_mode")
+        ? overrides.pro_mode
+        : game.showWinProbability || getLocalStorage(PRO_MODE_KEY, false)
+    ),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(overrides, "source")) {
+    params.source = overrides.source;
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "victory_method")) {
+    params.victory_method = getRookVictoryMethodLabel(overrides.victory_method);
+  } else if (game.victoryMethod) {
+    params.victory_method = getRookVictoryMethodLabel(game.victoryMethod);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "had_location")) {
+    params.had_location = Boolean(overrides.had_location);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "game_state")) {
+    params.game_state = overrides.game_state;
+  }
+
+  return params;
+}
+
+function trackRookEvent(eventName, params = {}) {
+  if (typeof window === "undefined" || typeof window.trackRookEvent !== "function") return false;
+  return window.trackRookEvent(eventName, params);
+}
+
 function ensurePlayersArray(input) {
   const arr = Array.isArray(input) ? input : [];
   return [sanitizePlayerName(arr[0] ?? ""), sanitizePlayerName(arr[1] ?? "")];
@@ -2970,7 +3032,8 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   return;                                 // pause main handler until modal choice
 }
 
-  if (rounds.length === 0 && state.startTime === null) updateState({ startTime: Date.now() });
+  const isFirstRound = rounds.length === 0;
+  if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
 
   let usEarned = 0, demEarned = 0;
   const nonBiddingTeamTotal = 180; // Standard total points in a hand excluding Rook
@@ -3041,6 +3104,21 @@ victoryMethod  = "Set Other Team";
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
+  const analyticsState = {
+      ...state,
+      rounds: updatedRounds,
+      accumulatedTime: finalAccumulated,
+      gameOver: gameFinished,
+      winner: theWinner,
+      victoryMethod,
+  };
+  if (isFirstRound) {
+      trackRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
+  }
+  trackRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
+  if (gameFinished && theWinner) {
+      trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
+  }
 }
 function handleUndo() {
   if (!state.rounds.length) return;
@@ -3211,6 +3289,14 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
   scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
+  trackRookEvent(
+      "game_saved",
+      getRookGameEventParams(gameObj, {
+          durationMs: finalAccumulated,
+          had_location: Boolean(completedLocation),
+          victory_method: state.victoryMethod,
+      })
+  );
   showSaveIndicator("Game Saved!");
   resetGame(); // Resets state and clears active game from storage
   confettiTriggered = false;
@@ -3294,6 +3380,14 @@ async function freezeCurrentGame() {
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
   setLocalStorage("freezerGames", freezerGames);
+  trackRookEvent(
+      "game_frozen",
+      getRookGameEventParams(frozenGame, {
+          durationMs: finalAccumulated,
+          had_location: Boolean(frozenLocation),
+          game_state: "frozen",
+      })
+  );
   showSaveIndicator("Game Frozen!");
   resetGame(); // Resets state and clears active game
   pendingGameAction = null;
@@ -3340,6 +3434,14 @@ function loadFreezerGame(index) {
       setLocalStorage("freezerGames", freezerGames);
       closeSavedGamesModal();
       saveCurrentGameState(); // Save the now active game
+      trackRookEvent(
+          "freezer_game_resumed",
+          getRookGameEventParams(chosen, {
+              durationMs: chosen.accumulatedTime,
+              had_location: Boolean(chosen.location || chosen.frozenLocation || chosen.gameLocation),
+              game_state: "active",
+          })
+      );
       confettiTriggered = false;
     },
     closeConfirmationModal
@@ -3418,6 +3520,7 @@ function toggleProMode(checkbox) {
   setLocalStorage(PRO_MODE_KEY, isPro);
   updateProModeUI(isPro);
   saveCurrentGameState(); // Save state with new pro mode setting
+  trackRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
 }
 
 function handleTableTalkPenaltyChange() {
@@ -3539,6 +3642,7 @@ function formatDuration(ms) {
 
 // --- Probability Breakdown Functions ---
 function openProbabilityModal() {
+  trackRookEvent("probability_opened", getRookGameEventParams(state));
   const modalHtml = `
     <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
       <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">

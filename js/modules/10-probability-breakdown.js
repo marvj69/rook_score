@@ -2,6 +2,7 @@
 
 // --- Probability Breakdown Functions ---
 function openProbabilityModal() {
+  trackRookEvent("probability_opened", getRookGameEventParams(state));
   const modalHtml = `
     <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
       <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">

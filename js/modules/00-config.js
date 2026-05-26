@@ -124,6 +124,68 @@ function escapeAttribute(value) {
   return escapeHtmlValue(value);
 }
 
+function getRookRoundCount(game = {}) {
+  return Array.isArray(game.rounds) ? game.rounds.length : 0;
+}
+
+function getRookDurationBucket(durationMs) {
+  const value = Number(durationMs);
+  if (!Number.isFinite(value) || value < 0) return "unknown";
+  const minutes = Math.floor(value / 60000);
+  if (minutes < 15) return "under_15m";
+  if (minutes < 30) return "15_29m";
+  if (minutes < 45) return "30_44m";
+  if (minutes < 60) return "45_59m";
+  if (minutes < 90) return "60_89m";
+  if (minutes < 120) return "90_119m";
+  return "120m_plus";
+}
+
+function getRookVictoryMethodLabel(victoryMethod) {
+  const value = String(victoryMethod || "").toLowerCase();
+  if (value.includes("spread")) return "point_spread";
+  if (value.includes("set")) return "set_other_team";
+  if (value.includes("bid")) return "won_on_bid";
+  return "unknown";
+}
+
+function getRookGameEventParams(game = state, overrides = {}) {
+  const durationMs = Object.prototype.hasOwnProperty.call(overrides, "durationMs")
+    ? overrides.durationMs
+    : game.accumulatedTime;
+  const params = {
+    round_count: getRookRoundCount(game),
+    duration_bucket: getRookDurationBucket(durationMs),
+    pro_mode: Boolean(
+      Object.prototype.hasOwnProperty.call(overrides, "pro_mode")
+        ? overrides.pro_mode
+        : game.showWinProbability || getLocalStorage(PRO_MODE_KEY, false)
+    ),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(overrides, "source")) {
+    params.source = overrides.source;
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "victory_method")) {
+    params.victory_method = getRookVictoryMethodLabel(overrides.victory_method);
+  } else if (game.victoryMethod) {
+    params.victory_method = getRookVictoryMethodLabel(game.victoryMethod);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "had_location")) {
+    params.had_location = Boolean(overrides.had_location);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "game_state")) {
+    params.game_state = overrides.game_state;
+  }
+
+  return params;
+}
+
+function trackRookEvent(eventName, params = {}) {
+  if (typeof window === "undefined" || typeof window.trackRookEvent !== "function") return false;
+  return window.trackRookEvent(eventName, params);
+}
+
 function ensurePlayersArray(input) {
   const arr = Array.isArray(input) ? input : [];
   return [sanitizePlayerName(arr[0] ?? ""), sanitizePlayerName(arr[1] ?? "")];

@@ -283,7 +283,8 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   return;                                 // pause main handler until modal choice
 }
 
-  if (rounds.length === 0 && state.startTime === null) updateState({ startTime: Date.now() });
+  const isFirstRound = rounds.length === 0;
+  if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
 
   let usEarned = 0, demEarned = 0;
   const nonBiddingTeamTotal = 180; // Standard total points in a hand excluding Rook
@@ -354,6 +355,21 @@ victoryMethod  = "Set Other Team";
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
+  const analyticsState = {
+      ...state,
+      rounds: updatedRounds,
+      accumulatedTime: finalAccumulated,
+      gameOver: gameFinished,
+      winner: theWinner,
+      victoryMethod,
+  };
+  if (isFirstRound) {
+      trackRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
+  }
+  trackRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
+  if (gameFinished && theWinner) {
+      trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
+  }
 }
 function handleUndo() {
   if (!state.rounds.length) return;
@@ -524,6 +540,14 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
   scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
+  trackRookEvent(
+      "game_saved",
+      getRookGameEventParams(gameObj, {
+          durationMs: finalAccumulated,
+          had_location: Boolean(completedLocation),
+          victory_method: state.victoryMethod,
+      })
+  );
   showSaveIndicator("Game Saved!");
   resetGame(); // Resets state and clears active game from storage
   confettiTriggered = false;
@@ -607,6 +631,14 @@ async function freezeCurrentGame() {
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
   setLocalStorage("freezerGames", freezerGames);
+  trackRookEvent(
+      "game_frozen",
+      getRookGameEventParams(frozenGame, {
+          durationMs: finalAccumulated,
+          had_location: Boolean(frozenLocation),
+          game_state: "frozen",
+      })
+  );
   showSaveIndicator("Game Frozen!");
   resetGame(); // Resets state and clears active game
   pendingGameAction = null;
@@ -653,6 +685,14 @@ function loadFreezerGame(index) {
       setLocalStorage("freezerGames", freezerGames);
       closeSavedGamesModal();
       saveCurrentGameState(); // Save the now active game
+      trackRookEvent(
+          "freezer_game_resumed",
+          getRookGameEventParams(chosen, {
+              durationMs: chosen.accumulatedTime,
+              had_location: Boolean(chosen.location || chosen.frozenLocation || chosen.gameLocation),
+              game_state: "active",
+          })
+      );
       confettiTriggered = false;
     },
     closeConfirmationModal

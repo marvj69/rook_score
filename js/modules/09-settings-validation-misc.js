@@ -40,6 +40,7 @@ function toggleProMode(checkbox) {
   setLocalStorage(PRO_MODE_KEY, isPro);
   updateProModeUI(isPro);
   saveCurrentGameState(); // Save state with new pro mode setting
+  trackRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
 }
 
 function handleTableTalkPenaltyChange() {

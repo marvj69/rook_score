@@ -18,6 +18,7 @@ let app = null;
 let auth = null;
 let db = null;
 let googleProvider = null;
+const reportedSyncFailures = new Set();
 
 window.firebaseReady = false;
 window.firebaseConfigLoaded = false;
@@ -29,6 +30,40 @@ window.firestoreDoc = doc;
 window.firestoreSetDoc = setDoc;
 window.firestoreGetDoc = getDoc;
 window.googleProvider = null;
+
+function getAnalyticsSyncKeyLabel(key) {
+  switch (key) {
+    case "activeGameState":
+      return "active_game";
+    case "savedGames":
+      return "saved_games";
+    case "freezerGames":
+      return "freezer_games";
+    case "customPresetBids":
+      return "preset_bids";
+    case "proModeEnabled":
+      return "pro_mode";
+    case "auth":
+    case "firebase_config":
+      return key;
+    default:
+      return "other";
+  }
+}
+
+function trackFirebaseEvent(eventName, params = {}) {
+  if (typeof window.trackRookEvent === "function") {
+    window.trackRookEvent(eventName, params);
+  }
+}
+
+function trackSyncFailure(key, reason) {
+  const syncKey = getAnalyticsSyncKeyLabel(key);
+  const failureKey = `${syncKey}:${reason}`;
+  if (reportedSyncFailures.has(failureKey)) return;
+  reportedSyncFailures.add(failureKey);
+  trackFirebaseEvent("sync_failed", { sync_key: syncKey, reason });
+}
 
 function shouldAttemptJsonParse(raw) {
   if (typeof raw !== 'string') return false;
@@ -103,6 +138,7 @@ function disableFirebase(error) {
   window.firebaseReady = false;
   window.firebaseInitError = error;
   console.warn("Firebase cloud sync is unavailable. The app will continue with local storage only.", error);
+  trackSyncFailure("firebase_config", "init_failed");
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", renderLocalAppFallback, { once: true });
@@ -135,7 +171,10 @@ async function loadFirebaseConfig() {
 }
 
 window.mergeLocalStorageWithFirestore = async function(user) {
-  if (!db) return false;
+  if (!db) {
+    trackSyncFailure("other", "firebase_unavailable");
+    return false;
+  }
 
   const docRef = doc(db, "rookData", user.uid);
   const docSnap = await getDoc(docRef);
@@ -217,9 +256,20 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   return true;
 }
 
+async function mergeUserDataForCurrentUser(user) {
+  try {
+    return await window.mergeLocalStorageWithFirestore(user);
+  } catch (error) {
+    console.error("Firestore merge error:", error);
+    trackSyncFailure("other", "merge_failed");
+    return false;
+  }
+}
+
 window.signInWithGoogle = async function() {
   if (!auth || !googleProvider) {
     console.warn("Google sign-in is unavailable because Firebase is not configured.");
+    trackSyncFailure("auth", "firebase_unavailable");
     return null;
   }
 
@@ -228,10 +278,12 @@ window.signInWithGoogle = async function() {
     const googleUser = result.user;
     window.firebaseReady = true;
     updateAuthUI(googleUser);
-    await window.mergeLocalStorageWithFirestore(googleUser);
+    trackFirebaseEvent("auth_signed_in", { method: "google" });
+    await mergeUserDataForCurrentUser(googleUser);
     return googleUser;
   } catch (error) {
     console.error("Google sign-in failed:", error);
+    trackSyncFailure("auth", "google_sign_in_failed");
     if (window.renderApp) window.renderApp();
     return null;
   }
@@ -258,6 +310,7 @@ async function ensureUserSession() {
     return credential.user;
   } catch (error) {
     console.error("Failed to establish anonymous session for Firestore sync:", error);
+    trackSyncFailure("auth", "anonymous_sign_in_failed");
     return null;
   }
 }
@@ -265,12 +318,14 @@ async function ensureUserSession() {
 window.syncToFirestore = async function(key, value) {
   if (!auth || !db) {
     console.warn("Firebase not initialized for sync.");
+    trackSyncFailure(key, "firebase_unavailable");
     return false;
   }
 
   const user = await ensureUserSession();
   if (!user) {
     console.log("Unable to establish user session. Not syncing to Firestore.");
+    trackSyncFailure(key, "auth_unavailable");
     return false;
   }
 
@@ -285,6 +340,7 @@ window.syncToFirestore = async function(key, value) {
     return true;
   } catch (error) {
     console.error("Firestore sync error:", error);
+    trackSyncFailure(key, "write_failed");
     return false;
   }
 };
@@ -303,16 +359,17 @@ function watchAuthState() {
     if (user) {
       window.firebaseReady = true;
       updateAuthUI(user);
-      window.mergeLocalStorageWithFirestore(user);
+      mergeUserDataForCurrentUser(user);
     } else {
       signInAnonymously(auth)
         .then((anonUserCredential) => {
           window.firebaseReady = true;
           updateAuthUI(anonUserCredential.user);
-          window.mergeLocalStorageWithFirestore(anonUserCredential.user);
+          mergeUserDataForCurrentUser(anonUserCredential.user);
         })
         .catch((error) => {
           console.error("Anonymous sign-in failed:", error);
+          trackSyncFailure("auth", "anonymous_sign_in_failed");
           window.firebaseReady = false;
           updateAuthUI(null);
           if (window.loadCurrentGameState) window.loadCurrentGameState();
