@@ -242,8 +242,7 @@ function handleBiddingPointsToggle(isBiddingTeamPoints) {
   ephemeralPoints = ""; // Clear ephemeral points input
   updateState({ enterBidderPoints: isBiddingTeamPoints });
 }
-function handleFormSubmit(e, skipZeroCheck = false) {
-  e.preventDefault();
+function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
   const pointsInputEl = document.getElementById("pointsInput");
   if (!pointsInputEl) { updateState({ error: "Points input not found." }); return; }
@@ -266,8 +265,7 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   const freshInput = document.getElementById("pointsInput");
   if (freshInput) freshInput.value = String(chosen);
 
-  /* second arg ›› skipZeroCheck = true */
-  handleFormSubmit(new Event("submit"), /* skipZeroCheck */ true);
+  submitRoundFromCurrentInputs(/* skipZeroCheck */ true);
 };
 
     /* if the '0' was for the non-bidding team we must flip the toggle first,
@@ -370,6 +368,10 @@ victoryMethod  = "Set Other Team";
   if (gameFinished && theWinner) {
       trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
   }
+}
+function handleFormSubmit(e, skipZeroCheck = false) {
+  e?.preventDefault?.();
+  submitRoundFromCurrentInputs(skipZeroCheck);
 }
 function handleUndo() {
   if (!state.rounds.length) return;
