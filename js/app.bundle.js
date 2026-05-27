@@ -1925,6 +1925,9 @@ loadedState = JSON.parse(storedStateString);
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
     completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds : [];
     completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
+    // Transient flag must never persist across loads; a stuck `true` (from an
+    // older build) would freeze every submit. Always start fresh.
+    completeLoadedState.isSubmittingRound = false;
     const now = Date.now();
     const hasRounds = Array.isArray(completeLoadedState.rounds) && completeLoadedState.rounds.length > 0;
     const startTimeValid = isStartTimestampActive(completeLoadedState.startTime);
@@ -2992,13 +2995,17 @@ function handleBiddingPointsToggle(isBiddingTeamPoints) {
   ephemeralPoints = ""; // Clear ephemeral points input
   updateState({ enterBidderPoints: isBiddingTeamPoints });
 }
-function handleFormSubmit(e, skipZeroCheck = false) {
-  e.preventDefault();
+function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
   if (state.isSubmittingRound) return;
+
   const pointsInputEl = document.getElementById("pointsInput");
   const pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
-  if (!pointsInputEl && !String(pointsVal).trim()) { updateState({ error: "Please enter points before submitting." }); return; }
+
+  if (!pointsInputEl && !String(pointsVal).trim()) {
+    updateState({ error: "Please enter points before submitting." });
+    return;
+  }
 
   if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
   const bidError = validateBid(bidAmount);
@@ -3010,6 +3017,10 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   const numericPoints = Number(pointsVal);
 
   if (!skipZeroCheck && numericPoints === 0) {
+  // We're deferring this submit to the zero-points modal. Release the re-entry
+  // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
+  // blocked — otherwise the flag stays true forever and freezes all submits.
+  updateState({ isSubmittingRound: false });
   const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
 
   openZeroPointsModal(chosen => {
@@ -3018,8 +3029,7 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   const freshInput = document.getElementById("pointsInput");
   if (freshInput) freshInput.value = String(chosen);
 
-  /* second arg ›› skipZeroCheck = true */
-  handleFormSubmit(new Event("submit"), /* skipZeroCheck */ true);
+  submitRoundFromCurrentInputs(/* skipZeroCheck */ true);
 };
 
     /* if the '0' was for the non-bidding team we must flip the toggle first,
@@ -3103,7 +3113,8 @@ victoryMethod  = "Set Other Team";
   updateState({
       rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
-      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null, isSubmittingRound: false 
+      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null,
+      isSubmittingRound: false,
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
@@ -3122,6 +3133,10 @@ victoryMethod  = "Set Other Team";
   if (gameFinished && theWinner) {
       trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
   }
+}
+function handleFormSubmit(e, skipZeroCheck = false) {
+  e?.preventDefault?.();
+  submitRoundFromCurrentInputs(skipZeroCheck);
 }
 function handleUndo() {
   if (!state.rounds.length) return;
@@ -6302,3 +6317,4 @@ if (typeof module !== 'undefined' && module.exports) {
     getFilteredPlayerSuggestions,
   };
 }
+
