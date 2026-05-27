@@ -1,5 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
+
+const repoRoot = path.join(__dirname, '..');
 
 function setupDomStubs() {
   const noop = () => {};
@@ -998,4 +1002,28 @@ test('escapeHtml escapes text that could break out of templates', () => {
 test('escapeAttribute escapes non-string values through the value helper', () => {
   assert.equal(escapeHtmlValue(180), '180');
   assert.equal(escapeAttribute('" onclick="alert(1)'), '&quot; onclick=&quot;alert(1)');
+});
+
+test('service worker update flow activates without a user prompt', () => {
+  const source = readFileSync(
+    path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'),
+    'utf8',
+  );
+
+  assert.doesNotMatch(source, /confirm\s*\(/);
+  assert.match(source, /activateUpdatedWorker/);
+  assert.match(source, /registration\.waiting/);
+  assert.match(source, /registration\.addEventListener\('updatefound'/);
+  assert.match(source, /SKIP_WAITING/);
+  assert.match(source, /updateViaCache:\s*'none'/);
+  assert.match(source, /registration\.update\(\)/);
+});
+
+test('service worker cache bump skips waiting after precache', () => {
+  const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
+
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.0\.16";/);
+  assert.match(source, /cache\.addAll\(urlsToCache\)/);
+  assert.match(source, /self\.skipWaiting\(\)/);
+  assert.match(source, /self\.clients\.claim\(\)/);
 });

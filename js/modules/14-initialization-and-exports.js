@@ -68,34 +68,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
 if ('serviceWorker' in navigator) {
   let refreshing = false;
-  let reloadPendingUpdate = false; // Avoid reload on first install; only reload after opt-in
+  const reloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing || !reloadPendingUpdate) return;
+    if (refreshing || !reloadOnControllerChange) return;
     refreshing = true;
-    reloadPendingUpdate = false;
     window.location.reload();
   });
 
+  const activateUpdatedWorker = (worker) => {
+    if (!worker || !navigator.serviceWorker.controller) return;
+
+    if (worker.state === 'installed') {
+      worker.postMessage({ type: 'SKIP_WAITING' });
+      return;
+    }
+
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'installed') {
+        worker.postMessage({ type: 'SKIP_WAITING' });
+      }
+    });
+  };
+
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('./service-worker.js') // Assuming sw is in root
+      .register('./service-worker.js', { updateViaCache: 'none' })
       .then(registration => {
-        registration.onupdatefound = () => {
-          const installingWorker = registration.installing;
-          if (installingWorker == null) return;
-          installingWorker.onstatechange = () => {
-            if (installingWorker.state === 'installed') {
-              if (navigator.serviceWorker.controller) {
-                // New update available
-                if (confirm('New version available! Reload to update?')) {
-                  reloadPendingUpdate = true;
-                  installingWorker.postMessage({ type: 'SKIP_WAITING' });
-                }
-              }
-            }
-          };
-        };
+        activateUpdatedWorker(registration.waiting);
+        registration.addEventListener('updatefound', () => {
+          activateUpdatedWorker(registration.installing);
+        });
+        registration.update().catch(error => console.error('Service Worker update check failed:', error));
       })
       .catch(error => console.error('Service Worker registration failed:', error));
   });
