@@ -264,6 +264,10 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const numericPoints = Number(pointsVal);
 
   if (!skipZeroCheck && numericPoints === 0) {
+  // We're deferring this submit to the zero-points modal. Release the re-entry
+  // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
+  // blocked — otherwise the flag stays true forever and freezes all submits.
+  updateState({ isSubmittingRound: false });
   const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
 
   openZeroPointsModal(chosen => {

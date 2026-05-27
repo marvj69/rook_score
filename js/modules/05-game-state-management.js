@@ -75,6 +75,9 @@ loadedState = JSON.parse(storedStateString);
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
     completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds : [];
     completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
+    // Transient flag must never persist across loads; a stuck `true` (from an
+    // older build) would freeze every submit. Always start fresh.
+    completeLoadedState.isSubmittingRound = false;
     const now = Date.now();
     const hasRounds = Array.isArray(completeLoadedState.rounds) && completeLoadedState.rounds.length > 0;
     const startTimeValid = isStartTimestampActive(completeLoadedState.startTime);
