@@ -41,6 +41,7 @@ const DEFAULT_STATE = {
   usPlayers: ["", ""], demPlayers: ["", ""],
   startTime: null,
   accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
+  isSubmittingRound: false,
   timerLastSavedAt: null,
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
@@ -2994,14 +2995,16 @@ function handleBiddingPointsToggle(isBiddingTeamPoints) {
 function handleFormSubmit(e, skipZeroCheck = false) {
   e.preventDefault();
   const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
+  if (state.isSubmittingRound) return;
   const pointsInputEl = document.getElementById("pointsInput");
-  if (!pointsInputEl) { updateState({ error: "Points input not found." }); return; }
-  const pointsVal = pointsInputEl.value;
+  const pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
+  if (!pointsInputEl && !String(pointsVal).trim()) { updateState({ error: "Please enter points before submitting." }); return; }
 
   if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
   const bidError = validateBid(bidAmount);
   const pointsError = validatePoints(pointsVal);
   if (bidError || pointsError) { updateState({ error: bidError || pointsError }); return; }
+  updateState({ isSubmittingRound: true, error: "" });
 
   const numericBid = Number(bidAmount);
   const numericPoints = Number(pointsVal);
@@ -3100,7 +3103,7 @@ victoryMethod  = "Set Other Team";
   updateState({
       rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
-      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null 
+      accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null, isSubmittingRound: false 
   });
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
@@ -6299,4 +6302,3 @@ if (typeof module !== 'undefined' && module.exports) {
     getFilteredPlayerSuggestions,
   };
 }
-
