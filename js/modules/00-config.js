@@ -37,6 +37,7 @@ const DEFAULT_STATE = {
   usPlayers: ["", ""], demPlayers: ["", ""],
   startTime: null,
   accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
+  isSubmittingRound: false,
   timerLastSavedAt: null,
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
