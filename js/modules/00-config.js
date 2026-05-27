@@ -182,8 +182,14 @@ function getRookGameEventParams(game = state, overrides = {}) {
   return params;
 }
 
-function trackRookEvent(eventName, params = {}) {
+// Internal dispatcher to the analytics layer (window.trackRookEvent, defined in
+// js/analytics.js). This MUST NOT be named `trackRookEvent`: the bundle is a
+// classic script, so a top-level `function trackRookEvent` would become
+// window.trackRookEvent, clobbering the real implementation and making this
+// call itself recursively (stack overflow → frozen tab on every submit).
+function emitRookEvent(eventName, params = {}) {
   if (typeof window === "undefined" || typeof window.trackRookEvent !== "function") return false;
+  if (window.trackRookEvent === emitRookEvent) return false; // belt-and-suspenders: never self-recurse
   return window.trackRookEvent(eventName, params);
 }
 

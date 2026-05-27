@@ -374,11 +374,11 @@ victoryMethod  = "Set Other Team";
       victoryMethod,
   };
   if (isFirstRound) {
-      trackRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
+      emitRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
   }
-  trackRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
+  emitRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
   if (gameFinished && theWinner) {
-      trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
+      emitRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
   }
 }
 function handleFormSubmit(e, skipZeroCheck = false) {
@@ -554,7 +554,7 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
   scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
-  trackRookEvent(
+  emitRookEvent(
       "game_saved",
       getRookGameEventParams(gameObj, {
           durationMs: finalAccumulated,
@@ -645,7 +645,7 @@ async function freezeCurrentGame() {
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
   setLocalStorage("freezerGames", freezerGames);
-  trackRookEvent(
+  emitRookEvent(
       "game_frozen",
       getRookGameEventParams(frozenGame, {
           durationMs: finalAccumulated,
@@ -699,7 +699,7 @@ function loadFreezerGame(index) {
       setLocalStorage("freezerGames", freezerGames);
       closeSavedGamesModal();
       saveCurrentGameState(); // Save the now active game
-      trackRookEvent(
+      emitRookEvent(
           "freezer_game_resumed",
           getRookGameEventParams(chosen, {
               durationMs: chosen.accumulatedTime,

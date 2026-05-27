@@ -186,8 +186,14 @@ function getRookGameEventParams(game = state, overrides = {}) {
   return params;
 }
 
-function trackRookEvent(eventName, params = {}) {
+// Internal dispatcher to the analytics layer (window.trackRookEvent, defined in
+// js/analytics.js). This MUST NOT be named `trackRookEvent`: the bundle is a
+// classic script, so a top-level `function trackRookEvent` would become
+// window.trackRookEvent, clobbering the real implementation and making this
+// call itself recursively (stack overflow → frozen tab on every submit).
+function emitRookEvent(eventName, params = {}) {
   if (typeof window === "undefined" || typeof window.trackRookEvent !== "function") return false;
+  if (window.trackRookEvent === emitRookEvent) return false; // belt-and-suspenders: never self-recurse
   return window.trackRookEvent(eventName, params);
 }
 
@@ -3127,11 +3133,11 @@ victoryMethod  = "Set Other Team";
       victoryMethod,
   };
   if (isFirstRound) {
-      trackRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
+      emitRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
   }
-  trackRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
+  emitRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
   if (gameFinished && theWinner) {
-      trackRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
+      emitRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
   }
 }
 function handleFormSubmit(e, skipZeroCheck = false) {
@@ -3307,7 +3313,7 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
   savedGames.push(gameObj);
   setLocalStorage("savedGames", savedGames);
   scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
-  trackRookEvent(
+  emitRookEvent(
       "game_saved",
       getRookGameEventParams(gameObj, {
           durationMs: finalAccumulated,
@@ -3398,7 +3404,7 @@ async function freezeCurrentGame() {
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
   setLocalStorage("freezerGames", freezerGames);
-  trackRookEvent(
+  emitRookEvent(
       "game_frozen",
       getRookGameEventParams(frozenGame, {
           durationMs: finalAccumulated,
@@ -3452,7 +3458,7 @@ function loadFreezerGame(index) {
       setLocalStorage("freezerGames", freezerGames);
       closeSavedGamesModal();
       saveCurrentGameState(); // Save the now active game
-      trackRookEvent(
+      emitRookEvent(
           "freezer_game_resumed",
           getRookGameEventParams(chosen, {
               durationMs: chosen.accumulatedTime,
@@ -3538,7 +3544,7 @@ function toggleProMode(checkbox) {
   setLocalStorage(PRO_MODE_KEY, isPro);
   updateProModeUI(isPro);
   saveCurrentGameState(); // Save state with new pro mode setting
-  trackRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
+  emitRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
 }
 
 function handleTableTalkPenaltyChange() {
@@ -3660,7 +3666,7 @@ function formatDuration(ms) {
 
 // --- Probability Breakdown Functions ---
 function openProbabilityModal() {
-  trackRookEvent("probability_opened", getRookGameEventParams(state));
+  emitRookEvent("probability_opened", getRookGameEventParams(state));
   const modalHtml = `
     <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
       <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">
