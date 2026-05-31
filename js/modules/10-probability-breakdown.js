@@ -4,17 +4,17 @@
 function openProbabilityModal() {
   emitRookEvent("probability_opened", getRookGameEventParams(state));
   const modalHtml = `
-    <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle">
-      <div class="probability-modal-content bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl shadow-lg transform transition-all">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 id="probabilityModalTitle" class="text-xl font-bold text-gray-800 dark:text-white">Win Probability</h2>
-          <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div class="p-4">
+    <div id="probabilityModal" class="probability-modal fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="probabilityModalTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1">
+      <div class="probability-modal-content relative mx-auto my-8 w-full max-w-lg bg-white rounded-xl shadow-lg dark:bg-gray-800 overflow-hidden" style="max-height: 80vh;">
+        <div class="p-6 overflow-y-auto" style="max-height: calc(80vh - 0px);">
+          <header class="flex justify-between items-center mb-6">
+            <h2 id="probabilityModalTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Win Probability</h2>
+            <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </header>
           ${generateProbabilityBreakdown()}
         </div>
       </div>

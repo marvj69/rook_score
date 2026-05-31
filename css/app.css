@@ -855,8 +855,8 @@ html, body {height:100%; overflow:hidden; overscroll-behavior:none;}
 }
 .probability-modal-content {
   animation: slideIn 0.3s ease-out;
-  max-height: 60vh;
-  overflow-y: auto;
+  max-height: 80vh;
+  overflow: hidden;
 }
 @keyframes slideIn {
   from {
