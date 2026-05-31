@@ -103,8 +103,8 @@ function renderApp() {
 
   document.getElementById("app").innerHTML = `
     <div class="text-center space-y-2">
-      <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white">Rook!</h1>
-      <p class="text-md sm:text-lg text-gray-600 dark:text-white">Tap a team to start a bid!</p>
+      <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white" style="text-shadow: 0 4px 0 rgba(0,0,0,0.2), 0 6px 20px rgba(0,0,0,0.3);">Rook!</h1>
+      <p class="text-md sm:text-lg text-gray-600 dark:text-white font-semibold">Tap a team to start a bid!</p>
       ${dealerEntryButton}
       ${dealerRow}
     </div>
@@ -142,24 +142,26 @@ function renderTeamCard(teamKey, score, winProb) {
         <span class="relative font-medium" style="color: #FFF; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
       </div>`;
   }
+  const animDelay = teamKey === "us" ? "0s" : "0.1s";
   return `
     <button type="button"
-    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all rounded-xl shadow-md flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2"
+    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2"
+    style="animation: cardPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay} both;"
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center">
-<h2 class="text-base sm:text-xl font-semibold truncate max-w-[100px] sm:max-w-[120px]">${teamLabelDisplay}</h2>
-<p class="text-2xl font-bold">${score}</p>
+<h2 class="text-base sm:text-xl font-bold truncate max-w-[100px] sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
+<p class="text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);">${score}</p>
 ${winProbDisplay}
     </div>
   </button>`;
 }
 function renderRoundCard(roundNumber, lastBidDisplayHtml) {
   return `
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow threed flex flex-col items-center justify-center p-3 flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-600 shadow-md threed flex flex-col items-center justify-center p-3 flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32" style="animation: cardPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;">
       <div class="text-center space-y-1">
-        <h2 class="text-xl font-bold text-gray-700 dark:text-white">Round</h2>
-        <p class="text-2xl font-extrabold text-gray-900 dark:text-white">${roundNumber}</p>
+        <h2 class="text-lg font-extrabold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Round</h2>
+        <p class="text-3xl font-black text-gray-900 dark:text-white" style="text-shadow: 0 3px 0 rgba(0,0,0,0.15);">${roundNumber}</p>
         ${lastBidDisplayHtml}
       </div>
     </div>`;
@@ -183,9 +185,9 @@ function renderScoreInputCard() {
     : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed disabled:opacity-50 disabled:cursor-not-allowed";
   const penaltyBtnOnClick = penaltyActive ? 'undoPenaltyFlag()' : 'handleCheatFlag()';
   return `
-    <div class="${fadeClass} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
-      <div class="border-b border-gray-200 p-3 flex justify-between items-center dark:border-gray-700">
-        <h2 class="text-lg font-bold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
+    <div class="${fadeClass} bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md" style="animation: cardPopIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;">
+      <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex justify-between items-center">
+        <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
         <div class="flex space-x-2">
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""} title="Undo">${Icons.Undo}Undo</button>
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""} title="Redo">${Icons.Redo}Redo</button>
@@ -251,7 +253,7 @@ function renderPointsInput() {
         <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
         <div class="flex flex-col sm:flex-row sm:items-center sm:gap-5">
           <input id="pointsInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="360" step="5" value="${ephemeralPointsAttr}" oninput="ephemeralPoints = this.value" placeholder="Enter points" class="w-full sm:flex-grow border border-gray-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
-          <button type="submit" class="mt-2 sm:mt-0 bg-blue-600 text-white px-4 py-1.5 text-sm rounded-xl shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit</button>
+          <button type="submit" class="mt-2 sm:mt-0 bg-blue-600 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit</button>
         </div>
       </div>
     </div>`;
@@ -448,10 +450,10 @@ function renderHistoryCard() {
   if (HISTORY_RENDER_CACHE.key === cacheKey) return HISTORY_RENDER_CACHE.html;
 
   const html = `
-    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
-      <div class="border-b border-gray-200 p-4 dark:border-gray-700">
+    <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md" style="animation: cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;">
+      <div class="border-b-2 border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-start justify-between gap-3">
-          <h2 class="text-lg font-bold text-gray-800 dark:text-white">History</h2>
+          <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>
           <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
             Point Difference:
             <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>
@@ -484,7 +486,7 @@ function renderHistoryCard() {
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
               : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
-              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm">
+              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow">
                 <div class="text-left">${usScoreContent}</div>
                 <div class="text-center text-gray-600 dark:text-gray-400">${bidContent}</div>
                 <div class="text-right">${demScoreContent}</div>
@@ -493,11 +495,11 @@ function renderHistoryCard() {
         </div>
       </div>
       ${showProbabilityButton ? `
-        <div class="border-t border-gray-200 dark:border-gray-700">
+        <div class="border-t-2 border-gray-200 dark:border-gray-700">
           <button onclick="openProbabilityModal()" 
                   class="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-b-xl">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">How was this probability reached?</span>
+              <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">How was this probability reached?</span>
               <svg class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
@@ -517,18 +519,18 @@ function renderGameOverOverlay() {
   const victoryMethodDisplay = escapeHtmlValue(state.victoryMethod || 'Game Ended');
   return `
 <div data-overlay="gameover"
-     class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-md flex items-center justify-center p-4"
-     style="z-index:49;"
+     class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-md flex items-center justify-center p-4"
+     style="z-index:49; animation: fadeIn 0.3s ease-out;"
      role="alertdialog" aria-labelledby="gameOverTitle" aria-modal="true">
-      <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-xl shadow-lg text-center">
+      <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl text-center border-2 border-yellow-400 dark:border-yellow-600" style="animation: popBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;">
         <div class="p-6">
-          <h2 id="gameOverTitle" class="text-3xl font-bold mb-2 animate-fadeIn text-gray-800 dark:text-white">Game Over!</h2>
-          <p class="text-xl mb-1 animate-fadeIn text-gray-700 dark:text-white">${winnerDisplay} Wins!</p>
-          <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400">(${victoryMethodDisplay})</p>
-          <div class="flex space-x-4 justify-center">
-            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-6 py-3 rounded-xl shadow hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed" type="button">Fix Score</button>
-            <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-6 py-3 rounded-xl shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed" type="button">Save Game</button>
-            <button onclick="handleNewGame()" class="bg-blue-600 text-white px-6 py-3 rounded-xl shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed" type="button">New Game</button>
+          <h2 id="gameOverTitle" class="text-4xl font-black mb-2 animate-fadeIn text-gray-800 dark:text-white" style="text-shadow: 0 4px 0 rgba(0,0,0,0.15);">Game Over!</h2>
+          <p class="text-2xl font-extrabold mb-1 animate-fadeIn text-gray-700 dark:text-white" style="text-shadow: 0 2px 0 rgba(0,0,0,0.1);">${winnerDisplay} Wins!</p>
+          <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400 font-semibold">(${victoryMethodDisplay})</p>
+          <div class="flex space-x-3 justify-center flex-wrap gap-2">
+            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
+            <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
+            <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
           </div>
         </div>
       </div>

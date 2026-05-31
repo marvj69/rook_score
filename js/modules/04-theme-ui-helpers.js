@@ -7,7 +7,7 @@ function enforceDarkMode() {
     root.classList.add("dark");
   }
   const metaTheme = document.querySelector('meta[name="theme-color"]');
-  if (metaTheme) metaTheme.setAttribute("content", "#24284f");
+  if (metaTheme) metaTheme.setAttribute("content", "#161b3d");
   // Remove legacy flag so we're not tempted to read it elsewhere.
   localStorage.removeItem("darkModeEnabled");
 }
@@ -58,7 +58,7 @@ function initializeTheme() {
   //  Apply the theme (or fall back to default)
   // ------------------------------------------------------------------
   // First launch / user has never customised a theme
-  body.className = `${baseClassString} theme-blue-red`.trim();
+  body.className = `${baseClassString} theme-blue-red theme-cartoony`.trim();
 }
 function isValidHexColor(colorString) {
   if (!colorString || typeof colorString !== 'string') return false;
