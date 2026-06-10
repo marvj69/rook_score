@@ -41,6 +41,7 @@ function updateState(newState) {
 }
 function resetGame() {
   const isProMode = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
+  resetRenderAnimationState();
   updateState({
     ...DEFAULT_STATE,
     usTeamName : "",      // blank ⇒ UI falls back to "Us"
@@ -142,4 +143,3 @@ function saveCurrentGameState() {
     showSaveIndicator();
   }
 }
-

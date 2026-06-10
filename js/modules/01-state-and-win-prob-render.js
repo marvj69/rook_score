@@ -84,9 +84,58 @@ let presetBids;
    } catch (_) { presetBids = null; }
   if (!presetBids) presetBids = [120,125,130,135,140,145,"other"];
 
-let scoreCardHasAnimated  = false;
-let historyCardHasAnimated = false;
+let scoreCardAnimationIdentity = "";
+let historyCardAnimationRoundCount = 0;
+const renderedCardPopAnimationKeys = new Set();
 const HISTORY_RENDER_CACHE = { key: null, html: "" };
+
+function resetRenderAnimationState() {
+  scoreCardAnimationIdentity = "";
+  historyCardAnimationRoundCount = 0;
+  renderedCardPopAnimationKeys.clear();
+  HISTORY_RENDER_CACHE.key = null;
+  HISTORY_RENDER_CACHE.html = "";
+}
+
+function getCardPopAnimation(options = {}) {
+  const {
+    duration = "0.5s",
+    delay = "0s",
+    easing = "cubic-bezier(0.34, 1.56, 0.64, 1)",
+  } = options;
+
+  return {
+    className: " animate-card-pop",
+    attrs: ` style="--card-pop-duration: ${duration}; --card-pop-delay: ${delay}; --card-pop-easing: ${easing};"`,
+  };
+}
+
+function getOneShotCardPopAnimation(key, options = {}) {
+  if (!key || renderedCardPopAnimationKeys.has(key)) return { className: "", attrs: "" };
+  renderedCardPopAnimationKeys.add(key);
+  return getCardPopAnimation(options);
+}
+
+function getScoreCardAnimation(biddingTeam, options = {}) {
+  const identity = biddingTeam || "";
+  if (!identity) {
+    scoreCardAnimationIdentity = "";
+    return { className: "", attrs: "" };
+  }
+  if (scoreCardAnimationIdentity === identity) return { className: "", attrs: "" };
+  scoreCardAnimationIdentity = identity;
+  return getCardPopAnimation(options);
+}
+
+function getHistoryCardAnimation(roundCount, options = {}) {
+  if (!roundCount) {
+    historyCardAnimationRoundCount = 0;
+    return { className: "", attrs: "" };
+  }
+  if (historyCardAnimationRoundCount === roundCount) return { className: "", attrs: "" };
+  historyCardAnimationRoundCount = roundCount;
+  return getCardPopAnimation(options);
+}
 
 function renderWinProbability() {
   // Only show if enabled
@@ -136,4 +185,3 @@ function renderWinProbability() {
     </div>
   `;
 }
-

@@ -143,10 +143,10 @@ function renderTeamCard(teamKey, score, winProb) {
       </div>`;
   }
   const animDelay = teamKey === "us" ? "0s" : "0.1s";
+  const animation = getOneShotCardPopAnimation(`team-card:${teamKey}`, { delay: animDelay });
   return `
     <button type="button"
-    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2"
-    style="animation: cardPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay} both;"
+    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${animation.className}"${animation.attrs}
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center">
@@ -157,8 +157,9 @@ ${winProbDisplay}
   </button>`;
 }
 function renderRoundCard(roundNumber, lastBidDisplayHtml) {
+  const animation = getOneShotCardPopAnimation(`round-card:${roundNumber}`, { delay: "0.05s" });
   return `
-    <div class="bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-600 shadow-md threed flex flex-col items-center justify-center p-3 flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32" style="animation: cardPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-600 shadow-md threed flex flex-col items-center justify-center p-3 flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32${animation.className}"${animation.attrs}>
       <div class="text-center space-y-1">
         <h2 class="text-lg font-extrabold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Round</h2>
         <p class="text-3xl font-black text-gray-900 dark:text-white" style="text-shadow: 0 3px 0 rgba(0,0,0,0.15);">${roundNumber}</p>
@@ -171,9 +172,9 @@ function renderErrorAlert(errorMessage) {
 }
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
-  if (gameOver || !biddingTeam) { scoreCardHasAnimated = false; return ""; }
-  const fadeClass = scoreCardHasAnimated ? "" : "animate-fadeIn";
-  scoreCardHasAnimated = true;
+  if (gameOver || !biddingTeam) { getScoreCardAnimation(""); return ""; }
+  const animation = getScoreCardAnimation(biddingTeam, { duration: "0.45s", delay: "0.05s" });
+  const fadeClass = animation.className ? "animate-fadeIn " : "";
   const hasBid = bidAmount || (showCustomBid && validateBid(customBidValue) === "");
   const biddingTeamDisplayName = biddingTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const biddingTeamDisplayText = escapeHtmlValue(biddingTeamDisplayName);
@@ -185,7 +186,7 @@ function renderScoreInputCard() {
     : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed disabled:opacity-50 disabled:cursor-not-allowed";
   const penaltyBtnOnClick = penaltyActive ? 'undoPenaltyFlag()' : 'handleCheatFlag()';
   return `
-    <div class="${fadeClass} bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md" style="animation: cardPopIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;">
+    <div class="${fadeClass}bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex justify-between items-center">
         <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
         <div class="flex space-x-2">
@@ -433,7 +434,9 @@ function renderHistoryCard() {
 
   const lastRound = rounds[rounds.length - 1] || {};
   const historyEditKey = state.historyEdit ? `${state.historyEdit.idx}:${state.historyEdit.field}` : "";
+  const animation = getHistoryCardAnimation(rounds.length, { duration: "0.4s", delay: "0.1s" });
   const cacheKey = [
+    animation.className ? "animated" : "static",
     roundsVersion,
     rounds.length,
     currentTotals.us,
@@ -450,7 +453,7 @@ function renderHistoryCard() {
   if (HISTORY_RENDER_CACHE.key === cacheKey) return HISTORY_RENDER_CACHE.html;
 
   const html = `
-    <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md" style="animation: cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;">
+    <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-start justify-between gap-3">
           <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>

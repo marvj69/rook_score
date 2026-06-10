@@ -1022,8 +1022,30 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.0\.16";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.0\.17";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+});
+
+test('liquid glass cards do not globally replay entrance animations', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  const glassCardRule = css.match(/body\.liquid-glass :is\(\.bg-white,[\s\S]*?\n\}/);
+
+  assert.ok(glassCardRule);
+  assert.doesNotMatch(glassCardRule[0], /animation:\s*cardPopIn/);
+  assert.match(css, /\.animate-card-pop\s*\{/);
+});
+
+test('main card pop animations are gated by render state', () => {
+  const stateSource = readFileSync(path.join(repoRoot, 'js/modules/01-state-and-win-prob-render.js'), 'utf8');
+  const renderSource = readFileSync(path.join(repoRoot, 'js/modules/11-rendering.js'), 'utf8');
+
+  assert.match(stateSource, /function getOneShotCardPopAnimation/);
+  assert.match(stateSource, /function getScoreCardAnimation/);
+  assert.match(stateSource, /function getHistoryCardAnimation/);
+  assert.match(renderSource, /getOneShotCardPopAnimation\(`team-card:\$\{teamKey\}`/);
+  assert.match(renderSource, /getScoreCardAnimation\(biddingTeam/);
+  assert.match(renderSource, /getHistoryCardAnimation\(rounds\.length/);
+  assert.doesNotMatch(renderSource, /style="animation: cardPopIn/);
 });

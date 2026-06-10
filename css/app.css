@@ -160,7 +160,6 @@ body.liquid-glass :is(.bg-white, .bg-gray-50, .bg-gray-100, .dark\:bg-gray-800, 
   box-shadow: var(--shadow-3d-md);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  animation: cardPopIn 0.5s var(--bounce) both;
   transition: transform var(--pop-duration) var(--bounce), box-shadow var(--pop-duration) var(--smooth);
 }
 body.liquid-glass :is(.bg-white, .bg-gray-50, .bg-gray-100, .dark\:bg-gray-800, .dark\:bg-gray-700, .dark\:bg-gray-600):where([class*="rounded"], [class*="shadow"], .border, .threed):hover {
@@ -410,6 +409,9 @@ input[type="color"]:focus {
 }
 .animate-fadeIn  { animation: fadeInElement 0.25s var(--bounce) forwards; }
 .animate-fadeOut { animation: fadeOutElement 0.2s var(--smooth) forwards; }
+.animate-card-pop {
+  animation: cardPopIn var(--card-pop-duration, 0.5s) var(--card-pop-easing, var(--bounce)) var(--card-pop-delay, 0s) both;
+}
 
 /* ── Score Input Card ── */
 .score-input-container {
@@ -462,9 +464,12 @@ input[type="color"]:focus {
 .bar:nth-child(2) { top: 11px; }
 .bar:nth-child(3) { top: 22px; }
 html.dark .bar { background-color: #fff; }
-.hamburger-menu.open .bar:nth-child(1) { transform: rotate(45deg) translate(5px, 10px); }
-.hamburger-menu.open .bar:nth-child(2) { transform: rotate(45deg) translate(-2px, 0px); }
-.hamburger-menu.open .bar:nth-child(3) { transform: rotate(-45deg) translate(5px, -10px); }
+.hamburger-menu.open .bar:nth-child(1) { transform: translateY(11px) rotate(45deg); }
+.hamburger-menu.open .bar:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+.hamburger-menu.open .bar:nth-child(3) { transform: translateY(-11px) rotate(-45deg); }
 
 /* ── Navigation Slide Panel ── */
 nav {
