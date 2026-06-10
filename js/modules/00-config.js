@@ -1,8 +1,8 @@
 "use strict";
 
 // --- Configuration & Constants ---
-const APP_VERSION = "2.0";
-const APP_RELEASE_SUMMARY = "Version 2.0 adds the refreshed Statistics experience, Resume Paper Game flow, dealer tools, misdeal support, table-talk penalty options, player-level insights, win probability improvements, and hardened cloud/offline syncing.";
+const APP_VERSION = "2.1";
+const APP_RELEASE_SUMMARY = "Version 2.1 adds the cartoony glass theme, refreshed 3-D cards, buttons, modals, and statistics styling, brighter app colors, bouncy motion polish, and a new default visual treatment.";
 const MUST_WIN_BY_BID_KEY = "rookMustWinByBid";
 const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";

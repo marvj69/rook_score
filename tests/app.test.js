@@ -1022,10 +1022,22 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.0\.17";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.0";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+});
+
+test('version surfaces are aligned for the 2.1 release', () => {
+  const configSource = readFileSync(path.join(repoRoot, 'js/modules/00-config.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+
+  assert.equal(packageJson.version, '2.1.0');
+  assert.match(configSource, /const APP_VERSION = "2\.1";/);
+  assert.match(configSource, /Version 2\.1 adds the cartoony glass theme/);
+  assert.match(htmlSource, /<p>2\.1<\/p>/);
+  assert.match(htmlSource, /What's New in v2\.1/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {

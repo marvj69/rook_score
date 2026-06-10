@@ -48,14 +48,13 @@
 *   **Bug Reporting:** Easy "Create Bug Report Email" option with pre-filled device and app state info.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New in 2.0
+## 🚀 What's New in 2.1
 
-*   **Refreshed Statistics Experience:** Cleaner team and player stat views with a more polished, mobile-friendly modal.
-*   **Resume Paper Games:** Set player names, enter current scores, and continue a game that started on paper.
-*   **Dealer Tools:** Capture the four-player dealing order, auto-create teams by pairing across the table, and show the active dealer badge during play.
-*   **Misdeal & Table-Talk Controls:** Skip misdeal hands without changing scores, and configure table-talk penalties as either bid-based or fixed-point deductions.
-*   **Win Probability Upgrade:** Runtime model loading, cache handling, and edge-case behavior are more reliable during live games.
-*   **Cloud & Offline Hardening:** Firebase config delivery, anonymous sync, production assets, and PWA cache behavior are tightened up for the 2.0 release.
+*   **Cartoony Glass Theme:** The default app style now uses the new cartoony 3-D glass treatment.
+*   **Bolder Game Cards:** Team cards, round cards, score entry, history, and game-over views have stronger depth, glow, and motion.
+*   **Polished Controls:** Buttons, inputs, navigation, color pickers, and modal surfaces now share the same bouncy interaction language.
+*   **Statistics Refresh:** Statistics rows, chips, segmented controls, KPI cards, and entity details were restyled to match the new theme.
+*   **PWA Color Update:** Theme and background colors were updated so installed/mobile app chrome matches the new visual direction.
 
 ## 🛠️ Tech Stack
 
