@@ -3276,6 +3276,159 @@ closeConfirmationModal();
     closeConfirmationModal
   );
 }
+
+function getRematchTeamPlayers(sourceState = state, side = "us") {
+  const players = ensurePlayersArray(side === "us" ? sourceState?.usPlayers : sourceState?.demPlayers);
+  if (players.some(Boolean)) return players;
+
+  const teamName = side === "us" ? sourceState?.usTeamName : sourceState?.demTeamName;
+  return ensurePlayersArray(parseLegacyTeamName(teamName || ""));
+}
+
+function getRematchDealerCandidates(sourceState = state) {
+  const dealers = Array.isArray(sourceState?.dealers)
+    ? sourceState.dealers.map(sanitizePlayerName).filter(Boolean)
+    : [];
+  if (dealers.length === 4 && !hasDuplicateDealerNames(dealers)) return dealers;
+
+  const usPlayers = getRematchTeamPlayers(sourceState, "us");
+  const demPlayers = getRematchTeamPlayers(sourceState, "dem");
+  const interleavedPlayers = [usPlayers[0], demPlayers[0], usPlayers[1], demPlayers[1]]
+    .map(sanitizePlayerName)
+    .filter(Boolean);
+
+  return interleavedPlayers.length === 4 && !hasDuplicateDealerNames(interleavedPlayers)
+    ? interleavedPlayers
+    : [];
+}
+
+function buildDealerOrderStartingWith(dealers, firstDealer) {
+  const cleanedDealers = Array.isArray(dealers)
+    ? dealers.map(sanitizePlayerName).filter(Boolean)
+    : [];
+  const normalizedFirstDealer = sanitizePlayerName(firstDealer).toLowerCase();
+  if (cleanedDealers.length !== 4 || !normalizedFirstDealer || hasDuplicateDealerNames(cleanedDealers)) return [];
+
+  const startIndex = cleanedDealers.findIndex(dealer => dealer.toLowerCase() === normalizedFirstDealer);
+  if (startIndex === -1) return [];
+
+  return [...cleanedDealers.slice(startIndex), ...cleanedDealers.slice(0, startIndex)];
+}
+
+function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled = getLocalStorage(PRO_MODE_KEY, false)) {
+  const dealerCandidates = getRematchDealerCandidates(sourceState);
+  const dealers = buildDealerOrderStartingWith(dealerCandidates, firstDealer);
+  if (dealers.length !== 4) return null;
+
+  const usPlayers = getRematchTeamPlayers(sourceState, "us");
+  const demPlayers = getRematchTeamPlayers(sourceState, "dem");
+  const usTeamName = sourceState?.usTeamName || deriveTeamDisplay(usPlayers);
+  const demTeamName = sourceState?.demTeamName || deriveTeamDisplay(demPlayers);
+
+  return {
+    ...DEFAULT_STATE,
+    rounds: [],
+    undoneRounds: [],
+    savedScoreInputStates: { us: null, dem: null },
+    usPlayers,
+    demPlayers,
+    usTeamName,
+    demTeamName,
+    showWinProbability: Boolean(proModeEnabled),
+    startingTotals: { us: 0, dem: 0 },
+    dealers,
+    misdealCount: 0,
+    gameLocation: null,
+    pendingPenalty: null,
+  };
+}
+
+function closeRematchDealerModal(restoreGameOverOverlay = false) {
+  const modal = document.getElementById("rematchDealerModal");
+  if (modal) modal.remove();
+  if (restoreGameOverOverlay && state.gameOver) {
+    const gameOverOverlay = document.querySelector('[data-overlay="gameover"]');
+    if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
+  }
+  deactivateModalEnvironment();
+}
+
+function startRematchWithFirstDealer(firstDealer) {
+  const nextState = buildRematchSetupState(state, firstDealer, getLocalStorage(PRO_MODE_KEY, false));
+  if (!nextState) {
+    alert("Choose one of the current players to deal first.");
+    return false;
+  }
+
+  resetRenderAnimationState();
+  updateState(nextState);
+  confettiTriggered = false;
+  ephemeralCustomBid = "";
+  ephemeralPoints = "";
+  pendingGameAction = null;
+  window.prePopulatedTeamData = null;
+  saveCurrentGameState();
+  showSaveIndicator(`${nextState.dealers[0]} deals first`);
+  emitRookEvent("rematch_started", getRookGameEventParams(nextState, { source: "game_over" }));
+  return true;
+}
+
+function handleRematchDealerSelection(firstDealer) {
+  closeRematchDealerModal();
+  startRematchWithFirstDealer(firstDealer);
+}
+
+function openRematchDealerModal() {
+  const dealerCandidates = getRematchDealerCandidates(state);
+  if (dealerCandidates.length !== 4) {
+    alert("Add four players or a dealing order before starting a same-player rematch.");
+    return;
+  }
+
+  hideGameOverOverlay();
+  closeRematchDealerModal(false);
+
+  const buttonsHtml = dealerCandidates.map((dealer, index) => `
+    <button type="button"
+      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600 threed font-bold"
+      data-rematch-dealer-index="${index}">
+      ${escapeHtml(dealer)}
+    </button>
+  `).join("");
+
+  const modalHtml = `
+    <div id="rematchDealerModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="rematchDealerTitle" tabindex="-1">
+      <div class="bg-white w-full max-w-md rounded-2xl shadow-xl dark:bg-gray-800">
+        <div class="p-6">
+          <h2 id="rematchDealerTitle" class="text-2xl font-black mb-2 text-gray-800 dark:text-white text-center">Choose First Dealer</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 text-center">Same players, fresh score.</p>
+          <div class="grid grid-cols-1 gap-3">${buttonsHtml}</div>
+          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+  const modal = document.getElementById("rematchDealerModal");
+  modal?.querySelectorAll("[data-rematch-dealer-index]").forEach(button => {
+    button.addEventListener("click", () => {
+      const dealerIndex = Number(button.getAttribute("data-rematch-dealer-index"));
+      handleRematchDealerSelection(dealerCandidates[dealerIndex]);
+    });
+  });
+  document.getElementById("cancelRematchDealerBtn")?.addEventListener("click", () => closeRematchDealerModal(true));
+  modal?.addEventListener("click", (event) => {
+    if (event.target === modal) closeRematchDealerModal(true);
+  });
+  activateModalEnvironment();
+  modal?.focus();
+}
+
+function handleGameOverRematchClick(e) {
+  if (e) e.preventDefault();
+  openRematchDealerModal();
+}
+
 function hideGameOverOverlay() {
   const overlay = document.querySelector('[data-overlay="gameover"]');
   if (overlay) overlay.classList.add('hidden');
@@ -4836,6 +4989,7 @@ function renderGameOverOverlay() {
           <div class="flex space-x-3 justify-center flex-wrap gap-2">
             <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
             <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
+            <button onclick="handleGameOverRematchClick(event)" class="bg-purple-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:hover:bg-purple-600 dark:focus:ring-purple-400 threed font-bold text-sm" type="button">Rematch</button>
             <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
           </div>
         </div>
@@ -6350,6 +6504,9 @@ if (typeof module !== 'undefined' && module.exports) {
     getStoredLocationDisplay,
     getGameLocationDisplay,
     captureGameLocation,
+    getRematchDealerCandidates,
+    buildDealerOrderStartingWith,
+    buildRematchSetupState,
     playersEqual,
     renderReadOnlyGameDetails,
     buildSavedGameCard,

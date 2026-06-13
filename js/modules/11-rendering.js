@@ -533,6 +533,7 @@ function renderGameOverOverlay() {
           <div class="flex space-x-3 justify-center flex-wrap gap-2">
             <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
             <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
+            <button onclick="handleGameOverRematchClick(event)" class="bg-purple-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:hover:bg-purple-600 dark:focus:ring-purple-400 threed font-bold text-sm" type="button">Rematch</button>
             <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
           </div>
         </div>

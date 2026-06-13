@@ -201,6 +201,9 @@ const {
   getStoredLocationDisplay,
   getGameLocationDisplay,
   captureGameLocation,
+  getRematchDealerCandidates,
+  buildDealerOrderStartingWith,
+  buildRematchSetupState,
   playersEqual,
   renderReadOnlyGameDetails,
   buildSavedGameCard,
@@ -377,6 +380,62 @@ test('formatTeamDisplay joins non-empty names with ampersand', () => {
   assert.equal(formatTeamDisplay(['Alice', 'Bob']), 'Alice & Bob');
   assert.equal(formatTeamDisplay(['Alice', '']), 'Alice');
   assert.equal(formatTeamDisplay(['', '']), '');
+});
+
+test('rematch dealer candidates prefer the current dealing order', () => {
+  const candidates = getRematchDealerCandidates({
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    usPlayers: ['Alice', 'Carol'],
+    demPlayers: ['Bob', 'Dan'],
+  });
+
+  assert.deepEqual(candidates, ['Alice', 'Bob', 'Carol', 'Dan']);
+});
+
+test('rematch dealer candidates fall back to interleaved team players', () => {
+  const candidates = getRematchDealerCandidates({
+    dealers: [],
+    usTeamName: 'Alice & Carol',
+    demTeamName: 'Bob & Dan',
+  });
+
+  assert.deepEqual(candidates, ['Alice', 'Bob', 'Carol', 'Dan']);
+});
+
+test('buildDealerOrderStartingWith rotates the order to the selected starter', () => {
+  assert.deepEqual(
+    buildDealerOrderStartingWith(['Alice', 'Bob', 'Carol', 'Dan'], 'Carol'),
+    ['Carol', 'Dan', 'Alice', 'Bob'],
+  );
+  assert.deepEqual(buildDealerOrderStartingWith(['Alice', 'Bob', 'Carol', 'Dan'], 'Eve'), []);
+});
+
+test('buildRematchSetupState keeps players and clears game progress', () => {
+  const nextState = buildRematchSetupState({
+    rounds: [{ bidAmount: 120 }],
+    undoneRounds: [{ bidAmount: 125 }],
+    gameOver: true,
+    winner: 'us',
+    usTeamName: 'Alice & Carol',
+    demTeamName: 'Bob & Dan',
+    usPlayers: ['Alice', 'Carol'],
+    demPlayers: ['Bob', 'Dan'],
+    startingTotals: { us: 420, dem: 310 },
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    misdealCount: 2,
+  }, 'Bob', true);
+
+  assert.ok(nextState);
+  assert.deepEqual(nextState.rounds, []);
+  assert.deepEqual(nextState.undoneRounds, []);
+  assert.equal(nextState.gameOver, false);
+  assert.equal(nextState.winner, null);
+  assert.deepEqual(nextState.startingTotals, { us: 0, dem: 0 });
+  assert.deepEqual(nextState.usPlayers, ['Alice', 'Carol']);
+  assert.deepEqual(nextState.demPlayers, ['Bob', 'Dan']);
+  assert.deepEqual(nextState.dealers, ['Bob', 'Carol', 'Dan', 'Alice']);
+  assert.equal(nextState.misdealCount, 0);
+  assert.equal(nextState.showWinProbability, true);
 });
 
 test('buildTeamKey lowercases sorted player names', () => {
@@ -1022,7 +1081,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.0";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.1";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
