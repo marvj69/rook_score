@@ -1081,7 +1081,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.2";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.3";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -1111,6 +1111,18 @@ test('version badge opens an in-app release modal instead of an alert', () => {
   assert.match(miscSource, /message\.textContent = APP_RELEASE_SUMMARY/);
   assert.doesNotMatch(miscSource, /alert\s*\(\s*APP_RELEASE_SUMMARY\s*\)/);
   assert.match(initSource, /versionInfoModal: closeVersionInfoModal/);
+});
+
+test('settings toggles use shared polished switch styling', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+
+  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 3);
+  assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
+  assert.match(css, /\.settings-switch\s*\{/);
+  assert.match(css, /width:\s*3\.875rem;/);
+  assert.match(css, /height:\s*2\.125rem;/);
+  assert.match(css, /transform:\s*translateX\(1\.75rem\)/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {

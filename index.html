@@ -454,20 +454,20 @@
                             <label for="mustWinByBidToggle" class="text-gray-700 dark:text-white font-medium">Must win by making bid</label>
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">If enabled, bidder must make bid to win (even if over 500).</p>
                         </div>
-                        <div class="relative ml-4">
-                            <input type="checkbox" id="mustWinByBidToggle" class="sr-only peer" />
-                            <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('mustWinByBidToggle').click()"></div>
-                        </div>
+                        <label class="settings-switch ml-4">
+                            <input type="checkbox" id="mustWinByBidToggle" class="settings-switch__input" />
+                            <span class="settings-switch__track" aria-hidden="true"></span>
+                        </label>
                     </div>
                     <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
                         <div>
                             <label for="misdealHandlingToggle" class="text-gray-700 dark:text-white font-medium">Enable misdeal handling</label>
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Show a button to skip to next dealer on misdeal.</p>
                         </div>
-                        <div class="relative ml-4">
-                            <input type="checkbox" id="misdealHandlingToggle" class="sr-only peer" />
-                            <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('misdealHandlingToggle').click()"></div>
-                        </div>
+                        <label class="settings-switch ml-4">
+                            <input type="checkbox" id="misdealHandlingToggle" class="settings-switch__input" />
+                            <span class="settings-switch__track" aria-hidden="true"></span>
+                        </label>
                     </div>
                     <div class="p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
                         <label for="tableTalkPenaltySelect" class="text-gray-700 dark:text-white font-medium block mb-2">Table Talk Penalty</label>
@@ -494,10 +494,10 @@
                             <label for="proModeToggleModal" class="text-gray-700 dark:text-white font-medium">Pro Mode</label>
                             <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Enables win probability display.</p>
                         </div>
-                        <div class="relative ml-4">
-                            <input type="checkbox" id="proModeToggleModal" class="sr-only peer" onchange="toggleProMode(this)" />
-                            <div class="w-14 h-7 bg-gray-200 rounded-full dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:border-gray-300 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7 cursor-pointer" onclick="document.getElementById('proModeToggleModal').click()"></div>
-                        </div>
+                        <label class="settings-switch ml-4">
+                            <input type="checkbox" id="proModeToggleModal" class="settings-switch__input" onchange="toggleProMode(this)" />
+                            <span class="settings-switch__track" aria-hidden="true"></span>
+                        </label>
                     </div>
                     <button type="button" onclick="openThemeModal(event)" class="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors">
                         <div><span class="text-gray-700 dark:text-white font-medium block text-left">Customize Theme Colors</span><p class="text-sm text-gray-500 dark:text-gray-300 mt-1 text-left">Personalize team colors.</p></div>
