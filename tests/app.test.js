@@ -1120,9 +1120,9 @@ test('settings toggles use shared polished switch styling', () => {
   assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 3);
   assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
   assert.match(css, /\.settings-switch\s*\{/);
-  assert.match(css, /width:\s*3\.875rem;/);
-  assert.match(css, /height:\s*2\.125rem;/);
-  assert.match(css, /transform:\s*translateX\(1\.75rem\)/);
+  assert.match(css, /width:\s*3rem;/);
+  assert.match(css, /height:\s*1\.625rem;/);
+  assert.match(css, /transform:\s*translateY\(-50%\)\s+translateX\(1\.375rem\)/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {
