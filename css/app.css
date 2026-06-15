@@ -583,9 +583,9 @@ html.dark nav ul li label:hover {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 3.875rem;
-  height: 2.125rem;
-  flex: 0 0 3.875rem;
+  width: 3rem;
+  height: 1.625rem;
+  flex: 0 0 3rem;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -608,53 +608,58 @@ html.dark nav ul li label:hover {
   height: 100%;
   overflow: hidden;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  background: linear-gradient(180deg, rgba(71, 85, 105, 0.28), rgba(30, 41, 59, 0.14));
-  box-shadow: inset 0 2px 5px rgba(15, 23, 42, 0.18), 0 4px 10px rgba(15, 23, 42, 0.12);
-  transition: background 0.2s var(--smooth), border-color 0.2s var(--smooth), box-shadow 0.2s var(--smooth);
+  border: 0;
+  background: rgba(120, 130, 150, 0.3);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: background 0.25s var(--smooth), box-shadow 0.25s var(--smooth);
 }
 .settings-switch__track::before {
   content: "";
   position: absolute;
-  top: 0.25rem;
-  left: 0.25rem;
-  width: 1.625rem;
-  height: 1.625rem;
+  top: 50%;
+  left: 0.1875rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: var(--radius-full);
-  background: linear-gradient(180deg, #ffffff 0%, #e8edf5 100%);
-  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.78);
-  transition: transform 0.22s var(--bounce), box-shadow 0.2s var(--smooth), background 0.2s var(--smooth);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 1px rgba(0, 0, 0, 0.1);
+  transform: translateY(-50%);
+  transition: transform 0.25s var(--smooth), box-shadow 0.25s var(--smooth), width 0.15s var(--smooth);
 }
 .settings-switch__input:checked + .settings-switch__track {
-  border-color: color-mix(in srgb, var(--primary-color) 70%, #ffffff 30%);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--primary-color) 92%, #1d4ed8 8%), #2563eb);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.24), 0 8px 18px color-mix(in srgb, var(--primary-color) 34%, transparent);
+  background: var(--primary-color);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15), 0 0 0 1px color-mix(in srgb, var(--primary-color) 60%, transparent);
 }
 .settings-switch__input:checked + .settings-switch__track::before {
-  transform: translateX(1.75rem);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.32), inset 0 0 0 1px rgba(255, 255, 255, 0.86);
+  transform: translateY(-50%) translateX(1.375rem);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+.settings-switch:active .settings-switch__track::before {
+  width: 1.375rem;
 }
 .settings-switch__input:focus-visible + .settings-switch__track {
-  outline: 3px solid color-mix(in srgb, var(--primary-color) 72%, #ffffff 28%);
-  outline-offset: 3px;
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 .settings-switch:hover .settings-switch__track::before {
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.86);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22), 0 1px 1px rgba(0, 0, 0, 0.1);
 }
 .settings-switch__input:disabled,
 .settings-switch__input:disabled + .settings-switch__track {
   cursor: not-allowed;
 }
 .settings-switch__input:disabled + .settings-switch__track {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 .dark .settings-switch__track {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: linear-gradient(180deg, rgba(30, 41, 75, 0.95), rgba(15, 23, 42, 0.78));
-  box-shadow: inset 0 2px 6px rgba(2, 6, 23, 0.55), 0 5px 14px rgba(2, 6, 23, 0.28);
+  background: rgba(60, 65, 85, 0.6);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 .dark .settings-switch__track::before {
-  background: linear-gradient(180deg, #ffffff 0%, #eef4ff 100%);
+  background: #ffffff;
+}
+.dark .settings-switch__input:checked + .settings-switch__track {
+  background: var(--primary-color);
 }
 body.liquid-glass .settings-switch .settings-switch__input {
   border: 0;
@@ -665,18 +670,14 @@ body.liquid-glass .settings-switch .settings-switch__input {
   border-radius: var(--radius-full) !important;
 }
 body.liquid-glass .settings-switch__track {
-  border-color: var(--glass-border-strong);
-  background: rgba(5, 10, 30, 0.42);
-  box-shadow: inset 0 2px 7px rgba(2, 6, 23, 0.6), 0 7px 18px rgba(2, 6, 23, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
 }
 body.liquid-glass .settings-switch__input:checked + .settings-switch__track {
-  border-color: color-mix(in srgb, var(--primary-color) 70%, #ffffff 30%);
-  background: linear-gradient(135deg,
-    color-mix(in srgb, var(--primary-color) 92%, #ffffff 8%),
-    color-mix(in srgb, var(--primary-color) 76%, #1d4ed8 24%));
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 22px color-mix(in srgb, var(--primary-color) 38%, transparent);
+  background: var(--primary-color);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.1), 0 8px 20px color-mix(in srgb, var(--primary-color) 30%, transparent);
 }
 
 /* Dealer Order Modal */
