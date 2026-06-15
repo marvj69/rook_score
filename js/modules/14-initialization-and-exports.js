@@ -229,7 +229,6 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveTeamDisplay,
     getGameTeamDisplay,
     formatGameLocationParts,
-    createManualGameLocationRecord,
     getStoredLocationDisplay,
     getGameLocationDisplay,
     captureGameLocation,

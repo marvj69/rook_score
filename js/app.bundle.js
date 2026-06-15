@@ -334,27 +334,6 @@ function createGameLocationRecord({ street = "", city = "", state = "", latitude
   return record;
 }
 
-function createManualGameLocationRecord(input) {
-  const cleaned = cleanLocationPiece(input);
-  if (!cleaned) return null;
-  const parts = cleaned.split(",").map(cleanLocationPiece).filter(Boolean);
-  if (parts.length >= 3) {
-    const state = parts.pop();
-    const city = parts.pop();
-    const street = parts.join(", ");
-    const structured = createGameLocationRecord({ street, city, state, source: "manual" });
-    if (structured) return structured;
-  }
-  return {
-    formatted: cleaned,
-    street: "",
-    city: "",
-    state: "",
-    capturedAt: new Date().toISOString(),
-    source: "manual",
-  };
-}
-
 function getStoredLocationDisplay(location) {
   if (!location) return "";
   if (typeof location === "string") return cleanLocationPiece(location);
@@ -6429,7 +6408,6 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveTeamDisplay,
     getGameTeamDisplay,
     formatGameLocationParts,
-    createManualGameLocationRecord,
     getStoredLocationDisplay,
     getGameLocationDisplay,
     captureGameLocation,

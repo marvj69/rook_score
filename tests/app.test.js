@@ -197,7 +197,6 @@ const {
   deriveTeamDisplay,
   getGameTeamDisplay,
   formatGameLocationParts,
-  createManualGameLocationRecord,
   getStoredLocationDisplay,
   getGameLocationDisplay,
   captureGameLocation,
@@ -292,13 +291,12 @@ test('formatGameLocationParts normalizes street city and state code', () => {
   );
 });
 
-test('manual game location records and game display prefer completed location', () => {
-  const manual = createManualGameLocationRecord(' 55 Lake St, Marquette, Michigan ');
-  assert.equal(manual.formatted, '55 Lake St, Marquette, MI');
+test('stored game location display prefers completed location', () => {
+  const manual = { formatted: '55 Lake St, Marquette, MI' };
   assert.equal(getStoredLocationDisplay(manual), '55 Lake St, Marquette, MI');
   assert.equal(
     getGameLocationDisplay({
-      frozenLocation: createManualGameLocationRecord('12 Frozen Rd, Green Bay, WI'),
+      frozenLocation: { formatted: '12 Frozen Rd, Green Bay, WI' },
       location: manual,
     }),
     '55 Lake St, Marquette, MI',
@@ -338,8 +336,8 @@ test('saved and freezer game cards render formatted location details', () => {
     durationMs: 600000,
     finalScore: { us: 520, dem: 220 },
     rounds: [{ bidAmount: 120, biddingTeam: 'us', usPoints: 130, demPoints: 50, runningTotals: { us: 520, dem: 220 } }],
-    frozenLocation: createManualGameLocationRecord('10 Frozen Rd, Lansing, MI'),
-    location: createManualGameLocationRecord('100 Final St, Detroit, MI'),
+    frozenLocation: { formatted: '10 Frozen Rd, Lansing, MI' },
+    location: { formatted: '100 Final St, Detroit, MI' },
   };
   const freezerGame = {
     usName: 'Eve & Finn',
@@ -350,7 +348,7 @@ test('saved and freezer game cards render formatted location details', () => {
     finalScore: { us: 180, dem: 60 },
     lastBid: '130 (Eve & Finn)',
     accumulatedTime: 300000,
-    frozenLocation: createManualGameLocationRecord('200 Freeze Ave, Madison, WI'),
+    frozenLocation: { formatted: '200 Freeze Ave, Madison, WI' },
   };
 
   const completedCard = buildSavedGameCard(completedGame, 0);
@@ -1079,7 +1077,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.5";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.6";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
