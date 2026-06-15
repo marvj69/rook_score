@@ -43,6 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
     savedGamesModal: closeSavedGamesModal,
     viewSavedGameModal: closeViewSavedGameModal,
     aboutModal: closeAboutModal,
+    versionInfoModal: closeVersionInfoModal,
     statisticsModal: closeStatisticsModal,
     entityStatisticsModal: closeEntityStatisticsModal,
     teamSelectionModal: closeTeamSelectionModal,

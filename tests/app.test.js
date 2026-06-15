@@ -1081,7 +1081,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.1";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.2";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -1097,6 +1097,20 @@ test('version surfaces are aligned for the 2.1 release', () => {
   assert.match(configSource, /Version 2\.1 adds the cartoony glass theme/);
   assert.match(htmlSource, /<p>2\.1<\/p>/);
   assert.match(htmlSource, /What's New in v2\.1/);
+});
+
+test('version badge opens an in-app release modal instead of an alert', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const miscSource = readFileSync(path.join(repoRoot, 'js/modules/09-settings-validation-misc.js'), 'utf8');
+  const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
+
+  assert.match(htmlSource, /id="versionInfoModal"/);
+  assert.match(htmlSource, /id="versionInfoModalMessage"/);
+  assert.match(miscSource, /function showVersionNum\(\)/);
+  assert.match(miscSource, /openModal\("versionInfoModal"\)/);
+  assert.match(miscSource, /message\.textContent = APP_RELEASE_SUMMARY/);
+  assert.doesNotMatch(miscSource, /alert\s*\(\s*APP_RELEASE_SUMMARY\s*\)/);
+  assert.match(initSource, /versionInfoModal: closeVersionInfoModal/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {

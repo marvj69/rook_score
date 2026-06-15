@@ -64,6 +64,27 @@
       <p>2.1</p>
     </div>
 
+    <!-- Version Info Modal -->
+    <div id="versionInfoModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="versionInfoModalTitle" aria-describedby="versionInfoModalMessage" tabindex="-1">
+      <div class="bg-white w-full max-w-md rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden">
+        <div class="p-6 space-y-5">
+          <header class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-sm font-semibold uppercase text-blue-600 dark:text-blue-300">Release Notes</p>
+              <h2 id="versionInfoModalTitle" class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">Version 2.1</h2>
+            </div>
+            <button type="button" onclick="closeVersionInfoModal()" class="text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1 dark:text-gray-400 dark:hover:text-white" aria-label="Close Version Info">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </header>
+          <p id="versionInfoModalMessage" class="text-base leading-7 text-gray-700 dark:text-gray-200">Version 2.1 adds the cartoony glass theme, refreshed 3-D cards, buttons, modals, and statistics styling, brighter app colors, bouncy motion polish, and a new default visual treatment.</p>
+          <div class="flex justify-end">
+            <button type="button" onclick="closeVersionInfoModal()" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors duration-200 font-medium threed">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Main App Container -->
     <main id="app" class="max-w-4xl mx-auto p-2 sm:p-4 space-y-3"></main>
 

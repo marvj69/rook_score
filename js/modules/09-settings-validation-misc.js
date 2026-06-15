@@ -103,7 +103,20 @@ function validatePoints(pointsStr) {
 
 // --- Misc UI & Utility ---
 function showVersionNum() {
-  alert(APP_RELEASE_SUMMARY);
+  const modal = document.getElementById("versionInfoModal");
+  if (!modal) return;
+
+  const title = document.getElementById("versionInfoModalTitle");
+  if (title) title.textContent = `Version ${APP_VERSION}`;
+
+  const message = document.getElementById("versionInfoModalMessage");
+  if (message) message.textContent = APP_RELEASE_SUMMARY;
+
+  openModal("versionInfoModal");
+}
+
+function closeVersionInfoModal() {
+  closeModal("versionInfoModal");
 }
 // Time protection constants
 const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
