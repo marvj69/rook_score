@@ -194,18 +194,6 @@ function removePreset(index) {
       }, 150);
   }
 }
-function sortPresets() {
-  const inputs = Array.from(document.querySelectorAll('#presetInputs input'));
-  const errorMsgEl = document.getElementById('presetErrorMsg');
-  if (inputs.some(input => !validatePresetInput(input))) {
-      errorMsgEl.textContent = 'Fix errors before sorting.';
-      errorMsgEl.classList.remove('hidden');
-      setTimeout(() => errorMsgEl.classList.add('hidden'), 3000);
-      return;
-  }
-  const sortedValues = inputs.map(input => Number(input.value)).sort((a, b) => a - b);
-  inputs.forEach((input, i) => input.value = sortedValues[i]);
-}
 function savePresets() {
   const inputs = Array.from(document.querySelectorAll('#presetInputs input'));
   const errorMsgEl = document.getElementById('presetErrorMsg');

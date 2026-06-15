@@ -224,8 +224,6 @@ function sortGamesBy(entries, sortOption = 'newest') {
   }
   return sorted;
 }
-function detectSandbag(rounds, winner, threshold = 2) { /* Placeholder */ return "N/A"; }
-
 function sortStatisticsData(statsData, sortKey, metricKey) {
   if (!Array.isArray(statsData)) return [];
   const sorted = [...statsData];
@@ -907,7 +905,7 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
   }
 
   const cards = statsData.map(item => buildStatsRowCard(mode, item, additionalStatKey)).join('');
-  const tableRows = statsData.map((item, index) => buildStatsTableRow(mode, item, additionalStatKey, index)).join('');
+  const tableRows = statsData.map((item) => buildStatsTableRow(mode, item, additionalStatKey)).join('');
 
   return `
     <div class="stats-cards-view stats-rows" role="list" aria-label="${escapeAttribute(nameHeader + ' statistics')}">
@@ -983,7 +981,7 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
     </button>`;
 }
 
-function buildStatsTableRow(mode, item, additionalStatKey, index) {
+function buildStatsTableRow(mode, item, additionalStatKey) {
   const entityKey = item.key;
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')

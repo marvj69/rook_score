@@ -217,13 +217,11 @@ const {
   buildModelFeatureVector,
   extractModelFeaturesFromRoundContext,
   predictBaseModelProbabilityFromFeatures,
-  applyPlattCalibration,
   fitPersonalizationCalibration,
   ensureProbabilityPersonalizationForGames,
   getModelProbabilitySnapshotForState,
   buildWinProbabilityCacheKey,
   getWinProbability,
-  getProbabilityContext,
   calculateWinProbabilityComplex,
   calculateWinProbability,
   getFilteredPlayerSuggestions,
@@ -1081,7 +1079,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.4";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.5";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

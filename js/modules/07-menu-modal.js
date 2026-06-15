@@ -545,7 +545,3 @@ function openZeroPointsModal(callback) {
     // No callback on cancel
   });
 }
-
-function closeZeroPointsModal() {
-  closeModal("zeroPointsModal");
-}

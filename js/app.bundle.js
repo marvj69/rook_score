@@ -458,27 +458,15 @@ let statsMetricKey = 'games';
 let statsSortKey = 'recent';
 let roundsVersion = 0;
 let renderScheduled = false;
-let renderHandle = null;
 const scheduleFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
-const cancelFrame = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : clearTimeout;
 
 function scheduleRender() {
   if (renderScheduled) return;
   renderScheduled = true;
-  renderHandle = scheduleFrame(() => {
+  scheduleFrame(() => {
     renderScheduled = false;
-    renderHandle = null;
     renderApp();
   });
-}
-
-function flushRender() {
-  if (renderScheduled && renderHandle !== null) {
-    cancelFrame(renderHandle);
-    renderScheduled = false;
-    renderHandle = null;
-  }
-  renderApp();
 }
 
 function getBaseTotals() {
@@ -580,55 +568,6 @@ function getHistoryCardAnimation(roundCount, options = {}) {
   if (historyCardAnimationRoundCount === roundCount) return { className: "", attrs: "" };
   historyCardAnimationRoundCount = roundCount;
   return getCardPopAnimation(options);
-}
-
-function renderWinProbability() {
-  // Only show if enabled
-  if (!state.showWinProbability) return "";
-
-  const { rounds, usTeamName, demTeamName, gameOver } = state;
-  if (rounds.length === 0 || gameOver) return "";
-  const historicalGames = getLocalStorage("savedGames");
-  const winProb = getWinProbability(state, historicalGames);
-  const labelUs = usTeamName || "Us";
-  const labelDem = demTeamName || "Dem";
-
-  // Get current game state for context
-  const lastRound = rounds[rounds.length - 1];
-  const currentScores = lastRound.runningTotals || { us: 0, dem: 0 };
-  const scoreDiff = currentScores.us - currentScores.dem;
-  const leader = scoreDiff > 0 ? labelUs : scoreDiff < 0 ? labelDem : "Tied";
-  const margin = Math.abs(scoreDiff);
-
-  // Determine win probability context
-  let contextText = "";
-  if (scoreDiff === 0) {
-    contextText = "Even game";
-  } else if (margin <= 30) {
-    contextText = `${leader} slightly ahead`;
-  } else if (margin <= 60) {
-    contextText = `${leader} leading`;
-  } else {
-    contextText = `${leader} strongly ahead`;
-  }
-
-  return `
-    <div id="winProbabilityDisplay" class="text-center text-sm text-gray-600 dark:text-gray-300 border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-<div class="flex items-center justify-center gap-4 mb-2">
-  <div class="flex items-center gap-2">
-    <div class="w-2 h-2 rounded-full bg-primary"></div>
-    <span class="font-medium">${labelUs}: ${winProb.us.toFixed(1)}%</span>
-  </div>
-  <div class="flex items-center gap-2">
-    <div class="w-2 h-2 rounded-full bg-accent"></div>
-    <span class="font-medium">${labelDem}: ${winProb.dem.toFixed(1)}%</span>
-  </div>
-</div>
-<div class="text-xs text-gray-500 dark:text-gray-400">
-  ${contextText} • ${historicalGames.length} games analyzed
-</div>
-    </div>
-  `;
 }
 
 // ---- js/modules/02-win-prob-engine.js ----
@@ -1659,18 +1598,6 @@ function removePreset(index) {
           });
       }, 150);
   }
-}
-function sortPresets() {
-  const inputs = Array.from(document.querySelectorAll('#presetInputs input'));
-  const errorMsgEl = document.getElementById('presetErrorMsg');
-  if (inputs.some(input => !validatePresetInput(input))) {
-      errorMsgEl.textContent = 'Fix errors before sorting.';
-      errorMsgEl.classList.remove('hidden');
-      setTimeout(() => errorMsgEl.classList.add('hidden'), 3000);
-      return;
-  }
-  const sortedValues = inputs.map(input => Number(input.value)).sort((a, b) => a - b);
-  inputs.forEach((input, i) => input.value = sortedValues[i]);
 }
 function savePresets() {
   const inputs = Array.from(document.querySelectorAll('#presetInputs input'));
@@ -2802,10 +2729,6 @@ function openZeroPointsModal(callback) {
   });
 }
 
-function closeZeroPointsModal() {
-  closeModal("zeroPointsModal");
-}
-
 // ---- js/modules/08-game-actions-logic.js ----
 "use strict";
 
@@ -3855,12 +3778,6 @@ function calculateSafeTimeAccumulation(currentAccumulated, startTime, nowTs = Da
   return Math.min(totalTime, MAX_GAME_TIME_MS);
 }
 
-function getCurrentGameTime() {
-  const base = clampDurationMs(state.accumulatedTime);
-  if (!isStartTimestampActive(state.startTime)) return base;
-  return calculateSafeTimeAccumulation(base, state.startTime);
-}
-
 function renderTimeWarning() {
   return "";
 }
@@ -4507,7 +4424,7 @@ function launchGameOverConfetti() {
 }
 
 function renderApp() {
-  const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver, lastBidAmount, lastBidTeam } = state;
+  const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
   const totals = getCurrentTotals();
   const roundNumber = rounds.length + 1;
 
@@ -5036,7 +4953,7 @@ function renderReadOnlyGameDetails(game) {
   const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
   const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
 
-  const roundHtml = (rounds || []).map((r, idx) => {
+  const roundHtml = (rounds || []).map((r) => {
       const runningTotals = sanitizeTotals(r.runningTotals);
       const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
       const bidTeamDisplay = escapeHtmlValue(bidTeam);
@@ -5324,8 +5241,6 @@ function sortGamesBy(entries, sortOption = 'newest') {
   }
   return sorted;
 }
-function detectSandbag(rounds, winner, threshold = 2) { /* Placeholder */ return "N/A"; }
-
 function sortStatisticsData(statsData, sortKey, metricKey) {
   if (!Array.isArray(statsData)) return [];
   const sorted = [...statsData];
@@ -6007,7 +5922,7 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
   }
 
   const cards = statsData.map(item => buildStatsRowCard(mode, item, additionalStatKey)).join('');
-  const tableRows = statsData.map((item, index) => buildStatsTableRow(mode, item, additionalStatKey, index)).join('');
+  const tableRows = statsData.map((item) => buildStatsTableRow(mode, item, additionalStatKey)).join('');
 
   return `
     <div class="stats-cards-view stats-rows" role="list" aria-label="${escapeAttribute(nameHeader + ' statistics')}">
@@ -6083,7 +5998,7 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
     </button>`;
 }
 
-function buildStatsTableRow(mode, item, additionalStatKey, index) {
+function buildStatsTableRow(mode, item, additionalStatKey) {
   const entityKey = item.key;
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')

@@ -38,7 +38,7 @@ function launchGameOverConfetti() {
 }
 
 function renderApp() {
-  const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver, lastBidAmount, lastBidTeam } = state;
+  const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
   const totals = getCurrentTotals();
   const roundNumber = rounds.length + 1;
 
@@ -567,7 +567,7 @@ function renderReadOnlyGameDetails(game) {
   const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
   const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
 
-  const roundHtml = (rounds || []).map((r, idx) => {
+  const roundHtml = (rounds || []).map((r) => {
       const runningTotals = sanitizeTotals(r.runningTotals);
       const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
       const bidTeamDisplay = escapeHtmlValue(bidTeam);

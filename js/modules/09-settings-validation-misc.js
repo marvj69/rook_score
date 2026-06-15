@@ -148,12 +148,6 @@ function calculateSafeTimeAccumulation(currentAccumulated, startTime, nowTs = Da
   return Math.min(totalTime, MAX_GAME_TIME_MS);
 }
 
-function getCurrentGameTime() {
-  const base = clampDurationMs(state.accumulatedTime);
-  if (!isStartTimestampActive(state.startTime)) return base;
-  return calculateSafeTimeAccumulation(base, state.startTime);
-}
-
 function renderTimeWarning() {
   return "";
 }
