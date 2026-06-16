@@ -189,6 +189,9 @@ const {
   escapeHtml,
   escapeHtmlValue,
   escapeAttribute,
+  setLocalStorage,
+  getLocalStorage,
+  shouldAttemptJsonParse,
   ensurePlayersArray,
   canonicalizePlayers,
   formatTeamDisplay,
@@ -200,6 +203,8 @@ const {
   getStoredLocationDisplay,
   getGameLocationDisplay,
   captureGameLocation,
+  normalizeTeamsStorage,
+  applyTeamResultDelta,
   getRematchDealerCandidates,
   buildDealerOrderStartingWith,
   buildRematchSetupState,
@@ -223,6 +228,12 @@ const {
   getWinProbability,
   calculateWinProbabilityComplex,
   calculateWinProbability,
+  validateBid,
+  validatePoints,
+  calculateSafeTimeAccumulation,
+  formatDuration,
+  recalcRunningTotals,
+  computeGameOutcomeFromRounds,
   getFilteredPlayerSuggestions,
 } = require('../js/app.js');
 
@@ -362,6 +373,50 @@ test('saved and freezer game cards render formatted location details', () => {
   assert.match(detailsHtml, /100 Final St, Detroit, MI/);
 });
 
+test('getLocalStorage returns documented defaults for missing collection keys', () => {
+  resetState();
+
+  assert.deepEqual(getLocalStorage('savedGames'), []);
+  assert.deepEqual(getLocalStorage('freezerGames'), []);
+  assert.deepEqual(getLocalStorage('unknownKey'), {});
+  assert.equal(getLocalStorage('unknownKey', 'fallback'), 'fallback');
+});
+
+test('getLocalStorage parses stored JSON while preserving plain strings', () => {
+  resetState();
+
+  setLocalStorage('settings', { mustWinByBid: true, presets: [120, 125] });
+  localStorage.setItem('plainText', 'not json');
+  localStorage.setItem('flag', 'true');
+
+  assert.deepEqual(getLocalStorage('settings'), { mustWinByBid: true, presets: [120, 125] });
+  assert.equal(getLocalStorage('plainText'), 'not json');
+  assert.equal(getLocalStorage('flag'), true);
+});
+
+test('getLocalStorage falls back safely for malformed saved collections', () => {
+  resetState();
+
+  localStorage.setItem('savedGames', '{bad json');
+  localStorage.setItem('freezerGames', '{bad json');
+  localStorage.setItem('misc', '{bad json');
+
+  assert.deepEqual(getLocalStorage('savedGames'), []);
+  assert.deepEqual(getLocalStorage('freezerGames'), []);
+  assert.deepEqual(getLocalStorage('misc'), {});
+  assert.equal(getLocalStorage('misc', 'fallback'), 'fallback');
+});
+
+test('shouldAttemptJsonParse only opts into likely JSON-compatible strings', () => {
+  assert.equal(shouldAttemptJsonParse('{"a":1}'), true);
+  assert.equal(shouldAttemptJsonParse('[1,2]'), true);
+  assert.equal(shouldAttemptJsonParse('"quoted"'), true);
+  assert.equal(shouldAttemptJsonParse('false'), true);
+  assert.equal(shouldAttemptJsonParse('-12.5e2'), true);
+  assert.equal(shouldAttemptJsonParse('Alice & Bob'), false);
+  assert.equal(shouldAttemptJsonParse(''), false);
+});
+
 test('sanitizePlayerName returns empty string for non-string values', () => {
   assert.equal(sanitizePlayerName(123), '');
   assert.equal(sanitizePlayerName({ name: 'Alice' }), '');
@@ -376,6 +431,45 @@ test('formatTeamDisplay joins non-empty names with ampersand', () => {
   assert.equal(formatTeamDisplay(['Alice', 'Bob']), 'Alice & Bob');
   assert.equal(formatTeamDisplay(['Alice', '']), 'Alice');
   assert.equal(formatTeamDisplay(['', '']), '');
+});
+
+test('validateBid accepts legal Rook bids and rejects invalid ranges', () => {
+  assert.equal(validateBid('120'), '');
+  assert.equal(validateBid('180'), '');
+  assert.equal(validateBid('360'), '');
+  assert.equal(validateBid('0'), 'Bid must be > 0.');
+  assert.equal(validateBid('122'), 'Bid must be multiple of 5.');
+  assert.equal(validateBid('185'), 'Bids between 180 and 360 are not allowed.');
+  assert.equal(validateBid('365'), 'Bid max 360.');
+});
+
+test('validatePoints accepts score-entry bounds including the 360 special case', () => {
+  assert.equal(validatePoints('0'), '');
+  assert.equal(validatePoints('180'), '');
+  assert.equal(validatePoints('360'), '');
+  assert.equal(validatePoints('-5'), 'Points 0-180 or 360.');
+  assert.equal(validatePoints('185'), 'Points 0-180 or 360.');
+  assert.equal(validatePoints('17'), 'Points must be multiple of 5.');
+  assert.equal(validatePoints('abc'), 'Points must be a number.');
+});
+
+test('calculateSafeTimeAccumulation caps round and game duration defensively', () => {
+  const now = new Date('2026-01-01T12:00:00.000Z').valueOf();
+  const oneMinute = 60_000;
+  const twoHours = 2 * 60 * 60 * 1000;
+  const tenHours = 10 * 60 * 60 * 1000;
+
+  assert.equal(calculateSafeTimeAccumulation(oneMinute, now - (3 * 60 * 60 * 1000), now), oneMinute + twoHours);
+  assert.equal(calculateSafeTimeAccumulation(tenHours - oneMinute, now - (30 * 60 * 1000), now), tenHours);
+  assert.equal(calculateSafeTimeAccumulation(90_000, null, now), 90_000);
+  assert.equal(calculateSafeTimeAccumulation(-1, now - oneMinute, now), oneMinute);
+});
+
+test('formatDuration keeps compact minute and hour labels', () => {
+  assert.equal(formatDuration(0), '0:00');
+  assert.equal(formatDuration(59_999), '0m');
+  assert.equal(formatDuration(60_000), '1m');
+  assert.equal(formatDuration(62 * 60_000), '1h 02m');
 });
 
 test('rematch dealer candidates prefer the current dealing order', () => {
@@ -438,6 +532,99 @@ test('buildTeamKey lowercases sorted player names', () => {
   assert.equal(buildTeamKey(['Alice', 'bob']), 'alice||bob');
   assert.equal(buildTeamKey(['', '']), '');
 });
+
+test('normalizeTeamsStorage merges legacy team records by canonical player key', () => {
+  const result = normalizeTeamsStorage({
+    'Alice & Bob': { wins: 1, losses: 0, gamesPlayed: 1 },
+    'bob and alice': { wins: 0, losses: 2, gamesPlayed: 2 },
+    __storageVersion: 1,
+  });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(Object.keys(result.data), ['alice||bob']);
+  assert.deepEqual(result.data['alice||bob'].players, ['Alice', 'Bob']);
+  assert.equal(result.data['alice||bob'].wins, 1);
+  assert.equal(result.data['alice||bob'].losses, 2);
+  assert.equal(result.data['alice||bob'].gamesPlayed, 3);
+});
+
+test('applyTeamResultDelta updates and reverses team records without negative totals', () => {
+  const teams = {};
+  const payload = {
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Carol', 'Dan'],
+    usDisplay: 'Alice & Bob',
+    demDisplay: 'Carol & Dan',
+    winner: 'us',
+  };
+
+  assert.equal(applyTeamResultDelta(teams, payload, 1), true);
+  assert.equal(teams['alice||bob'].gamesPlayed, 1);
+  assert.equal(teams['alice||bob'].wins, 1);
+  assert.equal(teams['carol||dan'].losses, 1);
+
+  assert.equal(applyTeamResultDelta(teams, payload, -1), true);
+  assert.equal(applyTeamResultDelta(teams, payload, -1), true);
+  assert.equal(teams['alice||bob'].gamesPlayed, 0);
+  assert.equal(teams['alice||bob'].wins, 0);
+  assert.equal(teams['carol||dan'].losses, 0);
+});
+
+test('recalcRunningTotals recomputes history from starting totals', () => {
+  const rounds = recalcRunningTotals([
+    { biddingTeam: 'us', bidAmount: 120, usPoints: 125, demPoints: 55, runningTotals: { us: 999, dem: 999 } },
+    { biddingTeam: 'dem', bidAmount: 130, usPoints: -130, demPoints: 0 },
+    { biddingTeam: 'us', bidAmount: 125, usPoints: 'bad', demPoints: 40 },
+  ], { us: '20', dem: 30 });
+
+  assert.deepEqual(rounds.map(round => round.runningTotals), [
+    { us: 145, dem: 85 },
+    { us: 15, dem: 85 },
+    { us: 15, dem: 125 },
+  ]);
+  assert.equal(rounds[0].runningTotals.us, 145);
+  assert.equal(rounds[0].bidAmount, 120);
+});
+
+test('computeGameOutcomeFromRounds detects won-on-bid and set-other-team endings', () => {
+  resetState();
+
+  assert.deepEqual(computeGameOutcomeFromRounds([]), {
+    gameOver: false,
+    winner: null,
+    victoryMethod: null,
+  });
+
+  assert.deepEqual(computeGameOutcomeFromRounds([
+    { biddingTeam: 'us', bidAmount: 120, usPoints: 130, demPoints: 50, runningTotals: { us: 510, dem: 260 } },
+  ]), {
+    gameOver: true,
+    winner: 'us',
+    victoryMethod: 'Won on Bid',
+  });
+
+  assert.deepEqual(computeGameOutcomeFromRounds([
+    { biddingTeam: 'us', bidAmount: 120, usPoints: -120, demPoints: 180, runningTotals: { us: 300, dem: 520 } },
+  ]), {
+    gameOver: true,
+    winner: 'dem',
+    victoryMethod: 'Set Other Team',
+  });
+});
+
+test('computeGameOutcomeFromRounds honors must-win-by-bid for set wins', () => {
+  resetState();
+  setLocalStorage('rookMustWinByBid', true);
+
+  assert.deepEqual(computeGameOutcomeFromRounds([
+    { biddingTeam: 'us', bidAmount: 120, usPoints: -120, demPoints: 180, runningTotals: { us: 300, dem: 520 } },
+  ]), {
+    gameOver: false,
+    winner: null,
+    victoryMethod: null,
+  });
+});
+
 test('getFilteredPlayerSuggestions returns recent matching names without duplicates', () => {
   const suggestions = getFilteredPlayerSuggestions([
     ' Alice ',
