@@ -197,7 +197,7 @@ function renderScoreInputCard() {
     onclick="${penaltyBtnOnClick}"
     ${!hasBid ? "disabled" : ""}
     title="Flag Table Talk - Choose Team">
-<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 3V6L6 9H4a1 1 0 0 0-1 1zm13-1.5v5a2.5 2.5 0 0 0 0-5z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 12a4 4 0 0 0 4-4" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6.75c2.5.15 4.25 1.15 5.25 3L13 13l-1.75 3.25C10.25 18.1 8.5 19.1 6 19.25"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 11.25c2.1-.45 4.05-.25 5.85.6M6 14.75c2.1.45 4.05.25 5.85-.6"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.25c1 .6 1.5 1.5 1.5 2.75s-.5 2.15-1.5 2.75M19.75 8.25C21.25 9.45 22 11.05 22 13s-.75 3.55-2.25 4.75"/></svg>
   </button>
         </div>
       </div>
