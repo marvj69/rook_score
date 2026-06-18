@@ -2373,7 +2373,12 @@ function toggleMenu(e) {
   overlay.classList.toggle("show", isOpen);
   document.body.classList.toggle("overflow-hidden", isOpen);
 }
-function closeMenuOverlay() { toggleMenu(null); } // Simplified close
+function closeMenuOverlay() {
+  document.getElementById("menu")?.classList.remove("show");
+  document.getElementById("hamburgerIcon")?.classList.remove("open");
+  document.getElementById("menuOverlay")?.classList.remove("show");
+  document.body.classList.remove("overflow-hidden");
+}
 
 function activateModalEnvironment() {
   document.body.classList.add("modal-open");
