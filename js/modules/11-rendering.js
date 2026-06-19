@@ -106,6 +106,7 @@ function renderApp() {
       <p class="text-md sm:text-lg text-gray-600 dark:text-white font-semibold">Tap a team to start a bid!</p>
       ${dealerEntryButton}
       ${dealerRow}
+      ${renderVoiceScoreControls()}
     </div>
     ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">

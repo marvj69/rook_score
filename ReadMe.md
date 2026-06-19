@@ -7,6 +7,7 @@
 ## ✨ Features
 
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
+*   **Voice Score Entry:** Use the in-game microphone button to record common score commands such as made bids, set bids, misdeals, and undo.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
 *   **Undo/Redo Functionality:** Easily correct mistakes in score entry.
@@ -32,6 +33,7 @@
 *   **Advanced Gameplay Features:**
     *   **Dealer Tracking:** Enter a four-player dealing order, auto-set teams by pairing with the dealer across the table, and see a dealer badge during play.
     *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
+    *   **Voice Scoring:** Transcribes short score phrases, infers team, bid, points, made/set status, misdeal, and undo actions, and asks for confirmation when the phrase is incomplete.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.
@@ -111,6 +113,7 @@ This will provide an app-like experience with an icon and potentially offline ac
     *   The Us and Dem score cards show the projected totals as the number is entered.
     *   **0-Point Special Handling:** If you enter '0' for a team, a modal will pop up asking if the bidding team should receive a 180 or 360 point bonus (standard Rook rules for "shooting the moon" or taking all points). You can also choose to keep it as 0.
     *   Click "**Submit**".
+    *   Alternatively, tap **Voice** and say a short command like "Dem bid 125 and made 145", "Us bid 130 and got set", "Misdeal, next dealer", or "Undo that last hand". If a set bid omits the other team's points, the app asks before recording the default set score.
 6.  **Scoring Logic:**
     *   If the bidding team makes their bid, they get the points they took. The other team gets (180 - points bidding team took).
     *   If the bidding team *fails* to make their bid, they are set back by the amount of their bid (negative points), and the other team scores the points they took.
@@ -194,7 +197,7 @@ A modern web browser. No complex build steps are required for local development 
 3.  To test Firebase cloud sync locally, run the app through Vercel with the Firebase environment variables below.
 
 ### Vercel Environment Variables
-Firebase cloud sync is configured through a Vercel serverless endpoint instead of hardcoded source values. Add these variables in Vercel for Production, Preview, and Development as needed:
+Firebase cloud sync and AI voice scoring are configured through Vercel serverless endpoints instead of hardcoded source values. Add these variables in Vercel for Production, Preview, and Development as needed:
 
 ```text
 FIREBASE_API_KEY
@@ -203,7 +206,16 @@ FIREBASE_PROJECT_ID
 FIREBASE_STORAGE_BUCKET
 FIREBASE_MESSAGING_SENDER_ID
 FIREBASE_APP_ID
+OPENAI_API_KEY
+OPENAI_TRANSCRIPTION_MODEL
+OPENROUTER_API_KEY
+OPENROUTER_MODEL
+OPENROUTER_SITE_URL
+OPENROUTER_APP_TITLE
 ```
+
+`OPENAI_TRANSCRIPTION_MODEL` is optional; the voice scoring endpoint defaults to `gpt-4o-mini-transcribe`.
+`OPENROUTER_MODEL` is optional; the voice command planner defaults to `cohere/north-mini-code:free`. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 
 For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
 
@@ -211,13 +223,13 @@ For local Vercel development, copy `.env.example` to `.env.local`, fill in the v
 npx vercel dev
 ```
 
-Opening `index.html` directly still works for local scoring, but Google sign-in and Firestore sync require the Vercel `/api/firebase-config` endpoint.
+Opening `index.html` directly still works for local scoring. Browser speech recognition can transcribe locally when supported, but LLM voice actions, Google sign-in, Firestore sync, and cross-browser audio transcription require the Vercel `/api` endpoints.
 
 ### Google Analytics
 Google Analytics is loaded from `js/analytics.js` on the GitHub Pages host for `https://marvj69.github.io/rook_score/` using the GA4 web stream Measurement ID `G-MCY1GMM4L5`.
 
 ### GitHub Pages
-The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` using the endpoint's CORS allowlist. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint's allowlist or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` in Vercel.
+The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config`, voice transcriptions from `https://rook-score.vercel.app/api/voice-score-transcribe`, and LLM voice actions from `https://rook-score.vercel.app/api/voice-score-command` using the endpoints' CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoints' allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` / `VOICE_SCORE_ALLOWED_ORIGINS` in Vercel.
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:

@@ -1,9 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
+const voiceScoreTranscribeHandler = require('../api/voice-score-transcribe.js');
+const voiceScoreCommandHandler = require('../api/voice-score-command.js');
 
 function setupDomStubs() {
   const noop = () => {};
@@ -243,12 +246,58 @@ const {
   shouldEnableAppViewportScroll,
   recalcRunningTotals,
   computeGameOutcomeFromRounds,
+  normalizeVoiceScoreTranscript,
+  parseVoiceScoreCommand,
+  formatVoiceScoreIntentSummary,
+  getVoiceScoreTranscriptionUrl,
+  getVoiceScoreCommandUrl,
+  getVoiceScoreRecordingMimeType,
+  normalizeVoiceScorePlan,
   getFilteredPlayerSuggestions,
 } = require('../js/app.js');
 
 const resetState = () => {
   localStorage.clear();
 };
+
+function createMockRequest({ method = 'POST', body = '', origin = 'https://rook-score.vercel.app' } = {}) {
+  const request = new EventEmitter();
+  request.method = method;
+  request.headers = {
+    origin,
+    'content-type': 'application/json',
+  };
+  process.nextTick(() => {
+    if (body) request.emit('data', Buffer.from(body));
+    request.emit('end');
+  });
+  return request;
+}
+
+function createMockResponse() {
+  return {
+    headers: {},
+    statusCode: 200,
+    body: undefined,
+    ended: false,
+    setHeader(key, value) {
+      this.headers[key.toLowerCase()] = value;
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      this.ended = true;
+      return this;
+    },
+    end() {
+      this.ended = true;
+      return this;
+    },
+  };
+}
 
 const makeTrainingGames = (numGames = 10, roundsPerGame = 6) => {
   const games = [];
@@ -778,6 +827,340 @@ test('computeGameOutcomeFromRounds honors must-win-by-bid for set wins', () => {
     gameOver: false,
     winner: null,
     victoryMethod: null,
+  });
+});
+
+test('voice score normalization handles common spoken rook numbers', () => {
+  assert.equal(
+    normalizeVoiceScoreTranscript('Dem bid one twenty five and made one forty five'),
+    'dem bid 125 and made 145',
+  );
+  assert.equal(
+    normalizeVoiceScoreTranscript('Us bid a hundred and thirty and got set'),
+    'us bid 130 and got set',
+  );
+});
+
+test('voice score parser records an unambiguous made bid without confirmation', () => {
+  const intent = parseVoiceScoreCommand('Dem bid 125 and made 145', {
+    usTeamName: 'Us',
+    demTeamName: 'Dem',
+  });
+
+  assert.equal(intent.type, 'scoreRound');
+  assert.equal(intent.biddingTeam, 'dem');
+  assert.equal(intent.bidAmount, 125);
+  assert.equal(intent.points, 145);
+  assert.equal(intent.enterBidderPoints, true);
+  assert.equal(intent.setStatus, false);
+  assert.equal(intent.requiresConfirmation, false);
+  assert.equal(intent.summary, 'Dem bid 125 and made 145.');
+});
+
+test('voice score parser flags set bids without points for confirmation', () => {
+  const intent = parseVoiceScoreCommand('Us bid 130 and got set', {
+    usTeamName: 'Us',
+    demTeamName: 'Dem',
+  });
+
+  assert.equal(intent.type, 'scoreRound');
+  assert.equal(intent.biddingTeam, 'us');
+  assert.equal(intent.bidAmount, 130);
+  assert.equal(intent.points, 180);
+  assert.equal(intent.enterBidderPoints, false);
+  assert.equal(intent.setStatus, true);
+  assert.equal(intent.requiresConfirmation, true);
+  assert.match(intent.ambiguity, /Dem will receive 180/);
+  assert.equal(
+    formatVoiceScoreIntentSummary(intent, { usTeamName: 'Us', demTeamName: 'Dem' }),
+    'Us bid 130 and got set; Dem scores 180.',
+  );
+});
+
+test('voice score parser can use the non-bidding team points on a set hand', () => {
+  const intent = parseVoiceScoreCommand('Us bid 130 got set, Dem got 85', {
+    usTeamName: 'Us',
+    demTeamName: 'Dem',
+  });
+
+  assert.equal(intent.type, 'scoreRound');
+  assert.equal(intent.biddingTeam, 'us');
+  assert.equal(intent.points, 85);
+  assert.equal(intent.enterBidderPoints, false);
+  assert.equal(intent.setStatus, true);
+  assert.equal(intent.requiresConfirmation, false);
+  assert.equal(intent.summary, 'Us bid 130 and got set; Dem scores 85.');
+});
+
+test('voice score parser supports misdeal undo and custom team names', () => {
+  assert.equal(parseVoiceScoreCommand('Misdeal, next dealer').type, 'misdeal');
+  assert.equal(parseVoiceScoreCommand('Undo that last hand').type, 'undo');
+
+  const intent = parseVoiceScoreCommand('Alice and Bob bid one twenty and made one thirty', {
+    usTeamName: 'Alice & Bob',
+    demTeamName: 'Carol & Dan',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Carol', 'Dan'],
+  });
+
+  assert.equal(intent.type, 'scoreRound');
+  assert.equal(intent.biddingTeam, 'us');
+  assert.equal(intent.bidAmount, 120);
+  assert.equal(intent.points, 130);
+  assert.equal(intent.requiresConfirmation, false);
+});
+
+test('voice score transcription URL routes GitHub Pages to the Vercel API', () => {
+  const originalHostname = window.location.hostname;
+  try {
+    window.location.hostname = 'marvj69.github.io';
+    assert.equal(getVoiceScoreTranscriptionUrl(), 'https://rook-score.vercel.app/api/voice-score-transcribe');
+    assert.equal(getVoiceScoreCommandUrl(), 'https://rook-score.vercel.app/api/voice-score-command');
+
+    window.location.hostname = 'rook-score.vercel.app';
+    assert.equal(getVoiceScoreTranscriptionUrl(), '/api/voice-score-transcribe');
+    assert.equal(getVoiceScoreCommandUrl(), '/api/voice-score-command');
+  } finally {
+    window.location.hostname = originalHostname;
+  }
+});
+
+test('voice score plan normalization keeps only supported actions', () => {
+  assert.deepEqual(normalizeVoiceScorePlan({
+    status: 'execute',
+    summary: 'Open settings',
+    message: 'Opening settings',
+    requiresConfirmation: false,
+    actions: [
+      { type: 'openModal', target: 'settings' },
+      { type: 'runJavascript', code: 'alert(1)' },
+    ],
+  }), {
+    status: 'execute',
+    summary: 'Open settings',
+    message: 'Opening settings',
+    requiresConfirmation: false,
+    actions: [{ type: 'openModal', target: 'settings' }],
+  });
+});
+
+test('voice score recording mime type safely falls back without MediaRecorder', () => {
+  const originalMediaRecorder = window.MediaRecorder;
+  try {
+    delete window.MediaRecorder;
+    assert.equal(getVoiceScoreRecordingMimeType(), '');
+  } finally {
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+  }
+});
+
+test('voice score control is wired through delegated initialization', () => {
+  const voiceSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-scoring.js'), 'utf8');
+  const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
+
+  assert.match(voiceSource, /data-voice-score-entry="true"/);
+  assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
+  assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
+  assert.match(initSource, /initializeVoiceScoreControls\(\);/);
+  assert.match(initSource, /startVoiceScoreEntry/);
+});
+
+test('voice transcription endpoint reports missing OpenAI configuration', async () => {
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      audioBase64: Buffer.from('fake-audio').toString('base64'),
+      mimeType: 'audio/webm',
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreTranscribeHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+  }
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: 'Voice transcription is unavailable.' });
+  assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
+});
+
+test('voice transcription endpoint sends recorded audio to OpenAI', async () => {
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  const originalModel = process.env.OPENAI_TRANSCRIPTION_MODEL;
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+
+  process.env.OPENAI_API_KEY = 'test-openai-key';
+  process.env.OPENAI_TRANSCRIPTION_MODEL = 'test-transcribe-model';
+  global.fetch = async (url, options) => {
+    fetchCalled = true;
+    assert.equal(url, 'https://api.openai.com/v1/audio/transcriptions');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'Bearer test-openai-key');
+    assert.equal(options.body.get('model'), 'test-transcribe-model');
+    assert.equal(options.body.get('response_format'), 'json');
+    assert.equal(options.body.get('file').name, 'rook-voice-score.webm');
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ text: 'Dem bid 125 and made 145' }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      audioBase64: Buffer.from('fake-audio').toString('base64'),
+      mimeType: 'audio/webm',
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreTranscribeHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+    if (originalModel === undefined) {
+      delete process.env.OPENAI_TRANSCRIPTION_MODEL;
+    } else {
+      process.env.OPENAI_TRANSCRIPTION_MODEL = originalModel;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(fetchCalled, true);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { text: 'Dem bid 125 and made 145' });
+});
+
+test('voice transcription endpoint handles preflight requests', async () => {
+  const request = createMockRequest({
+    method: 'OPTIONS',
+    origin: 'https://marvj69.github.io',
+  });
+  const response = createMockResponse();
+
+  await voiceScoreTranscribeHandler(request, response);
+
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.ended, true);
+  assert.equal(response.headers['access-control-allow-origin'], 'https://marvj69.github.io');
+  assert.equal(response.headers['access-control-allow-methods'], 'POST, OPTIONS');
+});
+
+test('voice command endpoint reports missing OpenRouter configuration', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'open settings',
+      context: {},
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+  }
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, { error: 'Voice command planning is unavailable.' });
+  assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
+});
+
+test('voice command endpoint requests structured OpenRouter action plans', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalModel = process.env.OPENROUTER_MODEL;
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_MODEL = 'cohere/north-mini-code:free';
+  global.fetch = async (url, options) => {
+    fetchCalled = true;
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'cohere/north-mini-code:free');
+    assert.equal(body.response_format.type, 'json_object');
+    assert.equal(body.messages[0].role, 'system');
+    assert.equal(body.messages[1].role, 'user');
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'execute',
+              summary: 'Open settings',
+              message: 'Opening settings',
+              requiresConfirmation: false,
+              actions: [{ type: 'openModal', target: 'settings' }],
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'open settings',
+      context: { gameOver: false },
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+    if (originalModel === undefined) {
+      delete process.env.OPENROUTER_MODEL;
+    } else {
+      process.env.OPENROUTER_MODEL = originalModel;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(fetchCalled, true);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    plan: {
+      status: 'execute',
+      summary: 'Open settings',
+      message: 'Opening settings',
+      requiresConfirmation: false,
+      actions: [{ type: 'openModal', target: 'settings' }],
+    },
   });
 });
 

@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
     scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
     scheduleRender();
   });
+  initializeVoiceScoreControls();
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
@@ -216,6 +217,10 @@ if (typeof window !== 'undefined') {
     initializeCustomThemeColors,
     loadSettings,
     updateProModeUI,
+    startVoiceScoreEntry,
+    processVoiceScoreTranscript,
+    parseVoiceScoreCommand,
+    requestVoiceScoreActionPlan,
   });
 }
 
@@ -289,6 +294,17 @@ if (typeof module !== 'undefined' && module.exports) {
     shouldEnableAppViewportScroll,
     recalcRunningTotals,
     computeGameOutcomeFromRounds,
+    normalizeVoiceScoreTranscript,
+    parseVoiceScoreCommand,
+    formatVoiceScoreIntentSummary,
+    initializeVoiceScoreControls,
+    startVoiceScoreEntry,
+    processVoiceScoreTranscript,
+    getVoiceScoreTranscriptionUrl,
+    getVoiceScoreCommandUrl,
+    getVoiceScoreRecordingMimeType,
+    getVoiceScoreAppContext,
+    normalizeVoiceScorePlan,
     getOrderedPlayerSuggestions,
     getFilteredPlayerSuggestions,
   };

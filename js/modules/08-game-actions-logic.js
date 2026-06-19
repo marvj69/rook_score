@@ -391,53 +391,10 @@ function calculateRoundPointsOutcome({
   };
 }
 
-function submitRoundFromCurrentInputs(skipZeroCheck = false) {
-  const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
-  if (state.isSubmittingRound) return;
-
-  const pointsInputEl = document.getElementById("pointsInput");
-  let pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
-  if (!String(pointsVal).trim()) pointsVal = "0";
-
-  if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
-  const bidError = validateBid(bidAmount);
-  const pointsError = validatePoints(pointsVal);
-  if (bidError || pointsError) { updateState({ error: bidError || pointsError }); return; }
-  updateState({ isSubmittingRound: true, error: "" });
-
+function commitRoundScore({ biddingTeam, bidAmount, pointsVal, enterBidderPoints, source = "round_submit" }) {
+  const { rounds, usTeamName, demTeamName } = state;
   const numericBid = Number(bidAmount);
   const numericPoints = Number(pointsVal);
-
-  if (!skipZeroCheck && numericPoints === 0) {
-  // We're deferring this submit to the zero-points modal. Release the re-entry
-  // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
-  // blocked — otherwise the flag stays true forever and freezes all submits.
-  updateState({ isSubmittingRound: false });
-  closeScoreKeypad(true);
-  const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
-
-  openZeroPointsModal(chosen => {
-    /* commit() will run once the DOM is ready */
-    const commit = () => {
-  const freshInput = document.getElementById("pointsInput");
-  if (freshInput) freshInput.value = String(chosen);
-
-  submitRoundFromCurrentInputs(/* skipZeroCheck */ true);
-};
-
-    /* if the '0' was for the non-bidding team we must flip the toggle first,
- which triggers a re-render → wait one tick before commit()            */
- if (enteredForNonBidder && chosen !== 0 && state.enterBidderPoints === false) {
-  handleBiddingPointsToggle(true);     // causes one re-render
-  setTimeout(commit, 0);               // run after new DOM appears
-    } else {
-  commit();                            // no toggle needed
-    }
-  });
-
-  return;                                 // pause main handler until modal choice
-}
-
   const isFirstRound = rounds.length === 0;
   if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
 
@@ -509,12 +466,87 @@ victoryMethod  = "Set Other Team";
       victoryMethod,
   };
   if (isFirstRound) {
-      emitRookEvent("game_started", getRookGameEventParams(analyticsState, { source: "round_submit" }));
+      emitRookEvent("game_started", getRookGameEventParams(analyticsState, { source }));
   }
-  emitRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active" }));
+  emitRookEvent("round_recorded", getRookGameEventParams(analyticsState, { game_state: gameFinished ? "completed" : "active", source }));
   if (gameFinished && theWinner) {
       emitRookEvent("game_completed", getRookGameEventParams(analyticsState, { victory_method: victoryMethod }));
   }
+  return true;
+}
+
+function submitStructuredRound({ biddingTeam, bidAmount, points, enterBidderPoints = true, source = "structured_submit" }) {
+  if (state.isSubmittingRound) return false;
+
+  if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return false; }
+  const bidError = validateBid(String(bidAmount));
+  const pointsError = validatePoints(String(points));
+  if (bidError || pointsError) { updateState({ error: bidError || pointsError }); return false; }
+
+  updateState({ isSubmittingRound: true, error: "" });
+  return commitRoundScore({
+    biddingTeam,
+    bidAmount,
+    pointsVal: points,
+    enterBidderPoints: Boolean(enterBidderPoints),
+    source,
+  });
+}
+
+function submitRoundFromCurrentInputs(skipZeroCheck = false) {
+  const { biddingTeam, bidAmount, enterBidderPoints } = state;
+  if (state.isSubmittingRound) return;
+
+  const pointsInputEl = document.getElementById("pointsInput");
+  let pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
+  if (!String(pointsVal).trim()) pointsVal = "0";
+
+  if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
+  const bidError = validateBid(bidAmount);
+  const pointsError = validatePoints(pointsVal);
+  if (bidError || pointsError) { updateState({ error: bidError || pointsError }); return; }
+  updateState({ isSubmittingRound: true, error: "" });
+
+  const numericBid = Number(bidAmount);
+  const numericPoints = Number(pointsVal);
+
+  if (!skipZeroCheck && numericPoints === 0) {
+  // We're deferring this submit to the zero-points modal. Release the re-entry
+  // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
+  // blocked — otherwise the flag stays true forever and freezes all submits.
+  updateState({ isSubmittingRound: false });
+  closeScoreKeypad(true);
+  const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
+
+  openZeroPointsModal(chosen => {
+    /* commit() will run once the DOM is ready */
+    const commit = () => {
+  const freshInput = document.getElementById("pointsInput");
+  if (freshInput) freshInput.value = String(chosen);
+
+  submitRoundFromCurrentInputs(/* skipZeroCheck */ true);
+};
+
+    /* if the '0' was for the non-bidding team we must flip the toggle first,
+ which triggers a re-render → wait one tick before commit()            */
+ if (enteredForNonBidder && chosen !== 0 && state.enterBidderPoints === false) {
+  handleBiddingPointsToggle(true);     // causes one re-render
+  setTimeout(commit, 0);               // run after new DOM appears
+    } else {
+  commit();                            // no toggle needed
+    }
+  });
+
+  return;                                 // pause main handler until modal choice
+}
+
+  return commitRoundScore({
+    biddingTeam,
+    bidAmount: numericBid,
+    pointsVal: numericPoints,
+    enterBidderPoints,
+    source: "round_submit",
+  });
 }
 function handleFormSubmit(e, skipZeroCheck = false) {
   e?.preventDefault?.();
