@@ -1065,7 +1065,9 @@ test('voice transcription endpoint handles preflight requests', async () => {
 
 test('voice command endpoint reports missing OpenRouter configuration', async () => {
   const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
   delete process.env.OPENROUTER_API_KEY;
+  process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = 'false';
 
   const request = createMockRequest({
     body: JSON.stringify({
@@ -1083,11 +1085,56 @@ test('voice command endpoint reports missing OpenRouter configuration', async ()
     } else {
       process.env.OPENROUTER_API_KEY = originalApiKey;
     }
+    if (originalFallback === undefined) {
+      delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+    } else {
+      process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
+    }
   }
 
   assert.equal(response.statusCode, 500);
   assert.deepEqual(response.body, { error: 'Voice command planning is unavailable.' });
   assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
+});
+
+test('voice command endpoint uses local fallback without OpenRouter in local dev', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  const originalVercelEnv = process.env.VERCEL_ENV;
+  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  process.env.VERCEL_ENV = 'development';
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'open settings',
+      context: {},
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+    if (originalFallback === undefined) {
+      delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+    } else {
+      process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
+    }
+    if (originalVercelEnv === undefined) {
+      delete process.env.VERCEL_ENV;
+    } else {
+      process.env.VERCEL_ENV = originalVercelEnv;
+    }
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'settings' }]);
 });
 
 test('voice command endpoint requests structured OpenRouter action plans', async () => {
@@ -1097,14 +1144,14 @@ test('voice command endpoint requests structured OpenRouter action plans', async
   let fetchCalled = false;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_MODEL = 'cohere/north-mini-code:free';
+  process.env.OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
   global.fetch = async (url, options) => {
     fetchCalled = true;
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'cohere/north-mini-code:free');
+    assert.equal(body.model, 'deepseek/deepseek-v4-flash');
     assert.equal(body.response_format.type, 'json_object');
     assert.equal(body.messages[0].role, 'system');
     assert.equal(body.messages[1].role, 'user');
@@ -1160,6 +1207,194 @@ test('voice command endpoint requests structured OpenRouter action plans', async
       message: 'Opening settings',
       requiresConfirmation: false,
       actions: [{ type: 'openModal', target: 'settings' }],
+    },
+  });
+});
+
+test('voice command endpoint retries transient OpenRouter failures', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalAttempts = process.env.OPENROUTER_MAX_ATTEMPTS;
+  const originalFetch = global.fetch;
+  let fetchCalls = 0;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_MAX_ATTEMPTS = '2';
+  global.fetch = async () => {
+    fetchCalls += 1;
+    if (fetchCalls === 1) {
+      return {
+        ok: false,
+        status: 502,
+        text: async () => JSON.stringify({ error: { message: 'Bad gateway' } }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'execute',
+              summary: 'Open settings',
+              message: 'Opening settings',
+              requiresConfirmation: false,
+              actions: [{ type: 'openModal', target: 'settings' }],
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'open settings',
+      context: { gameOver: false },
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+    if (originalAttempts === undefined) {
+      delete process.env.OPENROUTER_MAX_ATTEMPTS;
+    } else {
+      process.env.OPENROUTER_MAX_ATTEMPTS = originalAttempts;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(fetchCalls, 2);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'settings' }]);
+});
+
+test('voice command endpoint uses local fallback for local OpenRouter failures', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalAttempts = process.env.OPENROUTER_MAX_ATTEMPTS;
+  const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  const originalFetch = global.fetch;
+  let fetchCalls = 0;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_MAX_ATTEMPTS = '1';
+  process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = 'true';
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({ error: { message: 'Bad gateway' } }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'open settings',
+      context: { gameOver: false },
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+    if (originalAttempts === undefined) {
+      delete process.env.OPENROUTER_MAX_ATTEMPTS;
+    } else {
+      process.env.OPENROUTER_MAX_ATTEMPTS = originalAttempts;
+    }
+    if (originalFallback === undefined) {
+      delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+    } else {
+      process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    plan: {
+      status: 'execute',
+      summary: 'Open settings',
+      message: 'Opening settings.',
+      requiresConfirmation: false,
+      actions: [{ type: 'openModal', target: 'settings' }],
+    },
+  });
+});
+
+test('voice command endpoint falls back when provider repeats score-parser clarification', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  const originalFetch = global.fetch;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = 'true';
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            status: 'clarify',
+            summary: 'Need bid amount',
+            message: 'Say the bid amount.',
+            requiresConfirmation: false,
+            actions: [],
+          }),
+        },
+      }],
+    }),
+  });
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'start a new game',
+      context: { gameOver: false },
+      localIntent: { type: 'clarification', message: 'Say the bid amount.' },
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalApiKey;
+    }
+    if (originalFallback === undefined) {
+      delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+    } else {
+      process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    plan: {
+      status: 'confirm',
+      summary: 'Start a new game',
+      message: 'Starting a new game will clear the current game. Confirm to proceed.',
+      requiresConfirmation: true,
+      actions: [{ type: 'newGame' }],
     },
   });
 });
