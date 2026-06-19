@@ -189,6 +189,7 @@ const {
   escapeHtml,
   escapeHtmlValue,
   escapeAttribute,
+  updateState,
   setLocalStorage,
   getLocalStorage,
   shouldAttemptJsonParse,
@@ -208,6 +209,7 @@ const {
   getRematchDealerCandidates,
   buildDealerOrderStartingWith,
   buildRematchSetupState,
+  startRematchWithFirstDealer,
   playersEqual,
   renderReadOnlyGameDetails,
   buildSavedGameCard,
@@ -1117,6 +1119,38 @@ test('fitPersonalizationCalibration accepts calibration when log loss improves',
   assert.equal(result.accepted, true);
   assert.ok(result.personalizedLogLoss < result.baseLogLoss);
   assert.notEqual(result.slope, 1);
+});
+
+
+test('starting a rematch saves the completed prior game before clearing the board', async () => {
+  resetState();
+  updateState({
+    rounds: [
+      { bidAmount: 120, biddingTeam: 'us', usPoints: 180, demPoints: 0, runningTotals: { us: 500, dem: 260 } },
+    ],
+    gameOver: true,
+    winner: 'us',
+    victoryMethod: 'points',
+    usTeamName: 'Alice & Carol',
+    demTeamName: 'Bob & Dan',
+    usPlayers: ['Alice', 'Carol'],
+    demPlayers: ['Bob', 'Dan'],
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    startingTotals: { us: 320, dem: 260 },
+    accumulatedTime: 120000,
+    startTime: null,
+  });
+
+  const started = await startRematchWithFirstDealer('Bob');
+  const savedGames = getLocalStorage('savedGames', []);
+  const activeGame = getLocalStorage('activeGameState', null);
+
+  assert.equal(started, true);
+  assert.equal(savedGames.length, 1);
+  assert.deepEqual(savedGames[0].finalScore, { us: 500, dem: 260 });
+  assert.equal(savedGames[0].winner, 'us');
+  assert.deepEqual(activeGame.rounds, []);
+  assert.deepEqual(activeGame.dealers, ['Bob', 'Carol', 'Dan', 'Alice']);
 });
 
 test('ensureProbabilityPersonalizationForGames stores personalization record from saved games', () => {

@@ -544,11 +544,16 @@ function closeRematchDealerModal(restoreGameOverOverlay = false) {
   deactivateModalEnvironment();
 }
 
-function startRematchWithFirstDealer(firstDealer) {
+async function startRematchWithFirstDealer(firstDealer) {
+  const shouldSavePriorGame = state.gameOver && state.rounds.length > 0;
   const nextState = buildRematchSetupState(state, firstDealer, getLocalStorage(PRO_MODE_KEY, false));
   if (!nextState) {
     alert("Choose one of the current players to deal first.");
     return false;
+  }
+
+  if (shouldSavePriorGame) {
+    await saveCompletedGameSnapshot({ resetAfterSave: false });
   }
 
   resetRenderAnimationState();
@@ -654,27 +659,12 @@ function handleGameOverFixClick(e) {
   handleUndo();
 }
 
-async function handleManualSaveGame() { // Called after team names confirmed or if already set
-  if (!state.usTeamName || !state.demTeamName) {
-    pendingGameAction = "save";
-    
-    // Check if we have dealers to auto-populate team selection
-    const hasFourDealers = state.dealers && state.dealers.length === 4;
-    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) || 
-                         (state.demPlayers && state.demPlayers.some(Boolean));
-    
-    if (hasFourDealers && !hasTeamNames) {
-      openDealerPairSelectionModal();
-    } else {
-      openTeamSelectionModal();
-    }
-    return;
-  }
-  if (!state.rounds.length) return;
+async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
+  if (!state.rounds.length) return null;
 
   showSaveIndicator("Getting Location...");
   const completedLocation = await captureGameLocation();
-  let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  const finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
   const usPlayers = ensurePlayersArray(state.usPlayers);
@@ -716,9 +706,32 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
       })
   );
   showSaveIndicator("Game Saved!");
-  resetGame(); // Resets state and clears active game from storage
-  confettiTriggered = false;
-  pendingGameAction = null;
+  if (resetAfterSave) {
+    resetGame(); // Resets state and clears active game from storage
+    confettiTriggered = false;
+    pendingGameAction = null;
+  }
+  return gameObj;
+}
+
+async function handleManualSaveGame() { // Called after team names confirmed or if already set
+  if (!state.usTeamName || !state.demTeamName) {
+    pendingGameAction = "save";
+    
+    // Check if we have dealers to auto-populate team selection
+    const hasFourDealers = state.dealers && state.dealers.length === 4;
+    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) || 
+                         (state.demPlayers && state.demPlayers.some(Boolean));
+    
+    if (hasFourDealers && !hasTeamNames) {
+      openDealerPairSelectionModal();
+    } else {
+      openTeamSelectionModal();
+    }
+    return;
+  }
+
+  await saveCompletedGameSnapshot({ resetAfterSave: true });
 }
 function handleFreezerGame() {
   if (state.gameOver || !state.rounds.length) {
