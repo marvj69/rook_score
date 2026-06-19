@@ -26,6 +26,14 @@ const VOICE_SCORE_ACTION_TYPES = new Set([
   "setSetting",
   "tableTalkPenalty",
   "rematch",
+  "toggleMenu",
+  "authAction",
+  "confirmationAction",
+  "gameLibraryAction",
+  "setThemeColors",
+  "themeAction",
+  "setBidPresets",
+  "setStatsControls",
   "noop",
 ]);
 let voiceScoreRecognition = null;
@@ -772,6 +780,146 @@ function applyVoiceScoreSetTeams(action) {
   return "Teams updated.";
 }
 
+function applyVoiceScoreToggleMenu(action) {
+  const menu = document.getElementById("menu");
+  const shouldOpen = action.open === undefined ? !menu?.classList.contains("show") : Boolean(action.open);
+  if (shouldOpen !== Boolean(menu?.classList.contains("show"))) {
+    toggleMenu(null);
+  }
+  return shouldOpen ? "Menu opened." : "Menu closed.";
+}
+
+async function applyVoiceScoreAuthAction(action) {
+  const authAction = action.authAction || "toggle";
+  const signedIn = Boolean(window.firebaseAuth?.currentUser && !window.firebaseAuth.currentUser.isAnonymous);
+  if (authAction === "signOut" || (authAction === "toggle" && signedIn)) {
+    if (typeof window.signOutUser !== "function") throw new Error("Sign out is not available right now.");
+    await window.signOutUser();
+    return "Signing out.";
+  }
+  if (typeof window.signInWithGoogle !== "function") throw new Error("Sign in is not available right now.");
+  await window.signInWithGoogle();
+  return "Opening sign in.";
+}
+
+function applyVoiceScoreConfirmationAction(action) {
+  const choice = action.confirmationChoice === "cancel" ? "cancel" : "confirm";
+  const modal = document.getElementById("confirmationModal");
+  if (!modal || modal.classList.contains("hidden")) throw new Error("There is no confirmation open.");
+  const buttonId = choice === "confirm" ? "confirmModalButton" : "noModalButton";
+  document.getElementById(buttonId)?.click();
+  return choice === "confirm" ? "Confirmed." : "Canceled.";
+}
+
+function ensureVoiceScoreGameLibraryOpen(gameType) {
+  const modal = document.getElementById("savedGamesModal");
+  if (!modal || modal.classList.contains("hidden")) openSavedGamesModal();
+  if (gameType === "freezer") switchGamesTab("freezer");
+  if (gameType === "completed") switchGamesTab("completed");
+}
+
+function applyVoiceScoreGameLibraryAction(action) {
+  const gameAction = action.gameAction || "switchTab";
+  const gameType = action.gameType === "freezer" || action.tab === "freezer" ? "freezer" : "completed";
+  ensureVoiceScoreGameLibraryOpen(gameType);
+
+  if (gameAction === "switchTab") {
+    switchGamesTab(gameType);
+    return gameType === "freezer" ? "Showing frozen games." : "Showing completed games.";
+  }
+
+  if (gameAction === "search") {
+    const input = document.getElementById("gameSearchInput");
+    if (!input) throw new Error("Game search is not available.");
+    input.value = String(action.query || "").slice(0, 100);
+    renderGamesWithFilter();
+    return input.value ? `Searching games for ${input.value}.` : "Cleared game search.";
+  }
+
+  if (gameAction === "sort") {
+    const select = document.getElementById("gameSortSelect");
+    if (!select) throw new Error("Game sorting is not available.");
+    const sort = ["newest", "oldest", "highest", "lowest"].includes(action.sort) ? action.sort : "newest";
+    select.value = sort;
+    sortGames();
+    return "Sorted games.";
+  }
+
+  const index = Number(action.index);
+  if (!Number.isInteger(index) || index < 0) throw new Error("Say which game number to use.");
+  if (gameAction === "view") {
+    if (gameType !== "completed") throw new Error("Only completed games can be viewed.");
+    viewSavedGame(index);
+    return "Opening saved game.";
+  }
+  if (gameAction === "delete") {
+    if (gameType === "freezer") deleteFreezerGame(index);
+    else deleteSavedGame(index);
+    return "Confirm deleting that game.";
+  }
+  if (gameAction === "resume") {
+    if (gameType !== "freezer") throw new Error("Only frozen games can be resumed.");
+    loadFreezerGame(index);
+    return "Confirm loading that frozen game.";
+  }
+  throw new Error("That game-library action is not available.");
+}
+
+function applyVoiceScoreThemeColors(action) {
+  const usColor = sanitizeHexColor(action.usColor || "");
+  const demColor = sanitizeHexColor(action.demColor || "");
+  if (!usColor && !demColor) throw new Error("Say a valid hex color.");
+  openThemeModal(null);
+  const usPicker = document.getElementById("usColorPicker");
+  const demPicker = document.getElementById("demColorPicker");
+  if (usColor && usPicker) usPicker.value = usColor;
+  if (demColor && demPicker) demPicker.value = demColor;
+  updatePreview();
+  applyCustomThemeColors();
+  return "Theme colors updated.";
+}
+
+function applyVoiceScoreThemeAction(action) {
+  const themeAction = action.themeAction;
+  openThemeModal(null);
+  if (themeAction === "randomize") {
+    randomizeThemeColors();
+    applyCustomThemeColors();
+    return "Theme colors randomized.";
+  }
+  if (themeAction === "reset") {
+    resetThemeColors();
+    applyCustomThemeColors();
+    return "Theme colors reset.";
+  }
+  if (themeAction === "apply") {
+    applyCustomThemeColors();
+    return "Theme colors applied.";
+  }
+  throw new Error("That theme action is not available.");
+}
+
+function applyVoiceScoreBidPresets(action) {
+  const presets = Array.isArray(action.presets)
+    ? action.presets.map(Number).filter(Number.isFinite)
+    : [];
+  if (!presets.length) throw new Error("Say at least one bid preset.");
+  setPresetBidsFromValues(presets);
+  return "Bid presets updated.";
+}
+
+function applyVoiceScoreStatsControls(action) {
+  openStatisticsModal();
+  setStatisticsControls({
+    view: action.statsView,
+    metric: action.statsMetric,
+    sort: action.statsSort,
+    entityMode: action.entityMode,
+    entityKey: action.entityKey,
+  });
+  return "Statistics updated.";
+}
+
 async function executeVoiceScoreAction(action, options = {}) {
   if (!action || !VOICE_SCORE_ACTION_TYPES.has(action.type)) throw new Error("That voice action is not supported.");
   const confirmed = Boolean(options.confirmed);
@@ -892,6 +1040,22 @@ async function executeVoiceScoreAction(action, options = {}) {
     openRematchDealerModal();
     return "Choose the first dealer for the rematch.";
   }
+
+  if (action.type === "toggleMenu") return applyVoiceScoreToggleMenu(action);
+
+  if (action.type === "authAction") return applyVoiceScoreAuthAction(action);
+
+  if (action.type === "confirmationAction") return applyVoiceScoreConfirmationAction(action);
+
+  if (action.type === "gameLibraryAction") return applyVoiceScoreGameLibraryAction(action);
+
+  if (action.type === "setThemeColors") return applyVoiceScoreThemeColors(action);
+
+  if (action.type === "themeAction") return applyVoiceScoreThemeAction(action);
+
+  if (action.type === "setBidPresets") return applyVoiceScoreBidPresets(action);
+
+  if (action.type === "setStatsControls") return applyVoiceScoreStatsControls(action);
 
   throw new Error("That voice action is not supported.");
 }

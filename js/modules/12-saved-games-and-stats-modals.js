@@ -645,6 +645,16 @@ function bindStatsControlHandlers() {
   }
 }
 
+function setStatisticsControls({ view, metric, sort, entityMode, entityKey } = {}) {
+  if (view === "players" || view === "teams") statsViewMode = view;
+  if (metric && Object.prototype.hasOwnProperty.call(STATS_METRIC_CONFIG, metric)) statsMetricKey = metric;
+  if (STATS_SORT_ORDER.includes(sort)) statsSortKey = sort;
+  renderStatisticsContent();
+  if (entityMode && entityKey) {
+    openEntityStatisticsModal(entityMode, entityKey);
+  }
+}
+
 function ensureStatsSheetGesture(modalId, closeFn) {
   const modal = document.getElementById(modalId);
   if (!modal || modal.dataset.sheetGestureBound === 'true') return;

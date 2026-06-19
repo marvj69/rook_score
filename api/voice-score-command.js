@@ -5,7 +5,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://rook-score-marvj69-marvj69s-projects.vercel.app",
 ];
 
-const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash";
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-3-flash-preview";
+const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
 const MAX_BODY_BYTES = 64 * 1024;
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -58,6 +59,14 @@ const ACTION_SCHEMA = {
               "setSetting",
               "tableTalkPenalty",
               "rematch",
+              "toggleMenu",
+              "authAction",
+              "confirmationAction",
+              "gameLibraryAction",
+              "setThemeColors",
+              "themeAction",
+              "setBidPresets",
+              "setStatsControls",
               "noop",
             ],
           },
@@ -122,6 +131,29 @@ const ACTION_SCHEMA = {
             ],
           },
           firstDealer: { type: "string" },
+          open: { type: "boolean" },
+          authAction: { type: "string", enum: ["toggle", "signIn", "signOut"] },
+          confirmationChoice: { type: "string", enum: ["confirm", "cancel"] },
+          gameAction: { type: "string", enum: ["switchTab", "search", "sort", "view", "delete", "resume"] },
+          gameType: { type: "string", enum: ["completed", "freezer"] },
+          tab: { type: "string", enum: ["completed", "freezer"] },
+          query: { type: "string" },
+          sort: { type: "string", enum: ["newest", "oldest", "highest", "lowest"] },
+          index: { type: "number" },
+          usColor: { type: "string" },
+          demColor: { type: "string" },
+          themeAction: { type: "string", enum: ["randomize", "reset", "apply"] },
+          presets: {
+            type: "array",
+            minItems: 1,
+            maxItems: 12,
+            items: { type: "number" },
+          },
+          statsView: { type: "string", enum: ["teams", "players"] },
+          statsMetric: { type: "string", enum: ["games", "timePlayed", "avgBid", "bidSuccessPct", "sandbagger", "360s"] },
+          statsSort: { type: "string", enum: ["recent", "most", "least"] },
+          entityMode: { type: "string", enum: ["teams", "players"] },
+          entityKey: { type: "string" },
         },
         required: ["type"],
       },
@@ -213,6 +245,14 @@ function buildSystemPrompt() {
     "Scoring rules: scoreRound requires biddingTeam, bidAmount, points, enterBidderPoints. enterBidderPoints=true means points belong to the bidder; false means points belong to the non-bidding team.",
     "For 'got set' without a score, plan scoreRound with points=180, enterBidderPoints=false, requiresConfirmation=true.",
     "For 'misdeal' or 'next dealer', use misdeal. For 'undo', use undo. For 'redo', use redo.",
+    "Available tool actions: scoreRound, undo, redo, misdeal, newGame, freezeGame, saveGame, openModal, closeModal, setDealerOrder, startPaperGame, setTeams, selectDealerPair, selectBid, setSetting, tableTalkPenalty, rematch, toggleMenu, authAction, confirmationAction, gameLibraryAction, setThemeColors, themeAction, setBidPresets, setStatsControls, noop.",
+    "Use toggleMenu with open=true or open=false for the hamburger menu.",
+    "Use authAction with authAction='signIn', 'signOut', or 'toggle' for account controls.",
+    "Use confirmationAction with confirmationChoice='confirm' or 'cancel' to answer the current confirmation dialog.",
+    "Use gameLibraryAction for saved/frozen games: switchTab/search/sort/view/delete/resume. Use gameType completed/freezer and zero-based index for view/delete/resume when needed.",
+    "Use setThemeColors with usColor and/or demColor as #RRGGBB. Use themeAction randomize/reset/apply for theme modal controls.",
+    "Use setBidPresets with presets array for quick bid buttons.",
+    "Use setStatsControls with statsView, statsMetric, statsSort, or entityMode/entityKey to control the statistics modal.",
     "Examples:",
     "Transcript 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
     "Transcript 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
@@ -220,6 +260,11 @@ function buildSystemPrompt() {
     "Transcript 'Us bid 130 and got set' => status confirm, requiresConfirmation true, action {type:'scoreRound', biddingTeam:'us', bidAmount:130, points:180, enterBidderPoints:false}.",
     "Transcript 'set dealers Alice Bob Carol Dan' => status execute, action {type:'setDealerOrder', dealers:['Alice','Bob','Carol','Dan']}.",
     "Transcript 'turn on pro mode' => status execute, action {type:'setSetting', key:'proMode', value:true}.",
+    "Transcript 'search saved games for Alice' => status execute, action {type:'gameLibraryAction', gameAction:'search', gameType:'completed', query:'Alice'}.",
+    "Transcript 'show frozen games' => status execute, action {type:'gameLibraryAction', gameAction:'switchTab', tab:'freezer'}.",
+    "Transcript 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
+    "Transcript 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
+    "Transcript 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidSuccessPct'}.",
     "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, confirmation, all.",
     "Settings keys: mustWinByBid, misdealHandling, proMode, tableTalkPenaltyType, tableTalkPenaltyPoints.",
     "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
@@ -483,6 +528,101 @@ function buildLocalSettingPlan(transcript) {
   return null;
 }
 
+function extractNumberList(text) {
+  return (String(text || "").match(/\b\d{1,4}\b/g) || []).map(Number);
+}
+
+function buildLocalExpandedControlPlan(transcript) {
+  const text = normalizeCommandText(transcript);
+
+  if (/\b(?:open|show)\s+(?:the\s+)?menu\b/.test(text)) {
+    return createLocalPlan("execute", "Open menu", "Opening the menu.", [{ type: "toggleMenu", open: true }]);
+  }
+
+  if (/\b(?:close|hide)\s+(?:the\s+)?menu\b/.test(text)) {
+    return createLocalPlan("execute", "Close menu", "Closing the menu.", [{ type: "toggleMenu", open: false }]);
+  }
+
+  if (/\b(?:confirm|yes|okay|ok|do it|proceed)\b/.test(text) && /\b(?:action|that|confirm)\b/.test(text)) {
+    return createLocalPlan("execute", "Confirm action", "Confirming the current action.", [{ type: "confirmationAction", confirmationChoice: "confirm" }]);
+  }
+
+  if (/\b(?:cancel|no|never mind|dismiss)\b/.test(text) && /\b(?:action|that|confirmation|dialog)\b/.test(text)) {
+    return createLocalPlan("execute", "Cancel action", "Canceling the current action.", [{ type: "confirmationAction", confirmationChoice: "cancel" }]);
+  }
+
+  if (/\b(?:sign in|log in|login)\b/.test(text)) {
+    return createLocalPlan("execute", "Sign in", "Opening sign in.", [{ type: "authAction", authAction: "signIn" }]);
+  }
+
+  if (/\b(?:sign out|log out|logout)\b/.test(text)) {
+    return createLocalPlan("execute", "Sign out", "Signing out.", [{ type: "authAction", authAction: "signOut" }]);
+  }
+
+  if (/\b(?:frozen|freezer)\s+games?\b/.test(text)) {
+    return createLocalPlan("execute", "Show frozen games", "Showing frozen games.", [{ type: "gameLibraryAction", gameAction: "switchTab", tab: "freezer" }]);
+  }
+
+  if (/\b(?:completed|saved)\s+games?\b/.test(text) && /\b(?:tab|show|view)\b/.test(text)) {
+    return createLocalPlan("execute", "Show completed games", "Showing completed games.", [{ type: "gameLibraryAction", gameAction: "switchTab", tab: "completed" }]);
+  }
+
+  const searchMatch = String(transcript || "").match(/\bsearch\s+(?:saved\s+games?|games?|library)\s+(?:for\s+)?(.+)$/i);
+  if (searchMatch && searchMatch[1]?.trim()) {
+    return createLocalPlan(
+      "execute",
+      `Search games for ${searchMatch[1].trim()}`,
+      "Searching the game library.",
+      [{ type: "gameLibraryAction", gameAction: "search", query: searchMatch[1].trim() }],
+    );
+  }
+
+  if (/\bsort\b/.test(text) && /\bgames?\b/.test(text)) {
+    const sort = /\boldest\b/.test(text) ? "oldest"
+      : /\bhighest\b/.test(text) ? "highest"
+        : /\blowest\b/.test(text) ? "lowest"
+          : "newest";
+    return createLocalPlan("execute", "Sort games", "Sorting games.", [{ type: "gameLibraryAction", gameAction: "sort", sort }]);
+  }
+
+  const presets = /\bpresets?\b/.test(text) ? extractNumberList(text) : [];
+  if (presets.length) {
+    return createLocalPlan(
+      "execute",
+      `Set bid presets to ${presets.join(", ")}`,
+      "Updating bid presets.",
+      [{ type: "setBidPresets", presets }],
+    );
+  }
+
+  if (/\brandom(?:ize)?\b/.test(text) && /\b(?:theme|colors?)\b/.test(text)) {
+    return createLocalPlan("execute", "Randomize theme colors", "Randomizing theme colors.", [{ type: "themeAction", themeAction: "randomize" }]);
+  }
+
+  if (/\breset\b/.test(text) && /\b(?:theme|colors?)\b/.test(text)) {
+    return createLocalPlan("execute", "Reset theme colors", "Resetting theme colors.", [{ type: "themeAction", themeAction: "reset" }]);
+  }
+
+  if (/\bstats?\b|\bstatistics?\b/.test(text)) {
+    const action = { type: "setStatsControls" };
+    if (/\bplayers?|individuals?\b/.test(text)) action.statsView = "players";
+    if (/\bteams?\b/.test(text)) action.statsView = "teams";
+    if (/\btime\b/.test(text)) action.statsMetric = "timePlayed";
+    if (/\baverage bid|avg bid\b/.test(text)) action.statsMetric = "avgBid";
+    if (/\bbid (?:win|success)|success percentage|win percentage\b/.test(text)) action.statsMetric = "bidSuccessPct";
+    if (/\bsandbag\b/.test(text)) action.statsMetric = "sandbagger";
+    if (/\b360\b/.test(text)) action.statsMetric = "360s";
+    if (/\bleast|lowest\b/.test(text)) action.statsSort = "least";
+    if (/\bmost|highest\b/.test(text)) action.statsSort = "most";
+    if (/\brecent|newest\b/.test(text)) action.statsSort = "recent";
+    if (action.statsView || action.statsMetric || action.statsSort) {
+      return createLocalPlan("execute", "Update statistics view", "Updating statistics.", [action]);
+    }
+  }
+
+  return null;
+}
+
 function buildLocalActionPlanFromIntent(localIntent) {
   if (!localIntent || typeof localIntent !== "object") return null;
 
@@ -581,6 +721,9 @@ function buildLocalActionPlanFromTranscript(transcript) {
   const settingPlan = buildLocalSettingPlan(transcript);
   if (settingPlan) return settingPlan;
 
+  const expandedControlPlan = buildLocalExpandedControlPlan(transcript);
+  if (expandedControlPlan) return expandedControlPlan;
+
   if (/\b(?:pair one three|pair 1 3|pair 13|one three)\b/.test(text)) {
     return createLocalPlan("execute", "Select dealer pair one-three", "Selecting dealer pair one-three.", [{ type: "selectDealerPair", pair: "13" }]);
   }
@@ -643,6 +786,7 @@ async function fetchOpenRouterPlan(payload, apiKey) {
         ],
         temperature: 0,
         max_tokens: 700,
+        reasoning: { effort: DEFAULT_OPENROUTER_REASONING_EFFORT },
         response_format: { type: "json_object" },
       }),
     });

@@ -220,3 +220,23 @@ function savePresets() {
   scheduleRender();
   showSaveIndicator("Bid presets updated");
 }
+
+function normalizePresetBidValues(values) {
+  const normalized = Array.isArray(values)
+    ? values.map(Number).filter(Number.isFinite)
+    : [];
+  const unique = [...new Set(normalized.map(value => Math.round(value / 5) * 5))]
+    .filter(value => value > 0 && value <= 360 && (value <= 180 || value === 360))
+    .sort((a, b) => a - b);
+  if (!unique.length) throw new Error("At least one valid preset is required.");
+  return unique;
+}
+
+function setPresetBidsFromValues(values) {
+  presetBids = [...normalizePresetBidValues(values), "other"];
+  savePresetBids();
+  closePresetEditorModal();
+  scheduleRender();
+  showSaveIndicator("Bid presets updated");
+  return presetBids;
+}

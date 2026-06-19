@@ -933,6 +933,9 @@ test('voice score plan normalization keeps only supported actions', () => {
     requiresConfirmation: false,
     actions: [
       { type: 'openModal', target: 'settings' },
+      { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
+      { type: 'setBidPresets', presets: [120, 125, 130] },
+      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidSuccessPct' },
       { type: 'runJavascript', code: 'alert(1)' },
     ],
   }), {
@@ -940,7 +943,12 @@ test('voice score plan normalization keeps only supported actions', () => {
     summary: 'Open settings',
     message: 'Opening settings',
     requiresConfirmation: false,
-    actions: [{ type: 'openModal', target: 'settings' }],
+    actions: [
+      { type: 'openModal', target: 'settings' },
+      { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
+      { type: 'setBidPresets', presets: [120, 125, 130] },
+      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidSuccessPct' },
+    ],
   });
 });
 
@@ -1144,16 +1152,20 @@ test('voice command endpoint requests structured OpenRouter action plans', async
   let fetchCalled = false;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
+  process.env.OPENROUTER_MODEL = 'google/gemini-3-flash-preview';
   global.fetch = async (url, options) => {
     fetchCalled = true;
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'deepseek/deepseek-v4-flash');
+    assert.equal(body.model, 'google/gemini-3-flash-preview');
+    assert.deepEqual(body.reasoning, { effort: 'low' });
     assert.equal(body.response_format.type, 'json_object');
     assert.equal(body.messages[0].role, 'system');
+    assert.match(body.messages[0].content, /gameLibraryAction/);
+    assert.match(body.messages[0].content, /setBidPresets/);
+    assert.match(body.messages[0].content, /setStatsControls/);
     assert.equal(body.messages[1].role, 'user');
     return {
       ok: true,
@@ -2242,7 +2254,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.23";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.24";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

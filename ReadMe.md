@@ -216,7 +216,7 @@ VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 ```
 
 `OPENAI_TRANSCRIPTION_MODEL` is optional; the voice scoring endpoint defaults to `gpt-4o-mini-transcribe`.
-`OPENROUTER_MODEL` is optional; the voice command planner defaults to `deepseek/deepseek-v4-flash`. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+`OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3-flash-preview` with low reasoning effort. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
 For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
