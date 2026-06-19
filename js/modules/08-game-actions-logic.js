@@ -717,12 +717,12 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
 async function handleManualSaveGame() { // Called after team names confirmed or if already set
   if (!state.usTeamName || !state.demTeamName) {
     pendingGameAction = "save";
-    
+
     // Check if we have dealers to auto-populate team selection
     const hasFourDealers = state.dealers && state.dealers.length === 4;
-    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) || 
+    const hasTeamNames = (state.usPlayers && state.usPlayers.some(Boolean)) ||
                          (state.demPlayers && state.demPlayers.some(Boolean));
-    
+
     if (hasFourDealers && !hasTeamNames) {
       openDealerPairSelectionModal();
     } else {
