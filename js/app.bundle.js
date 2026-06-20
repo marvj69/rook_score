@@ -1608,6 +1608,90 @@ function savePresets() {
 "use strict";
 
 // --- Theme & UI Helpers ---
+const IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS = "ios-standalone-safe-area-fallback";
+const APP_CONTENT_OVERFLOWS_CLASS = "app-content-overflows";
+const IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX = 44;
+
+function getComputedSafeAreaInsetTop() {
+  if (typeof document === "undefined" || !document.body || typeof getComputedStyle !== "function") return 0;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none;";
+  document.body.appendChild(probe);
+  const value = parseFloat(getComputedStyle(probe).paddingTop);
+  probe.remove();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isProbablyIOSDevice() {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  return /iPad|iPhone|iPod/.test(userAgent)
+    || (platform === "MacIntel" && Number(navigator.maxTouchPoints) > 1);
+}
+
+function isStandaloneDisplayMode() {
+  if (typeof window === "undefined") return false;
+  const navigatorStandalone = window.navigator && window.navigator.standalone === true;
+  const mediaStandalone = typeof window.matchMedia === "function"
+    && window.matchMedia("(display-mode: standalone)").matches;
+  return navigatorStandalone || mediaStandalone;
+}
+
+function shouldApplyStandaloneSafeAreaFallback({ isIOS, isStandalone, safeAreaInsetTop }) {
+  return Boolean(isIOS && isStandalone && Number(safeAreaInsetTop) < 1);
+}
+
+function applyStandaloneSafeAreaFallback() {
+  const body = document.getElementById("bodyRoot") || document.body;
+  if (!body) return false;
+  const needsFallback = shouldApplyStandaloneSafeAreaFallback({
+    isIOS: isProbablyIOSDevice(),
+    isStandalone: isStandaloneDisplayMode(),
+    safeAreaInsetTop: getComputedSafeAreaInsetTop(),
+  });
+  body.classList.toggle(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS, needsFallback);
+  return needsFallback;
+}
+
+function shouldEnableAppViewportScroll(appScrollHeight, viewportHeight, safeAreaInsetTop = 0) {
+  const contentHeight = Number(appScrollHeight);
+  const availableHeight = Number(viewportHeight) - Math.max(0, Number(safeAreaInsetTop) || 0);
+  if (!Number.isFinite(contentHeight) || !Number.isFinite(availableHeight) || availableHeight <= 0) return false;
+  return contentHeight > availableHeight + 1;
+}
+
+function getViewportHeight() {
+  if (typeof window === "undefined") return 0;
+  const visualHeight = Number(window.visualViewport && window.visualViewport.height);
+  if (Number.isFinite(visualHeight) && visualHeight > 0) return visualHeight;
+  const innerHeight = Number(window.innerHeight);
+  if (Number.isFinite(innerHeight) && innerHeight > 0) return innerHeight;
+  return Number(document.documentElement && document.documentElement.clientHeight) || 0;
+}
+
+function syncAppViewportOverflowClass() {
+  const body = document.getElementById("bodyRoot") || document.body;
+  const app = document.getElementById("app");
+  if (!body || !app) return false;
+  const safeAreaInsetTop = body.classList.contains(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS)
+    ? IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX
+    : getComputedSafeAreaInsetTop();
+  const shouldScroll = shouldEnableAppViewportScroll(app.scrollHeight, getViewportHeight(), safeAreaInsetTop);
+  body.classList.toggle(APP_CONTENT_OVERFLOWS_CLASS, shouldScroll);
+  return shouldScroll;
+}
+
+function syncViewportCompatibilityClasses() {
+  applyStandaloneSafeAreaFallback();
+  syncAppViewportOverflowClass();
+}
+
+function scheduleViewportCompatibilitySync() {
+  const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
+  schedule(syncViewportCompatibilityClasses);
+}
+
 function enforceDarkMode() {
   const root = document.documentElement;
   if (!root.classList.contains("dark")) {
@@ -1635,7 +1719,11 @@ function initializeTheme() {
     const tokens = new Set((themeString || "").split(/\s+/).filter(Boolean));
     let mutated = false;
     const deprecated = ["bg-white", "text-gray-800", "dark:bg-gray-900", "dark:text-white"];
+    const dynamicCompatibility = [IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS, APP_CONTENT_OVERFLOWS_CLASS];
     for (const cls of deprecated) {
+      if (tokens.delete(cls)) mutated = true;
+    }
+    for (const cls of dynamicCompatibility) {
       if (tokens.delete(cls)) mutated = true;
     }
     for (const cls of BASE_BODY_CLASSES) {
@@ -1658,6 +1746,7 @@ function initializeTheme() {
       setLocalStorage(THEME_KEY, normalized);
     }
     body.className = normalized;
+    syncViewportCompatibilityClasses();
     return;
   }
 
@@ -1666,6 +1755,7 @@ function initializeTheme() {
   // ------------------------------------------------------------------
   // First launch / user has never customised a theme
   body.className = `${baseClassString} theme-blue-red theme-cartoony`.trim();
+  syncViewportCompatibilityClasses();
 }
 function isValidHexColor(colorString) {
   if (!colorString || typeof colorString !== 'string') return false;
@@ -4502,6 +4592,7 @@ function renderApp() {
     ${renderHistoryCard()}
     ${renderGameOverOverlay()}
   `;
+  scheduleViewportCompatibilitySync();
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
     launchGameOverConfetti();
@@ -6221,6 +6312,11 @@ document.addEventListener("DOMContentLoaded", () => {
       proModeToggleModal.addEventListener("change", (e) => toggleProMode(e.target));
   }
   updateProModeUI(getLocalStorage(PRO_MODE_KEY, false)); // Initial UI update
+  window.addEventListener("resize", scheduleViewportCompatibilitySync);
+  window.addEventListener("orientationchange", scheduleViewportCompatibilitySync);
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === "function") {
+    window.visualViewport.addEventListener("resize", scheduleViewportCompatibilitySync);
+  }
 
   document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
@@ -6472,6 +6568,8 @@ if (typeof module !== 'undefined' && module.exports) {
     validatePoints,
     calculateSafeTimeAccumulation,
     formatDuration,
+    shouldApplyStandaloneSafeAreaFallback,
+    shouldEnableAppViewportScroll,
     recalcRunningTotals,
     computeGameOutcomeFromRounds,
     getOrderedPlayerSuggestions,

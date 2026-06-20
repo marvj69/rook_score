@@ -24,6 +24,11 @@ document.addEventListener("DOMContentLoaded", () => {
       proModeToggleModal.addEventListener("change", (e) => toggleProMode(e.target));
   }
   updateProModeUI(getLocalStorage(PRO_MODE_KEY, false)); // Initial UI update
+  window.addEventListener("resize", scheduleViewportCompatibilitySync);
+  window.addEventListener("orientationchange", scheduleViewportCompatibilitySync);
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === "function") {
+    window.visualViewport.addEventListener("resize", scheduleViewportCompatibilitySync);
+  }
 
   document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
@@ -275,6 +280,8 @@ if (typeof module !== 'undefined' && module.exports) {
     validatePoints,
     calculateSafeTimeAccumulation,
     formatDuration,
+    shouldApplyStandaloneSafeAreaFallback,
+    shouldEnableAppViewportScroll,
     recalcRunningTotals,
     computeGameOutcomeFromRounds,
     getOrderedPlayerSuggestions,

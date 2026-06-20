@@ -119,6 +119,7 @@ function renderApp() {
     ${renderHistoryCard()}
     ${renderGameOverOverlay()}
   `;
+  scheduleViewportCompatibilitySync();
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
     launchGameOverConfetti();

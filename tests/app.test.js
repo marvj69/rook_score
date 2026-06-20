@@ -234,6 +234,8 @@ const {
   validatePoints,
   calculateSafeTimeAccumulation,
   formatDuration,
+  shouldApplyStandaloneSafeAreaFallback,
+  shouldEnableAppViewportScroll,
   recalcRunningTotals,
   computeGameOutcomeFromRounds,
   getFilteredPlayerSuggestions,
@@ -417,6 +419,36 @@ test('shouldAttemptJsonParse only opts into likely JSON-compatible strings', () 
   assert.equal(shouldAttemptJsonParse('-12.5e2'), true);
   assert.equal(shouldAttemptJsonParse('Alice & Bob'), false);
   assert.equal(shouldAttemptJsonParse(''), false);
+});
+
+test('installed iOS safe-area fallback is limited to standalone zero-inset launches', () => {
+  assert.equal(shouldApplyStandaloneSafeAreaFallback({
+    isIOS: true,
+    isStandalone: true,
+    safeAreaInsetTop: 0,
+  }), true);
+  assert.equal(shouldApplyStandaloneSafeAreaFallback({
+    isIOS: true,
+    isStandalone: true,
+    safeAreaInsetTop: 47,
+  }), false);
+  assert.equal(shouldApplyStandaloneSafeAreaFallback({
+    isIOS: true,
+    isStandalone: false,
+    safeAreaInsetTop: 0,
+  }), false);
+  assert.equal(shouldApplyStandaloneSafeAreaFallback({
+    isIOS: false,
+    isStandalone: true,
+    safeAreaInsetTop: 0,
+  }), false);
+});
+
+test('app viewport scrolling only enables when content exceeds usable height', () => {
+  assert.equal(shouldEnableAppViewportScroll(720, 667), true);
+  assert.equal(shouldEnableAppViewportScroll(620, 667), false);
+  assert.equal(shouldEnableAppViewportScroll(770, 812, 44), true);
+  assert.equal(shouldEnableAppViewportScroll(760, 812, 44), false);
 });
 
 test('sanitizePlayerName returns empty string for non-string values', () => {
@@ -1298,7 +1330,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.8";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.9";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -1349,6 +1381,17 @@ test('liquid glass cards do not globally replay entrance animations', () => {
   assert.ok(glassCardRule);
   assert.doesNotMatch(glassCardRule[0], /animation:\s*cardPopIn/);
   assert.match(css, /\.animate-card-pop\s*\{/);
+});
+
+test('old installed app compatibility classes are scoped to safe area and overflow fixes', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+
+  assert.match(css, /--safe-area-inset-top-effective:\s*env\(safe-area-inset-top,\s*0px\)/);
+  assert.match(css, /body\.ios-standalone-safe-area-fallback\s*\{/);
+  assert.match(css, /--safe-area-inset-top-effective:\s*44px/);
+  assert.match(css, /body\.app-content-overflows main#app\s*\{/);
+  assert.match(css, /overflow-y:\s*auto/);
+  assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
 });
 
 test('main card pop animations are gated by render state', () => {
