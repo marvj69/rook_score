@@ -253,13 +253,59 @@ function deriveTeamDisplay(players, fallback = "") {
   return display || fallback;
 }
 
+function isSideLabelTeamName(name, side) {
+  const normalized = sanitizePlayerName(name).toLowerCase();
+  return !normalized || normalized === side;
+}
+
+function getDealerPairPlayers(sourceState = {}, side = "us") {
+  const dealers = Array.isArray(sourceState?.dealers)
+    ? sourceState.dealers.map(sanitizePlayerName).filter(Boolean)
+    : [];
+  const uniqueDealers = new Set(dealers.map(dealer => dealer.toLowerCase()));
+  if (dealers.length !== 4 || uniqueDealers.size !== 4) return ["", ""];
+  return side === "us" ? [dealers[0], dealers[2]] : [dealers[1], dealers[3]];
+}
+
+function getTeamSnapshotForSide(sourceState = {}, side = "us") {
+  const fallback = side === "us" ? "Us" : "Dem";
+  const playersField = side === "us" ? sourceState?.usPlayers : sourceState?.demPlayers;
+  const nameField = side === "us" ? sourceState?.usTeamName || sourceState?.usName : sourceState?.demTeamName || sourceState?.demName;
+  const players = ensurePlayersArray(playersField);
+
+  if (players.filter(Boolean).length === 2) {
+    return {
+      players,
+      display: deriveTeamDisplay(players, isSideLabelTeamName(nameField, side) ? fallback : sanitizePlayerName(nameField)) || fallback,
+    };
+  }
+
+  const parsedNamePlayers = ensurePlayersArray(parseLegacyTeamName(nameField || ""));
+  if (parsedNamePlayers.filter(Boolean).length === 2) {
+    return {
+      players: parsedNamePlayers,
+      display: deriveTeamDisplay(parsedNamePlayers, sanitizePlayerName(nameField)) || fallback,
+    };
+  }
+
+  const dealerPlayers = isSideLabelTeamName(nameField, side) ? getDealerPairPlayers(sourceState, side) : ["", ""];
+  const resolvedPlayers = dealerPlayers.filter(Boolean).length === 2 ? dealerPlayers : players;
+  const displayFallback = isSideLabelTeamName(nameField, side) ? fallback : sanitizePlayerName(nameField);
+
+  return {
+    players: resolvedPlayers,
+    display: deriveTeamDisplay(resolvedPlayers, displayFallback) || fallback,
+  };
+}
+
 function getGameTeamDisplay(game, side) {
   const fallback = side === 'us' ? 'Us' : 'Dem';
   if (!game || (side !== 'us' && side !== 'dem')) return fallback;
   const playersField = side === 'us' ? game.usPlayers || game.usTeamPlayers || game.usTeam : game.demPlayers || game.demTeamPlayers || game.demTeam;
   const canonicalPlayers = canonicalizePlayers(playersField);
   const nameField = side === 'us' ? (game.usTeamName || game.usName) : (game.demTeamName || game.demName);
-  return deriveTeamDisplay(canonicalPlayers, nameField || fallback) || fallback;
+  const displayFallback = isSideLabelTeamName(nameField, side) ? fallback : nameField;
+  return deriveTeamDisplay(canonicalPlayers, displayFallback || fallback) || fallback;
 }
 
 function cleanLocationPiece(value) {
@@ -2200,11 +2246,13 @@ function applyTeamResultDelta(teamsObj, { usPlayers, demPlayers, usDisplay, demD
 
 function updateTeamsStatsOnGameEnd(winner) {
   const teams = getTeamsObject();
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
   const updated = applyTeamResultDelta(teams, {
-    usPlayers: state.usPlayers,
-    demPlayers: state.demPlayers,
-    usDisplay: state.usTeamName,
-    demDisplay: state.demTeamName,
+    usPlayers: usTeam.players,
+    demPlayers: demTeam.players,
+    usDisplay: usTeam.display,
+    demDisplay: demTeam.display,
     winner,
   }, 1);
   if (updated) setTeamsObject(teams);
@@ -3275,11 +3323,7 @@ closeConfirmationModal();
 }
 
 function getRematchTeamPlayers(sourceState = state, side = "us") {
-  const players = ensurePlayersArray(side === "us" ? sourceState?.usPlayers : sourceState?.demPlayers);
-  if (players.some(Boolean)) return players;
-
-  const teamName = side === "us" ? sourceState?.usTeamName : sourceState?.demTeamName;
-  return ensurePlayersArray(parseLegacyTeamName(teamName || ""));
+  return getTeamSnapshotForSide(sourceState, side).players;
 }
 
 function getRematchDealerCandidates(sourceState = state) {
@@ -3317,20 +3361,18 @@ function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled
   const dealers = buildDealerOrderStartingWith(dealerCandidates, firstDealer);
   if (dealers.length !== 4) return null;
 
-  const usPlayers = getRematchTeamPlayers(sourceState, "us");
-  const demPlayers = getRematchTeamPlayers(sourceState, "dem");
-  const usTeamName = sourceState?.usTeamName || deriveTeamDisplay(usPlayers);
-  const demTeamName = sourceState?.demTeamName || deriveTeamDisplay(demPlayers);
+  const usTeam = getTeamSnapshotForSide(sourceState, "us");
+  const demTeam = getTeamSnapshotForSide(sourceState, "dem");
 
   return {
     ...DEFAULT_STATE,
     rounds: [],
     undoneRounds: [],
     savedScoreInputStates: { us: null, dem: null },
-    usPlayers,
-    demPlayers,
-    usTeamName,
-    demTeamName,
+    usPlayers: usTeam.players,
+    demPlayers: demTeam.players,
+    usTeamName: usTeam.display,
+    demTeamName: demTeam.display,
     showWinProbability: Boolean(proModeEnabled),
     startingTotals: { us: 0, dem: 0 },
     dealers,
@@ -3473,10 +3515,12 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
   const finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
-  const usPlayers = ensurePlayersArray(state.usPlayers);
-  const demPlayers = ensurePlayersArray(state.demPlayers);
-  const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
-  const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const usPlayers = usTeam.players;
+  const demPlayers = demTeam.players;
+  const usDisplay = usTeam.display;
+  const demDisplay = demTeam.display;
   const usTeamKey = buildTeamKey(usPlayers) || null;
   const demTeamKey = buildTeamKey(demPlayers) || null;
   const gameObj = {
@@ -3572,10 +3616,12 @@ async function freezeCurrentGame() {
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
-  const usPlayers = ensurePlayersArray(state.usPlayers);
-  const demPlayers = ensurePlayersArray(state.demPlayers);
-  const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
-  const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const usPlayers = usTeam.players;
+  const demPlayers = demTeam.players;
+  const usDisplay = usTeam.display;
+  const demDisplay = demTeam.display;
   const usTeamKey = buildTeamKey(usPlayers) || null;
   const demTeamKey = buildTeamKey(demPlayers) || null;
 
@@ -6524,6 +6570,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildTeamKey,
     parseLegacyTeamName,
     deriveTeamDisplay,
+    getTeamSnapshotForSide,
     getGameTeamDisplay,
     formatGameLocationParts,
     getStoredLocationDisplay,

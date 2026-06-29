@@ -236,6 +236,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildTeamKey,
     parseLegacyTeamName,
     deriveTeamDisplay,
+    getTeamSnapshotForSide,
     getGameTeamDisplay,
     formatGameLocationParts,
     getStoredLocationDisplay,

@@ -152,11 +152,13 @@ function applyTeamResultDelta(teamsObj, { usPlayers, demPlayers, usDisplay, demD
 
 function updateTeamsStatsOnGameEnd(winner) {
   const teams = getTeamsObject();
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
   const updated = applyTeamResultDelta(teams, {
-    usPlayers: state.usPlayers,
-    demPlayers: state.demPlayers,
-    usDisplay: state.usTeamName,
-    demDisplay: state.demTeamName,
+    usPlayers: usTeam.players,
+    demPlayers: demTeam.players,
+    usDisplay: usTeam.display,
+    demDisplay: demTeam.display,
     winner,
   }, 1);
   if (updated) setTeamsObject(teams);
@@ -200,4 +202,3 @@ function addTeamIfNotExists(players, display = '') {
   const { key } = ensureTeamEntry(teams, players, display);
   if (key) setTeamsObject(teams);
 }
-

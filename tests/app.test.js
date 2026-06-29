@@ -199,6 +199,7 @@ const {
   buildTeamKey,
   parseLegacyTeamName,
   deriveTeamDisplay,
+  getTeamSnapshotForSide,
   getGameTeamDisplay,
   formatGameLocationParts,
   getStoredLocationDisplay,
@@ -697,6 +698,23 @@ test('deriveTeamDisplay prefers players but respects fallback text', () => {
   assert.equal(deriveTeamDisplay(['', ''], 'Fallback'), 'Fallback');
 });
 
+test('team snapshots replace side labels with dealer-pair names', () => {
+  const game = {
+    usTeamName: 'us',
+    demTeamName: 'dem',
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+  };
+
+  assert.deepEqual(getTeamSnapshotForSide(game, 'us'), {
+    players: ['Alice', 'Carol'],
+    display: 'Alice & Carol',
+  });
+  assert.deepEqual(getTeamSnapshotForSide(game, 'dem'), {
+    players: ['Bob', 'Dan'],
+    display: 'Bob & Dan',
+  });
+});
+
 test('getGameTeamDisplay canonicalizes player names and falls back as needed', () => {
   const game = {
     usPlayers: ['  Bob', 'Alice '],
@@ -708,6 +726,7 @@ test('getGameTeamDisplay canonicalizes player names and falls back as needed', (
   assert.equal(getGameTeamDisplay(game, 'us'), 'Alice & Bob');
   assert.equal(getGameTeamDisplay(game, 'dem'), 'Yan & Zoe');
   assert.equal(getGameTeamDisplay({}, 'us'), 'Us');
+  assert.equal(getGameTeamDisplay({ usTeamName: 'us' }, 'us'), 'Us');
 });
 
 test('getGameTeamDisplay uses legacy fields and guards invalid input', () => {
@@ -1181,8 +1200,49 @@ test('starting a rematch saves the completed prior game before clearing the boar
   assert.equal(savedGames.length, 1);
   assert.deepEqual(savedGames[0].finalScore, { us: 500, dem: 260 });
   assert.equal(savedGames[0].winner, 'us');
+  assert.equal(savedGames[0].usTeamName, 'Alice & Carol');
+  assert.equal(savedGames[0].demTeamName, 'Bob & Dan');
+  assert.deepEqual(savedGames[0].usPlayers, ['Alice', 'Carol']);
+  assert.deepEqual(savedGames[0].demPlayers, ['Bob', 'Dan']);
   assert.deepEqual(activeGame.rounds, []);
   assert.deepEqual(activeGame.dealers, ['Bob', 'Carol', 'Dan', 'Alice']);
+  assert.equal(activeGame.usTeamName, 'Alice & Carol');
+  assert.equal(activeGame.demTeamName, 'Bob & Dan');
+});
+
+test('starting a rematch saves dealer-pair names when previous state only has side labels', async () => {
+  resetState();
+  updateState({
+    rounds: [
+      { bidAmount: 120, biddingTeam: 'dem', usPoints: 40, demPoints: 140, runningTotals: { us: 260, dem: 500 } },
+    ],
+    gameOver: true,
+    winner: 'dem',
+    victoryMethod: 'points',
+    usTeamName: 'us',
+    demTeamName: 'dem',
+    usPlayers: ['', ''],
+    demPlayers: ['', ''],
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    accumulatedTime: 90000,
+    startTime: null,
+  });
+
+  const started = await startRematchWithFirstDealer('Carol');
+  const savedGames = getLocalStorage('savedGames', []);
+  const activeGame = getLocalStorage('activeGameState', null);
+
+  assert.equal(started, true);
+  assert.equal(savedGames.length, 1);
+  assert.equal(savedGames[0].usTeamName, 'Alice & Carol');
+  assert.equal(savedGames[0].demTeamName, 'Bob & Dan');
+  assert.deepEqual(savedGames[0].usPlayers, ['Alice', 'Carol']);
+  assert.deepEqual(savedGames[0].demPlayers, ['Bob', 'Dan']);
+  assert.notEqual(savedGames[0].usTeamName.toLowerCase(), 'us');
+  assert.notEqual(savedGames[0].demTeamName.toLowerCase(), 'dem');
+  assert.equal(activeGame.usTeamName, 'Alice & Carol');
+  assert.equal(activeGame.demTeamName, 'Bob & Dan');
+  assert.deepEqual(activeGame.dealers, ['Carol', 'Dan', 'Alice', 'Bob']);
 });
 
 test('ensureProbabilityPersonalizationForGames stores personalization record from saved games', () => {
@@ -1330,7 +1390,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.9";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.10";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

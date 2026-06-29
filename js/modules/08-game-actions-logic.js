@@ -469,11 +469,7 @@ closeConfirmationModal();
 }
 
 function getRematchTeamPlayers(sourceState = state, side = "us") {
-  const players = ensurePlayersArray(side === "us" ? sourceState?.usPlayers : sourceState?.demPlayers);
-  if (players.some(Boolean)) return players;
-
-  const teamName = side === "us" ? sourceState?.usTeamName : sourceState?.demTeamName;
-  return ensurePlayersArray(parseLegacyTeamName(teamName || ""));
+  return getTeamSnapshotForSide(sourceState, side).players;
 }
 
 function getRematchDealerCandidates(sourceState = state) {
@@ -511,20 +507,18 @@ function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled
   const dealers = buildDealerOrderStartingWith(dealerCandidates, firstDealer);
   if (dealers.length !== 4) return null;
 
-  const usPlayers = getRematchTeamPlayers(sourceState, "us");
-  const demPlayers = getRematchTeamPlayers(sourceState, "dem");
-  const usTeamName = sourceState?.usTeamName || deriveTeamDisplay(usPlayers);
-  const demTeamName = sourceState?.demTeamName || deriveTeamDisplay(demPlayers);
+  const usTeam = getTeamSnapshotForSide(sourceState, "us");
+  const demTeam = getTeamSnapshotForSide(sourceState, "dem");
 
   return {
     ...DEFAULT_STATE,
     rounds: [],
     undoneRounds: [],
     savedScoreInputStates: { us: null, dem: null },
-    usPlayers,
-    demPlayers,
-    usTeamName,
-    demTeamName,
+    usPlayers: usTeam.players,
+    demPlayers: demTeam.players,
+    usTeamName: usTeam.display,
+    demTeamName: demTeam.display,
     showWinProbability: Boolean(proModeEnabled),
     startingTotals: { us: 0, dem: 0 },
     dealers,
@@ -667,10 +661,12 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
   const finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
-  const usPlayers = ensurePlayersArray(state.usPlayers);
-  const demPlayers = ensurePlayersArray(state.demPlayers);
-  const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
-  const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const usPlayers = usTeam.players;
+  const demPlayers = demTeam.players;
+  const usDisplay = usTeam.display;
+  const demDisplay = demTeam.display;
   const usTeamKey = buildTeamKey(usPlayers) || null;
   const demTeamKey = buildTeamKey(demPlayers) || null;
   const gameObj = {
@@ -766,10 +762,12 @@ async function freezeCurrentGame() {
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
-  const usPlayers = ensurePlayersArray(state.usPlayers);
-  const demPlayers = ensurePlayersArray(state.demPlayers);
-  const usDisplay = deriveTeamDisplay(usPlayers, state.usTeamName || "Us") || "Us";
-  const demDisplay = deriveTeamDisplay(demPlayers, state.demTeamName || "Dem") || "Dem";
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const usPlayers = usTeam.players;
+  const demPlayers = demTeam.players;
+  const usDisplay = usTeam.display;
+  const demDisplay = demTeam.display;
   const usTeamKey = buildTeamKey(usPlayers) || null;
   const demTeamKey = buildTeamKey(demPlayers) || null;
 
