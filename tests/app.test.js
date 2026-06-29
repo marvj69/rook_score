@@ -201,10 +201,6 @@ const {
   deriveTeamDisplay,
   getTeamSnapshotForSide,
   getGameTeamDisplay,
-  formatGameLocationParts,
-  getStoredLocationDisplay,
-  getGameLocationDisplay,
-  captureGameLocation,
   normalizeTeamsStorage,
   applyTeamResultDelta,
   getRematchDealerCandidates,
@@ -296,51 +292,7 @@ test('ensurePlayersArray always returns two sanitized names', () => {
   assert.deepEqual(fallback, ['', '']);
 });
 
-test('formatGameLocationParts normalizes street city and state code', () => {
-  assert.equal(
-    formatGameLocationParts({ street: ' 123 Main St ', city: ' Detroit ', state: 'Michigan' }),
-    '123 Main St, Detroit, MI',
-  );
-  assert.equal(
-    formatGameLocationParts({ street: 'W Capitol Dr', city: 'Milwaukee', state: 'wi' }),
-    'W Capitol Dr, Milwaukee, WI',
-  );
-});
-
-test('stored game location display prefers completed location', () => {
-  const manual = { formatted: '55 Lake St, Marquette, MI' };
-  assert.equal(getStoredLocationDisplay(manual), '55 Lake St, Marquette, MI');
-  assert.equal(
-    getGameLocationDisplay({
-      frozenLocation: { formatted: '12 Frozen Rd, Green Bay, WI' },
-      location: manual,
-    }),
-    '55 Lake St, Marquette, MI',
-  );
-});
-
-test('captureGameLocation does not prompt when automatic location is unavailable', async () => {
-  let promptCalled = false;
-  const originalPrompt = window.prompt;
-  window.prompt = () => {
-    promptCalled = true;
-    return 'Should Not Be Used, Detroit, MI';
-  };
-
-  try {
-    const location = await captureGameLocation();
-    assert.equal(location, null);
-    assert.equal(promptCalled, false);
-  } finally {
-    if (originalPrompt === undefined) {
-      delete window.prompt;
-    } else {
-      window.prompt = originalPrompt;
-    }
-  }
-});
-
-test('saved and freezer game cards render formatted location details', () => {
+test('saved and freezer game views ignore legacy location fields', () => {
   const completedGame = {
     usTeamName: 'Alice & Bob',
     demTeamName: 'Cara & Dan',
@@ -371,11 +323,13 @@ test('saved and freezer game cards render formatted location details', () => {
   const freezerCard = buildFreezerGameCard(freezerGame, 0);
   const detailsHtml = renderReadOnlyGameDetails(completedGame);
 
-  assert.match(completedCard, /Location: 100 Final St, Detroit, MI/);
+  assert.doesNotMatch(completedCard, /Location:/);
+  assert.doesNotMatch(completedCard, /100 Final St/);
   assert.doesNotMatch(completedCard, /10 Frozen Rd/);
-  assert.match(freezerCard, /Last frozen at: 200 Freeze Ave, Madison, WI/);
-  assert.match(detailsHtml, /<span class="text-xs font-semibold text-gray-800 dark:text-white">Location<\/span>/);
-  assert.match(detailsHtml, /100 Final St, Detroit, MI/);
+  assert.doesNotMatch(freezerCard, /Last frozen at:/);
+  assert.doesNotMatch(freezerCard, /200 Freeze Ave/);
+  assert.doesNotMatch(detailsHtml, />Location</);
+  assert.doesNotMatch(detailsHtml, /100 Final St/);
 });
 
 test('getLocalStorage returns documented defaults for missing collection keys', () => {
@@ -1390,7 +1344,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.10";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.11";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

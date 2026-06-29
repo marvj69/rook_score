@@ -523,7 +523,6 @@ function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled
     startingTotals: { us: 0, dem: 0 },
     dealers,
     misdealCount: 0,
-    gameLocation: null,
     pendingPenalty: null,
   };
 }
@@ -656,8 +655,6 @@ function handleGameOverFixClick(e) {
 async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
   if (!state.rounds.length) return null;
 
-  showSaveIndicator("Getting Location...");
-  const completedLocation = await captureGameLocation();
   const finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
 
   const lastRoundTotals = getCurrentTotals();
@@ -681,8 +678,6 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
       startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
-      location: completedLocation,
-      completedLocation,
       // Simplified playerStats, more complex stats are in general statistics
       playerStats: { 
           [usDisplay]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
@@ -697,7 +692,6 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
       "game_saved",
       getRookGameEventParams(gameObj, {
           durationMs: finalAccumulated,
-          had_location: Boolean(completedLocation),
           victory_method: state.victoryMethod,
       })
   );
@@ -758,7 +752,6 @@ function confirmFreeze() {
   );
 }
 async function freezeCurrentGame() {
-  showSaveIndicator("Getting Location...");
   let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
@@ -779,7 +772,6 @@ async function freezeCurrentGame() {
     gameName = `FROZEN-${new Date().toLocaleTimeString()}`;
   }
 
-  const frozenLocation = await captureGameLocation();
   const frozenAt = new Date().toISOString();
   const frozenGame = {
       name: gameName,
@@ -796,9 +788,6 @@ async function freezeCurrentGame() {
       startingTotals: sanitizeTotals(state.startingTotals),
       timestamp: frozenAt,
       frozenAt,
-      location: frozenLocation,
-      frozenLocation,
-      gameLocation: frozenLocation,
       accumulatedTime: finalAccumulated,
       // Store necessary state to resume
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
@@ -813,7 +802,6 @@ async function freezeCurrentGame() {
       "game_frozen",
       getRookGameEventParams(frozenGame, {
           durationMs: finalAccumulated,
-          had_location: Boolean(frozenLocation),
           game_state: "frozen",
       })
   );
@@ -856,8 +844,7 @@ function loadFreezerGame(index) {
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],
-          misdealCount: chosen.misdealCount || 0,
-          gameLocation: chosen.location || chosen.frozenLocation || chosen.gameLocation || null
+          misdealCount: chosen.misdealCount || 0
       });
       freezerGames.splice(index, 1); // Remove from freezer
       setLocalStorage("freezerGames", freezerGames);
@@ -867,7 +854,6 @@ function loadFreezerGame(index) {
           "freezer_game_resumed",
           getRookGameEventParams(chosen, {
               durationMs: chosen.accumulatedTime,
-              had_location: Boolean(chosen.location || chosen.frozenLocation || chosen.gameLocation),
               game_state: "active",
           })
       );

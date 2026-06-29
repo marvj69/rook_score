@@ -92,8 +92,7 @@ function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchM
         const us = getGameTeamDisplay(game, 'us').toLowerCase();
         const dem = getGameTeamDisplay(game, 'dem').toLowerCase();
         const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString().toLowerCase() : '';
-        const location = getGameLocationDisplay(game).toLowerCase();
-        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm) || location.includes(normalizedTerm);
+        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm);
       })
     : entries;
 
@@ -119,7 +118,6 @@ function buildSavedGameCard(game, originalIndex) {
   const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
   const timestampText = escapeHtmlValue(timestamp);
   const victoryMethodText = escapeHtmlValue(game.victoryMethod);
-  const locationText = escapeHtmlValue(getGameLocationDisplay(game));
 
   return `
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
@@ -130,7 +128,6 @@ function buildSavedGameCard(game, originalIndex) {
           <div>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
             <div class="text-sm text-gray-500 dark:text-gray-400">${timestampText}</div>
-            ${locationText ? `<div class="text-sm text-gray-500 dark:text-gray-400">Location: ${locationText}</div>` : ''}
           </div>
           <div class="flex space-x-1">
             <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
@@ -166,7 +163,6 @@ function buildFreezerGameCard(game, originalIndex) {
   const leadInfoText = escapeHtmlValue(leadInfo);
   const timestampText = escapeHtmlValue(timestamp);
   const lastBidText = escapeHtmlValue(game.lastBid);
-  const locationText = escapeHtmlValue(getGameLocationDisplay(game));
 
   return `
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
@@ -176,7 +172,6 @@ function buildFreezerGameCard(game, originalIndex) {
           <div>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
             <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestampText}</div>
-            ${locationText ? `<div class="text-sm text-gray-500 dark:text-gray-400">Last frozen at: ${locationText}</div>` : ''}
           </div>
           <div class="flex space-x-1">
             <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>

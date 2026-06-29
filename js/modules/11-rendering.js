@@ -554,7 +554,6 @@ function renderReadOnlyGameDetails(game) {
   const dateStr = new Date(timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
   const dateDisplay = escapeHtmlValue(dateStr);
   const victoryMethodDisplay = escapeHtmlValue(victoryMethod);
-  const locationDisplay = escapeHtmlValue(getGameLocationDisplay(game) || "N/A");
 
   // Determine sandbag for winner
   let sandbagResult = "N/A";
@@ -604,14 +603,10 @@ function renderReadOnlyGameDetails(game) {
         </div>
         ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethodDisplay})</p>` : ''}
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-1">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-1">
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start">
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Sandbag?</span>
           <span class="text-sm text-gray-700 dark:text-gray-300">${sandbagResult}</span>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Location</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${locationDisplay}</span>
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-end">
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>
