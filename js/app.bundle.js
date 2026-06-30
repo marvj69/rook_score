@@ -266,8 +266,8 @@ let confirmationCallback = null;
 let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first
 let statsViewMode = 'teams';
-let statsMetricKey = 'games';
-let statsSortKey = 'recent';
+let statsMetricKey = 'netPerGame';
+let statsSortKey = 'most';
 let roundsVersion = 0;
 let renderScheduled = false;
 const scheduleFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
@@ -4847,17 +4847,21 @@ function renderReadOnlyGameDetails(game) {
   const dateDisplay = escapeHtmlValue(dateStr);
   const victoryMethodDisplay = escapeHtmlValue(victoryMethod);
 
-  // Determine sandbag for winner
-  let sandbagResult = "N/A";
-  if (winner === "us" || winner === "dem") {
-    const winnerPlayers = winner === "us"
-      ? canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName))
-      : canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
-    sandbagResult = isGameSandbagForTeamKey(game, winnerPlayers) ? "Yes" : "No";
-  }
-
   const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
   const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
+  const bidSummary = (rounds || []).reduce((summary, round) => {
+    const bidSide = typeof round.biddingTeam === "string" ? round.biddingTeam.trim().toLowerCase() : "";
+    const bidAmount = Number(round.bidAmount);
+    if ((bidSide !== "us" && bidSide !== "dem") || !Number.isFinite(bidAmount) || bidAmount <= 0) return summary;
+    const points = Number(bidSide === "us" ? round.usPoints : round.demPoints);
+    summary.attempts++;
+    if (Number.isFinite(points) && points >= bidAmount) summary.made++;
+    else summary.sets++;
+    return summary;
+  }, { attempts: 0, made: 0, sets: 0 });
+  const bidMakeText = bidSummary.attempts
+    ? `${bidSummary.made}/${bidSummary.attempts} (${((bidSummary.made / bidSummary.attempts) * 100).toFixed(1)}%)`
+    : "N/A";
 
   const roundHtml = (rounds || []).map((r) => {
       const runningTotals = sanitizeTotals(r.runningTotals);
@@ -4895,10 +4899,14 @@ function renderReadOnlyGameDetails(game) {
         </div>
         ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethodDisplay})</p>` : ''}
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-1">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-1">
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Sandbag?</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${sandbagResult}</span>
+          <span class="text-xs font-semibold text-gray-800 dark:text-white">Bids Made</span>
+          <span class="text-sm text-gray-700 dark:text-gray-300">${bidMakeText}</span>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-center">
+          <span class="text-xs font-semibold text-gray-800 dark:text-white">Sets</span>
+          <span class="text-sm text-gray-700 dark:text-gray-300">${bidSummary.sets}</span>
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-end">
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>
@@ -5138,32 +5146,113 @@ function sortGamesBy(entries, sortOption = 'newest') {
   }
   return sorted;
 }
+// --- Statistics Modal Rendering ---
+const STATS_METRIC_CONFIG = {
+  netPerGame: {
+    label: 'Net/G',
+    long: 'Net / Game',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 7h7v7"/></svg>',
+  },
+  bidMakePct: {
+    label: 'Bid Make',
+    long: 'Bid Make %',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z"/></svg>',
+  },
+  setsForced: {
+    label: 'Sets',
+    long: 'Sets Forced',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4"/></svg>',
+  },
+  comebacks: {
+    label: 'Comebacks',
+    long: 'Comeback Wins',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v6h6"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 17a9 9 0 00-15.5-6.2L3 13"/></svg>',
+  },
+  closeWins: {
+    label: 'Close Wins',
+    long: 'Close Wins',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>',
+  },
+  perfect360s: {
+    label: '360s',
+    long: 'Perfect 360s',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.05 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>',
+  },
+  games: {
+    label: 'Games',
+    long: 'Games Played',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+  },
+};
+
+const STATS_SORT_ORDER = ['recent', 'most', 'least'];
+const STATS_SORT_CONFIG = {
+  recent: { label: 'Recent', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+  most: { label: 'Most', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>' },
+  least: { label: 'Least', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>' },
+};
+
+function parseStatNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeStatSide(value) {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return raw === 'us' || raw === 'dem' ? raw : '';
+}
+
+function getOpponentSide(side) {
+  return side === 'us' ? 'dem' : 'us';
+}
+
+function getSideValue(side, usValue, demValue) {
+  return side === 'us' ? usValue : demValue;
+}
+
+function formatStatNumber(value, options = {}) {
+  const {
+    minimumFractionDigits = 0,
+    maximumFractionDigits = 0,
+    fallback = 'N/A',
+  } = options;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return num.toLocaleString([], { minimumFractionDigits, maximumFractionDigits });
+}
+
+function formatSignedStat(value, options = {}) {
+  const { maximumFractionDigits = 0, fallback = 'N/A' } = options;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  if (num === 0) return '0';
+  return `${num > 0 ? '+' : ''}${formatStatNumber(num, { maximumFractionDigits })}`;
+}
+
+function formatPercentStat(value, fallback = 'N/A') {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return `${num.toFixed(1)}%`;
+}
+
+function getMetricSortValue(item, metricKey) {
+  switch (metricKey) {
+    case 'games': return item.gamesPlayed;
+    case 'netPerGame': return item.netPerGame;
+    case 'bidMakePct': return item.bidMakePct;
+    case 'setsForced': return item.setsForced;
+    case 'comebacks': return item.comebackWins;
+    case 'closeWins': return item.closeWins;
+    case 'perfect360s': return item.perfect360s;
+    default: return null;
+  }
+}
+
 function sortStatisticsData(statsData, sortKey, metricKey) {
   if (!Array.isArray(statsData)) return [];
   const sorted = [...statsData];
-  const normalizeNumber = (value) => {
-    const num = typeof value === 'string' ? Number(value.replace('%', '').trim()) : Number(value);
-    return Number.isFinite(num) ? num : null;
-  };
-  const getMetricValue = (item) => {
-    switch (metricKey) {
-      case 'games':
-        return item.gamesPlayed;
-      case 'timePlayed':
-        return item.totalTimeMs;
-      case 'avgBid':
-        return normalizeNumber(item.avgBid);
-      case 'bidSuccessPct':
-        return normalizeNumber(item.bidSuccessPct);
-      case 'sandbagger':
-        return item.sandbagger === 'Yes' ? 1 : 0;
-      case '360s':
-        return item.count360;
-      default:
-        return null;
-    }
-  };
   const nameKey = (item) => (item.name || '').toLowerCase();
+
   if (sortKey === 'recent') {
     sorted.sort((a, b) => {
       const diff = (b.lastPlayed || 0) - (a.lastPlayed || 0);
@@ -5172,10 +5261,11 @@ function sortStatisticsData(statsData, sortKey, metricKey) {
     });
     return sorted;
   }
+
   const direction = sortKey === 'least' ? 1 : -1;
   sorted.sort((a, b) => {
-    const aVal = getMetricValue(a);
-    const bVal = getMetricValue(b);
+    const aVal = getMetricSortValue(a, metricKey);
+    const bVal = getMetricSortValue(b, metricKey);
     const aValid = Number.isFinite(aVal);
     const bValid = Number.isFinite(bVal);
     if (!aValid && !bValid) return nameKey(a).localeCompare(nameKey(b));
@@ -5186,46 +5276,6 @@ function sortStatisticsData(statsData, sortKey, metricKey) {
   });
   return sorted;
 }
-// --- Statistics Modal Rendering ---
-const STATS_METRIC_CONFIG = {
-  games: {
-    label: 'Games',
-    long: 'Games Played',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>',
-  },
-  timePlayed: {
-    label: 'Time',
-    long: 'Time Played',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
-  },
-  avgBid: {
-    label: 'Avg Bid',
-    long: 'Average Bid',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 12v2m9-9a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
-  },
-  bidSuccessPct: {
-    label: 'Bid Win %',
-    long: 'Bid Success Rate',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
-  },
-  sandbagger: {
-    label: 'Sandbag',
-    long: 'Sandbagger',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>',
-  },
-  '360s': {
-    label: '360s',
-    long: 'Perfect 360s',
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.05 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>',
-  },
-};
-
-const STATS_SORT_ORDER = ['recent', 'most', 'least'];
-const STATS_SORT_CONFIG = {
-  recent: { label: 'Recent', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
-  most: { label: 'Most', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>' },
-  least: { label: 'Least', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>' },
-};
 
 function getEntityInitials(displayName, players) {
   if (Array.isArray(players) && players.length) {
@@ -5254,16 +5304,93 @@ function getWinPctTier(percent) {
 function getMetricDisplay(metricKey, item) {
   switch (metricKey) {
     case 'games': return String(item.gamesPlayed ?? 0);
-    case '360s': return String(item.count360 ?? 0);
-    case 'avgBid': return item.avgBid ?? 'N/A';
-    case 'bidSuccessPct':
-      return item.bidSuccessPct === 'N/A' || item.bidSuccessPct === undefined
-        ? 'N/A'
-        : `${item.bidSuccessPct}%`;
-    case 'sandbagger': return item.sandbagger ?? 'No';
-    case 'timePlayed': return formatDuration(item.totalTimeMs ?? 0);
+    case 'netPerGame': return formatSignedStat(item.netPerGame);
+    case 'bidMakePct': return formatPercentStat(item.bidMakePct);
+    case 'setsForced': return String(item.setsForced ?? 0);
+    case 'comebacks': return String(item.comebackWins ?? 0);
+    case 'closeWins': return String(item.closeWins ?? 0);
+    case 'perfect360s': return String(item.perfect360s ?? 0);
     default: return '0';
   }
+}
+
+function getStatsSubline(mode, item, displayName) {
+  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
+  const record = `${item.wins ?? 0}-${item.losses ?? 0}`;
+  const net = `${formatSignedStat(item.netPerGame)}/g`;
+  if (mode === 'teams' && playersDisplay && playersDisplay !== displayName) {
+    return `${playersDisplay} | ${record}`;
+  }
+  return `${record} | ${net}`;
+}
+
+function getTopStatItem(data, metricKey, predicate = null) {
+  if (!Array.isArray(data) || !data.length) return null;
+  const candidates = predicate ? data.filter(predicate) : data;
+  return candidates
+    .filter(item => Number.isFinite(getMetricSortValue(item, metricKey)))
+    .sort((a, b) => {
+      const diff = getMetricSortValue(b, metricKey) - getMetricSortValue(a, metricKey);
+      if (diff !== 0) return diff;
+      return (b.gamesPlayed || 0) - (a.gamesPlayed || 0);
+    })[0] || null;
+}
+
+function buildStatsSpotlightCards(stats, mode) {
+  const data = mode === 'players' ? stats.playersData : stats.teamsData;
+  if (!data || !data.length) return '';
+
+  const bestRecord = getTopStatItem(data, 'games', item => item.winPercentNumber >= 0)
+    ? [...data].sort((a, b) => {
+        const pctDiff = (b.winPercentNumber || 0) - (a.winPercentNumber || 0);
+        if (pctDiff !== 0) return pctDiff;
+        return (b.gamesPlayed || 0) - (a.gamesPlayed || 0);
+      })[0]
+    : null;
+  const bestNet = getTopStatItem(data, 'netPerGame');
+  const bidBoss = getTopStatItem(data, 'bidMakePct', item => (item.bidAttempts || 0) > 0);
+  const pressure = getTopStatItem(data, 'setsForced');
+
+  const cards = [
+    {
+      label: 'Best Record',
+      item: bestRecord,
+      value: bestRecord?.name || 'N/A',
+      meta: bestRecord ? `${bestRecord.winPercent}% | ${bestRecord.wins}-${bestRecord.losses}` : 'No games',
+      tone: 'blue',
+    },
+    {
+      label: 'Point Swing',
+      item: bestNet,
+      value: bestNet?.name || 'N/A',
+      meta: bestNet ? `${formatSignedStat(bestNet.netPerGame)}/game` : 'No scores',
+      tone: 'purple',
+    },
+    {
+      label: 'Bid Boss',
+      item: bidBoss,
+      value: bidBoss?.name || 'N/A',
+      meta: bidBoss ? `${formatPercentStat(bidBoss.bidMakePct)} on ${bidBoss.bidAttempts} bids` : 'No bids',
+      tone: 'green',
+    },
+    {
+      label: 'Pressure',
+      item: pressure,
+      value: pressure?.name || 'N/A',
+      meta: pressure ? `${pressure.setsForced} set${pressure.setsForced === 1 ? '' : 's'} forced` : 'No sets',
+      tone: 'amber',
+    },
+  ];
+
+  return `
+    <div class="stats-spotlight-grid" aria-label="${escapeAttribute(mode === 'players' ? 'Player leaders' : 'Team leaders')}">
+      ${cards.map(card => `
+        <div class="stats-spotlight-card stats-spotlight-card--${card.tone}">
+          <span class="stats-spotlight-card__label">${escapeHtmlValue(card.label)}</span>
+          <span class="stats-spotlight-card__value">${escapeHtmlValue(card.value)}</span>
+          <span class="stats-spotlight-card__meta">${escapeHtmlValue(card.meta)}</span>
+        </div>`).join('')}
+    </div>`;
 }
 
 function renderStatisticsContent() {
@@ -5300,7 +5427,7 @@ function renderStatisticsContent() {
       </button>
       <button type="button" class="stats-segmented__option" role="tab" data-stats-view="players" aria-pressed="${statsViewMode === 'players'}" aria-selected="${statsViewMode === 'players'}">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-        Individuals
+        Players
       </button>
     </div>`;
 
@@ -5327,26 +5454,32 @@ function renderStatisticsContent() {
   const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
   const sortedStats = sortStatisticsData(statsDataForMode, statsSortKey, statsMetricKey);
   const tableHtml = renderStatsTable(statsViewMode, sortedStats, statsMetricKey);
+  const spotlightHtml = buildStatsSpotlightCards(stats, statsViewMode);
 
-  contentEl.innerHTML = `${controlsBlock}<div id="teamStatsTableWrapper" class="stats-results">${tableHtml}</div>`;
+  contentEl.innerHTML = `${controlsBlock}${spotlightHtml}<div id="teamStatsTableWrapper" class="stats-results">${tableHtml}</div>`;
 
   if (footerEl && stats.totalGames > 0) {
     footerEl.innerHTML = `
       <div class="kpi-grid">
         <div class="kpi-card kpi-card--blue">
           <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Avg Bid</span>
-          <span class="kpi-card__value">${escapeHtmlValue(stats.overallAverageBid)}</span>
+          <span class="kpi-card__label">Games</span>
+          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalGames))}</span>
         </div>
         <div class="kpi-card kpi-card--purple">
           <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Time Played</span>
-          <span class="kpi-card__value">${escapeHtmlValue(formatDuration(stats.totalTimePlayedMs))}</span>
+          <span class="kpi-card__label">Avg Margin</span>
+          <span class="kpi-card__value">${escapeHtmlValue(formatStatNumber(stats.averageMargin))}</span>
         </div>
         <div class="kpi-card kpi-card--green">
           <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Games</span>
-          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalGames))}</span>
+          <span class="kpi-card__label">Bid Make</span>
+          <span class="kpi-card__value">${escapeHtmlValue(formatPercentStat(stats.overallBidMakePct))}</span>
+        </div>
+        <div class="kpi-card kpi-card--amber">
+          <span class="kpi-card__accent"></span>
+          <span class="kpi-card__label">Sets</span>
+          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalSetsForced))}</span>
         </div>
       </div>`;
     footerEl.classList.remove("hidden");
@@ -5457,22 +5590,19 @@ function renderEntityStatisticsContent(mode, entity) {
   const winPctRaw = Number(entity.winPercent);
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
   const winTier = getWinPctTier(entity.winPercent);
-  const wlRecord = `${entity.wins ?? 0}–${entity.losses ?? 0}`;
+  const wlRecord = `${entity.wins ?? 0}-${entity.losses ?? 0}`;
 
   const formatNumber = (val) => (typeof val === 'number' && Number.isFinite(val)) ? val.toLocaleString() : val;
-  const sandbagBadge = (entity.sandbagger === 'Yes')
-    ? '<span class="entity-badge--yes">Yes</span>'
-    : '<span class="entity-badge--no">No</span>';
 
   const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
-    ? `<p class="entity-hero__sub">${escapeHtmlValue(playersDisplay)}</p>`
-    : `<p class="entity-hero__sub">${mode === 'teams' ? 'Team' : 'Player'} · ${escapeHtmlValue(wlRecord)} record</p>`;
+    ? `<p class="entity-hero__sub">${escapeHtmlValue(playersDisplay)} | ${escapeHtmlValue(wlRecord)} record</p>`
+    : `<p class="entity-hero__sub">${mode === 'teams' ? 'Team' : 'Player'} | ${escapeHtmlValue(wlRecord)} record</p>`;
 
   const quickStats = [
     { label: 'Games', value: formatNumber(entity.gamesPlayed ?? 0) },
-    { label: 'Win %', value: `${entity.winPercent ?? '0.0'}%` },
-    { label: 'Time', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : '—' },
-    { label: '360s', value: formatNumber(entity.count360 ?? 0) },
+    { label: 'Net/G', value: formatSignedStat(entity.netPerGame) },
+    { label: 'Bid Make', value: formatPercentStat(entity.bidMakePct) },
+    { label: 'Sets', value: formatNumber(entity.setsForced ?? 0) },
   ].map(card => `
     <div class="entity-quickstat">
       <span class="entity-quickstat__label">${escapeHtmlValue(card.label)}</span>
@@ -5486,32 +5616,37 @@ function renderEntityStatisticsContent(mode, entity) {
         { label: 'Wins', value: formatNumber(entity.wins ?? 0) },
         { label: 'Losses', value: formatNumber(entity.losses ?? 0) },
         { label: 'Win %', value: `${entity.winPercent ?? '0.0'}%` },
-        { label: 'Hands Played', value: formatNumber(entity.handsPlayed ?? 0) },
-        { label: 'Hands Won', value: formatNumber(entity.handsWon ?? 0) },
+        { label: 'Avg Score', value: formatStatNumber(entity.avgScore) },
+        { label: 'Avg Margin', value: formatSignedStat(entity.netPerGame) },
+        { label: 'Round Win %', value: formatPercentStat(entity.roundWinPct) },
       ],
     },
     {
       title: 'Bidding',
       rows: [
-        { label: 'Average Bid', value: entity.avgBid ?? 'N/A' },
+        { label: mode === 'players' ? 'Team Bids' : 'Bids', value: formatNumber(entity.bidAttempts ?? 0) },
         { label: 'Bids Made', value: formatNumber(entity.bidsMade ?? 0) },
-        { label: 'Bids Succeeded', value: formatNumber(entity.bidsSucceeded ?? 0) },
-        { label: 'Bid Success %', value: entity.bidSuccessPct === 'N/A' || entity.bidSuccessPct === undefined ? 'N/A' : `${entity.bidSuccessPct}%` },
-        { label: 'Total Bid Amount', value: formatNumber(entity.totalBidAmount ?? 0) },
+        { label: 'Bid Make %', value: formatPercentStat(entity.bidMakePct) },
+        { label: 'Average Bid', value: entity.avgBid ?? 'N/A' },
+        { label: 'Avg Over Bid', value: formatSignedStat(entity.avgBidMargin) },
+        { label: 'Bid Sets', value: formatNumber(entity.bidsSet ?? 0) },
       ],
     },
     {
       title: 'Highlights',
       rows: [
-        { label: 'Perfect 360s', value: formatNumber(entity.count360 ?? 0) },
-        { label: 'Sandbag Games', value: formatNumber(entity.sandbagGames ?? 0) },
-        { label: 'Sandbagger', value: sandbagBadge, raw: true },
+        { label: 'Sets Forced', value: formatNumber(entity.setsForced ?? 0) },
+        { label: 'Perfect 360s', value: formatNumber(entity.perfect360s ?? 0) },
+        { label: 'Comeback Wins', value: formatNumber(entity.comebackWins ?? 0) },
+        { label: 'Close Wins', value: formatNumber(entity.closeWins ?? 0) },
+        { label: 'Best Score', value: formatStatNumber(entity.bestScore) },
       ],
     },
     {
       title: 'Activity',
       rows: [
         { label: 'Total Time', value: entity.totalTimeMs ? formatDuration(entity.totalTimeMs) : 'N/A' },
+        { label: 'Avg Game Time', value: entity.avgGameTimeMs ? formatDuration(entity.avgGameTimeMs) : 'N/A' },
         { label: 'Last Played', value: entity.lastPlayed ? formatTimestamp(entity.lastPlayed) : 'Unknown' },
       ],
     },
@@ -5563,30 +5698,48 @@ function getStatistics() {
 
   const teamStatsMap = new Map();
   const playerStatsMap = new Map();
-  let totalBids = 0;
-  let sumOfBids = 0;
+  let totalBidAttempts = 0;
+  let totalBidsMade = 0;
+  let totalBidAmount = 0;
+  let totalSetsForced = 0;
+  let totalPerfect360s = 0;
+  let totalRounds = 0;
+  let totalAbsoluteMargin = 0;
   let totalGameDuration = 0;
+
+  const createStatsRecord = (base) => ({
+    ...base,
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    totalPointsFor: 0,
+    totalPointsAgainst: 0,
+    bidAttempts: 0,
+    bidsMade: 0,
+    bidsSet: 0,
+    totalBidAmount: 0,
+    bidMarginTotal: 0,
+    roundsPlayed: 0,
+    roundsWon: 0,
+    setsForced: 0,
+    perfect360s: 0,
+    comebackWins: 0,
+    closeWins: 0,
+    closeLosses: 0,
+    bestScore: null,
+    highestBidMade: null,
+    lastPlayed: 0,
+    totalTimeMs: 0,
+  });
 
   const ensureTeamRecord = (key, players, displayName, timestampMs) => {
     if (!key) return null;
     if (!teamStatsMap.has(key)) {
-      teamStatsMap.set(key, {
+      teamStatsMap.set(key, createStatsRecord({
         key,
         name: displayName,
         players,
-        gamesPlayed: 0,
-        wins: 0,
-        losses: 0,
-        totalBidAmount: 0,
-        bidsMade: 0,
-        bidsSucceeded: 0,
-        handsPlayed: 0,
-        handsWon: 0,
-        sandbagGames: 0,
-        perfect360s: 0,
-        lastPlayed: 0,
-        totalTimeMs: 0,
-      });
+      }));
     }
     const record = teamStatsMap.get(key);
     if (timestampMs && timestampMs > record.lastPlayed) record.lastPlayed = timestampMs;
@@ -5600,32 +5753,25 @@ function getStatistics() {
     if (!cleanName) return null;
     const key = cleanName.toLowerCase();
     if (!playerStatsMap.has(key)) {
-      playerStatsMap.set(key, {
+      playerStatsMap.set(key, createStatsRecord({
         key,
         name: cleanName,
-        gamesPlayed: 0,
-        wins: 0,
-        losses: 0,
-        totalBidAmount: 0,
-        bidsMade: 0,
-        bidsSucceeded: 0,
-        handsPlayed: 0,
-        handsWon: 0,
-        sandbagGames: 0,
-        perfect360s: 0,
-        lastPlayed: 0,
-        totalTimeMs: 0,
-      });
+      }));
     }
     const record = playerStatsMap.get(key);
     if (timestampMs && timestampMs > record.lastPlayed) record.lastPlayed = timestampMs;
     return record;
   };
 
+  const updateRecordGroup = (records, updater) => {
+    records.filter(Boolean).forEach(updater);
+  };
+
   savedGames.forEach(game => {
-    const gameDuration = Number(game.durationMs) || 0;
+    const gameDuration = Math.max(0, parseStatNumber(game.durationMs, 0));
     totalGameDuration += gameDuration;
-    const timestampMs = new Date(game.timestamp || Date.now()).getTime();
+    const parsedTimestamp = Date.parse(game.timestamp || "");
+    const timestampMs = Number.isFinite(parsedTimestamp) ? parsedTimestamp : 0;
 
     const usPlayers = canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName));
     const demPlayers = canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
@@ -5639,138 +5785,145 @@ function getStatistics() {
 
     const usPlayerRecords = usPlayers.filter(Boolean).map(name => ensurePlayerRecord(name, timestampMs)).filter(Boolean);
     const demPlayerRecords = demPlayers.filter(Boolean).map(name => ensurePlayerRecord(name, timestampMs)).filter(Boolean);
+    const recordsBySide = {
+      us: [usTeam, ...usPlayerRecords],
+      dem: [demTeam, ...demPlayerRecords],
+    };
 
-    if (usTeam) {
-      usTeam.gamesPlayed++;
-      usTeam.totalTimeMs += gameDuration;
-    }
-    if (demTeam) {
-      demTeam.gamesPlayed++;
-      demTeam.totalTimeMs += gameDuration;
-    }
-    usPlayerRecords.forEach(rec => {
-      rec.gamesPlayed++;
-      rec.totalTimeMs += gameDuration;
-    });
-    demPlayerRecords.forEach(rec => {
-      rec.gamesPlayed++;
-      rec.totalTimeMs += gameDuration;
-    });
+    let runningTotals = sanitizeTotals(game.startingTotals);
+    const trailedBeforeEnd = {
+      us: runningTotals.us < runningTotals.dem,
+      dem: runningTotals.dem < runningTotals.us,
+    };
 
-    if (game.winner === 'us') {
-      if (usTeam) usTeam.wins++;
-      if (demTeam) demTeam.losses++;
-      usPlayerRecords.forEach(rec => rec.wins++);
-      demPlayerRecords.forEach(rec => rec.losses++);
-    } else if (game.winner === 'dem') {
-      if (demTeam) demTeam.wins++;
-      if (usTeam) usTeam.losses++;
-      demPlayerRecords.forEach(rec => rec.wins++);
-      usPlayerRecords.forEach(rec => rec.losses++);
-    }
+    game.rounds.forEach((round, roundIndex) => {
+      totalRounds++;
+      const bidAmount = Math.max(0, parseStatNumber(round.bidAmount, 0));
+      const bidSide = normalizeStatSide(round.biddingTeam);
+      const usPoints = parseStatNumber(round.usPoints, 0);
+      const demPoints = parseStatNumber(round.demPoints, 0);
+      const roundTotals = round.runningTotals && typeof round.runningTotals === 'object'
+        ? sanitizeTotals(round.runningTotals)
+        : { us: runningTotals.us + usPoints, dem: runningTotals.dem + demPoints };
 
-    game.rounds.forEach(round => {
-      const bidAmount = Number(round.bidAmount) || 0;
-      if (bidAmount) {
-        sumOfBids += bidAmount;
-        totalBids++;
-      }
+      updateRecordGroup(recordsBySide.us, rec => {
+        rec.roundsPlayed++;
+        if (usPoints > demPoints) rec.roundsWon++;
+        if (usPoints === 360) rec.perfect360s++;
+      });
+      updateRecordGroup(recordsBySide.dem, rec => {
+        rec.roundsPlayed++;
+        if (demPoints > usPoints) rec.roundsWon++;
+        if (demPoints === 360) rec.perfect360s++;
+      });
 
-      const usPoints = Number(round.usPoints) || 0;
-      const demPoints = Number(round.demPoints) || 0;
+      if (usPoints === 360) totalPerfect360s++;
+      if (demPoints === 360) totalPerfect360s++;
 
-      if (usTeam) usTeam.handsPlayed++;
-      if (demTeam) demTeam.handsPlayed++;
-      usPlayerRecords.forEach(rec => rec.handsPlayed++);
-      demPlayerRecords.forEach(rec => rec.handsPlayed++);
+      if (bidSide && bidAmount > 0) {
+        const bidPoints = getSideValue(bidSide, usPoints, demPoints);
+        const madeBid = bidPoints >= bidAmount;
+        const opponentSide = getOpponentSide(bidSide);
+        totalBidAttempts++;
+        totalBidAmount += bidAmount;
+        if (madeBid) totalBidsMade++;
+        else totalSetsForced++;
 
-      if (usPoints > demPoints) {
-        if (usTeam) usTeam.handsWon++;
-        usPlayerRecords.forEach(rec => rec.handsWon++);
-      } else if (demPoints > usPoints) {
-        if (demTeam) demTeam.handsWon++;
-        demPlayerRecords.forEach(rec => rec.handsWon++);
-      }
-
-      if (usPoints === 360) {
-        if (usTeam) usTeam.perfect360s++;
-        usPlayerRecords.forEach(rec => rec.perfect360s++);
-      }
-      if (demPoints === 360) {
-        if (demTeam) demTeam.perfect360s++;
-        demPlayerRecords.forEach(rec => rec.perfect360s++);
-      }
-
-      if (round.biddingTeam === 'us') {
-        if (usTeam) {
-          usTeam.bidsMade++;
-          usTeam.totalBidAmount += bidAmount;
-          if (usPoints >= bidAmount) usTeam.bidsSucceeded++;
-        }
-        usPlayerRecords.forEach(rec => {
-          rec.bidsMade++;
+        updateRecordGroup(recordsBySide[bidSide], rec => {
+          rec.bidAttempts++;
           rec.totalBidAmount += bidAmount;
-          if (usPoints >= bidAmount) rec.bidsSucceeded++;
+          rec.bidMarginTotal += bidPoints - bidAmount;
+          if (madeBid) {
+            rec.bidsMade++;
+            rec.highestBidMade = Math.max(rec.highestBidMade || 0, bidAmount);
+          } else {
+            rec.bidsSet++;
+          }
         });
-      } else if (round.biddingTeam === 'dem') {
-        if (demTeam) {
-          demTeam.bidsMade++;
-          demTeam.totalBidAmount += bidAmount;
-          if (demPoints >= bidAmount) demTeam.bidsSucceeded++;
+
+        if (!madeBid) {
+          updateRecordGroup(recordsBySide[opponentSide], rec => {
+            rec.setsForced++;
+          });
         }
-        demPlayerRecords.forEach(rec => {
-          rec.bidsMade++;
-          rec.totalBidAmount += bidAmount;
-          if (demPoints >= bidAmount) rec.bidsSucceeded++;
-        });
       }
+
+      if (roundIndex < game.rounds.length - 1) {
+        if (roundTotals.us < roundTotals.dem) trailedBeforeEnd.us = true;
+        if (roundTotals.dem < roundTotals.us) trailedBeforeEnd.dem = true;
+      }
+      runningTotals = roundTotals;
     });
 
-    const sandbagUs = isGameSandbagForTeamKey(game, usPlayers);
-    const sandbagDem = isGameSandbagForTeamKey(game, demPlayers);
-    if (sandbagUs) {
-      if (usTeam) usTeam.sandbagGames++;
-      usPlayerRecords.forEach(rec => rec.sandbagGames++);
-    }
-    if (sandbagDem) {
-      if (demTeam) demTeam.sandbagGames++;
-      demPlayerRecords.forEach(rec => rec.sandbagGames++);
-    }
+    const finalTotals = game.finalScore ? sanitizeTotals(game.finalScore) : runningTotals;
+    const winnerSide = normalizeStatSide(game.winner)
+      || (finalTotals.us > finalTotals.dem ? 'us' : finalTotals.dem > finalTotals.us ? 'dem' : '');
+    totalAbsoluteMargin += Math.abs(finalTotals.us - finalTotals.dem);
+
+    ['us', 'dem'].forEach(side => {
+      const pointsFor = getSideValue(side, finalTotals.us, finalTotals.dem);
+      const pointsAgainst = getSideValue(side, finalTotals.dem, finalTotals.us);
+      const margin = pointsFor - pointsAgainst;
+      const won = winnerSide === side;
+      const lost = winnerSide && winnerSide !== side;
+      updateRecordGroup(recordsBySide[side], rec => {
+        rec.gamesPlayed++;
+        rec.totalTimeMs += gameDuration;
+        rec.totalPointsFor += pointsFor;
+        rec.totalPointsAgainst += pointsAgainst;
+        rec.bestScore = rec.bestScore === null ? pointsFor : Math.max(rec.bestScore, pointsFor);
+        if (won) {
+          rec.wins++;
+          if (Math.abs(margin) <= 50) rec.closeWins++;
+          if (trailedBeforeEnd[side]) rec.comebackWins++;
+        } else if (lost) {
+          rec.losses++;
+          if (Math.abs(margin) <= 50) rec.closeLosses++;
+        }
+      });
+    });
   });
 
-  const teamsData = Array.from(teamStatsMap.values()).map(team => {
-    const winPercent = team.gamesPlayed ? ((team.wins / team.gamesPlayed) * 100).toFixed(1) : '0.0';
-    const avgBid = team.bidsMade ? (team.totalBidAmount / team.bidsMade).toFixed(0) : 'N/A';
-    const bidSuccessPct = team.bidsMade ? ((team.bidsSucceeded / team.bidsMade) * 100).toFixed(1) : 'N/A';
-    const sandbagger = team.gamesPlayed && (team.sandbagGames / team.gamesPlayed > 0.5) ? 'Yes' : 'No';
+  const finalizeRecord = (record) => {
+    const games = record.gamesPlayed || 0;
+    const winPercentNumber = games ? (record.wins / games) * 100 : 0;
+    const bidMakePct = record.bidAttempts ? (record.bidsMade / record.bidAttempts) * 100 : null;
+    const roundWinPct = record.roundsPlayed ? (record.roundsWon / record.roundsPlayed) * 100 : null;
+    const avgScore = games ? record.totalPointsFor / games : null;
+    const avgAllowed = games ? record.totalPointsAgainst / games : null;
+    const netPerGame = games ? (record.totalPointsFor - record.totalPointsAgainst) / games : 0;
+    const avgBidValue = record.bidAttempts ? record.totalBidAmount / record.bidAttempts : null;
+    const avgBidMargin = record.bidAttempts ? record.bidMarginTotal / record.bidAttempts : null;
     return {
-      ...team,
-      winPercent,
-      avgBid,
-      bidSuccessPct,
-      sandbagger,
-      count360: team.perfect360s,
+      ...record,
+      winPercentNumber,
+      winPercent: winPercentNumber.toFixed(1),
+      avgScore,
+      avgAllowed,
+      netPerGame,
+      bidMakePct,
+      bidSuccessPct: bidMakePct === null ? 'N/A' : bidMakePct.toFixed(1),
+      avgBid: avgBidValue === null ? 'N/A' : formatStatNumber(avgBidValue),
+      avgBidMargin,
+      roundWinPct,
+      avgGameTimeMs: games ? record.totalTimeMs / games : 0,
+      count360: record.perfect360s,
     };
-  }).sort((a, b) => b.lastPlayed - a.lastPlayed);
+  };
 
-  const playersData = Array.from(playerStatsMap.values()).map(player => {
-    const winPercent = player.gamesPlayed ? ((player.wins / player.gamesPlayed) * 100).toFixed(1) : '0.0';
-    const avgBid = player.bidsMade ? (player.totalBidAmount / player.bidsMade).toFixed(0) : 'N/A';
-    const bidSuccessPct = player.bidsMade ? ((player.bidsSucceeded / player.bidsMade) * 100).toFixed(1) : 'N/A';
-    const sandbagger = player.gamesPlayed && (player.sandbagGames / player.gamesPlayed > 0.5) ? 'Yes' : 'No';
-    return {
-      ...player,
-      winPercent,
-      avgBid,
-      bidSuccessPct,
-      sandbagger,
-      count360: player.perfect360s,
-    };
-  }).sort((a, b) => b.lastPlayed - a.lastPlayed);
+  const teamsData = Array.from(teamStatsMap.values()).map(finalizeRecord).sort((a, b) => b.lastPlayed - a.lastPlayed);
+  const playersData = Array.from(playerStatsMap.values()).map(finalizeRecord).sort((a, b) => b.lastPlayed - a.lastPlayed);
 
   const result = {
     totalGames: savedGames.length,
-    overallAverageBid: totalBids > 0 ? (sumOfBids / totalBids).toFixed(0) : 'N/A',
+    totalRounds,
+    overallAverageBid: totalBidAttempts > 0 ? formatStatNumber(totalBidAmount / totalBidAttempts) : 'N/A',
+    overallBidMakePct: totalBidAttempts ? (totalBidsMade / totalBidAttempts) * 100 : null,
+    totalBidAttempts,
+    totalBidsMade,
+    totalSetsForced,
+    totalPerfect360s,
+    averageMargin: savedGames.length ? totalAbsoluteMargin / savedGames.length : 0,
     teamsData,
     playersData,
     totalTimePlayedMs: totalGameDuration,
@@ -5778,36 +5931,6 @@ function getStatistics() {
   STATS_RESULT_CACHE.key = savedGamesRaw;
   STATS_RESULT_CACHE.value = result;
   return result;
-}
-
-function isGameSandbagForTeamKey(game, teamPlayers, threshold = 2) {
-  const teamKey = buildTeamKey(teamPlayers);
-  if (!teamKey) return false;
-
-  const gameUsKey = buildTeamKey(canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName)));
-  const gameDemKey = buildTeamKey(canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName)));
-
-  let target = null;
-  let opponent = null;
-  if (teamKey === gameUsKey) {
-    target = 'us';
-    opponent = 'dem';
-  } else if (teamKey === gameDemKey) {
-    target = 'dem';
-    opponent = 'us';
-  } else {
-    return false;
-  }
-
-  let sandbagOpportunities = 0;
-  (game.rounds || []).forEach(round => {
-    if (round.biddingTeam === opponent && Number(round[`${opponent}Points`]) < 0) {
-      const targetPoints = Number(round[`${target}Points`]) || 0;
-      const bidAmount = Number(round.bidAmount) || 0;
-      if (targetPoints >= 80 || targetPoints >= bidAmount) sandbagOpportunities++;
-    }
-  });
-  return sandbagOpportunities >= threshold;
 }
 function renderStatsTable(mode, statsData, additionalStatKey) {
   const metricConf = STATS_METRIC_CONFIG[additionalStatKey] || { label: 'Stat', long: 'Stat' };
@@ -5854,16 +5977,7 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
   const winTier = getWinPctTier(item.winPercent);
   const metricVal = getMetricDisplay(additionalStatKey, item);
-  const isSandbag = additionalStatKey === 'sandbagger' && metricVal === 'Yes';
-  const wlRecord = `${item.wins ?? 0}–${item.losses ?? 0}`;
-
-  const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
-    ? `<span class="stats-row-card__sub">${escapeHtmlValue(playersDisplay)}</span>`
-    : `<span class="stats-row-card__sub">${escapeHtmlValue(wlRecord)} · ${item.gamesPlayed ?? 0} game${(item.gamesPlayed ?? 0) === 1 ? '' : 's'}</span>`;
-
-  const metricBadge = isSandbag
-    ? `<span class="stats-row-card__metric-value stats-row-card__metric-value--warn">Yes</span>`
-    : `<span class="stats-row-card__metric-value">${escapeHtmlValue(metricVal)}</span>`;
+  const subline = `<span class="stats-row-card__sub">${escapeHtmlValue(getStatsSubline(mode, item, displayName))}</span>`;
 
   return `
     <button type="button"
@@ -5886,7 +6000,7 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
         </span>
         <span class="stats-row-card__metric">
           <span class="stats-row-card__metric-label">${escapeHtmlValue(metricConf.label)}</span>
-          ${metricBadge}
+          <span class="stats-row-card__metric-value">${escapeHtmlValue(metricVal)}</span>
         </span>
         <span class="stats-row-card__chevron" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -5906,10 +6020,7 @@ function buildStatsTableRow(mode, item, additionalStatKey) {
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
   const winTier = getWinPctTier(item.winPercent);
   const metricVal = getMetricDisplay(additionalStatKey, item);
-  const isSandbag = additionalStatKey === 'sandbagger' && metricVal === 'Yes';
-  const subline = mode === 'teams' && playersDisplay && playersDisplay !== displayName
-    ? `<span class="stats-table__sub">${escapeHtmlValue(playersDisplay)}</span>`
-    : '';
+  const subline = `<span class="stats-table__sub">${escapeHtmlValue(getStatsSubline(mode, item, displayName))}</span>`;
 
   return `
     <tr class="stats-table__row stats-entity-trigger"
@@ -5931,11 +6042,7 @@ function buildStatsTableRow(mode, item, additionalStatKey) {
           <span class="win-chip__value">${escapeHtmlValue(String(item.winPercent))}%</span>
         </span>
       </td>
-      <td class="stats-table__td">${
-        isSandbag
-          ? '<span class="entity-badge--yes">Yes</span>'
-          : `<span class="stats-table__metric">${escapeHtmlValue(metricVal)}</span>`
-      }</td>
+      <td class="stats-table__td"><span class="stats-table__metric">${escapeHtmlValue(metricVal)}</span></td>
       <td class="stats-table__td-icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </td>
@@ -6346,6 +6453,8 @@ if (typeof module !== 'undefined' && module.exports) {
     renderReadOnlyGameDetails,
     buildSavedGameCard,
     buildFreezerGameCard,
+    getStatistics,
+    sortStatisticsData,
     bucketScore,
     getBucketRange,
     buildProbabilityIndex,

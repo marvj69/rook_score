@@ -249,6 +249,8 @@ if (typeof module !== 'undefined' && module.exports) {
     renderReadOnlyGameDetails,
     buildSavedGameCard,
     buildFreezerGameCard,
+    getStatistics,
+    sortStatisticsData,
     bucketScore,
     getBucketRange,
     buildProbabilityIndex,

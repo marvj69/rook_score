@@ -9,8 +9,8 @@ let confirmationCallback = null;
 let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first
 let statsViewMode = 'teams';
-let statsMetricKey = 'games';
-let statsSortKey = 'recent';
+let statsMetricKey = 'netPerGame';
+let statsSortKey = 'most';
 let roundsVersion = 0;
 let renderScheduled = false;
 const scheduleFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 0);

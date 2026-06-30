@@ -555,17 +555,21 @@ function renderReadOnlyGameDetails(game) {
   const dateDisplay = escapeHtmlValue(dateStr);
   const victoryMethodDisplay = escapeHtmlValue(victoryMethod);
 
-  // Determine sandbag for winner
-  let sandbagResult = "N/A";
-  if (winner === "us" || winner === "dem") {
-    const winnerPlayers = winner === "us"
-      ? canonicalizePlayers(game.usPlayers || parseLegacyTeamName(game.usTeamName || game.usName))
-      : canonicalizePlayers(game.demPlayers || parseLegacyTeamName(game.demTeamName || game.demName));
-    sandbagResult = isGameSandbagForTeamKey(game, winnerPlayers) ? "Yes" : "No";
-  }
-
   const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
   const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
+  const bidSummary = (rounds || []).reduce((summary, round) => {
+    const bidSide = typeof round.biddingTeam === "string" ? round.biddingTeam.trim().toLowerCase() : "";
+    const bidAmount = Number(round.bidAmount);
+    if ((bidSide !== "us" && bidSide !== "dem") || !Number.isFinite(bidAmount) || bidAmount <= 0) return summary;
+    const points = Number(bidSide === "us" ? round.usPoints : round.demPoints);
+    summary.attempts++;
+    if (Number.isFinite(points) && points >= bidAmount) summary.made++;
+    else summary.sets++;
+    return summary;
+  }, { attempts: 0, made: 0, sets: 0 });
+  const bidMakeText = bidSummary.attempts
+    ? `${bidSummary.made}/${bidSummary.attempts} (${((bidSummary.made / bidSummary.attempts) * 100).toFixed(1)}%)`
+    : "N/A";
 
   const roundHtml = (rounds || []).map((r) => {
       const runningTotals = sanitizeTotals(r.runningTotals);
@@ -603,10 +607,14 @@ function renderReadOnlyGameDetails(game) {
         </div>
         ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethodDisplay})</p>` : ''}
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-1">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-1">
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Sandbag?</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${sandbagResult}</span>
+          <span class="text-xs font-semibold text-gray-800 dark:text-white">Bids Made</span>
+          <span class="text-sm text-gray-700 dark:text-gray-300">${bidMakeText}</span>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-center">
+          <span class="text-xs font-semibold text-gray-800 dark:text-white">Sets</span>
+          <span class="text-sm text-gray-700 dark:text-gray-300">${bidSummary.sets}</span>
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-end">
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>

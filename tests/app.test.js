@@ -211,6 +211,8 @@ const {
   renderReadOnlyGameDetails,
   buildSavedGameCard,
   buildFreezerGameCard,
+  getStatistics,
+  sortStatisticsData,
   bucketScore,
   getBucketRange,
   buildProbabilityIndex,
@@ -459,6 +461,97 @@ test('formatDuration keeps compact minute and hour labels', () => {
   assert.equal(formatDuration(59_999), '0m');
   assert.equal(formatDuration(60_000), '1m');
   assert.equal(formatDuration(62 * 60_000), '1h 02m');
+});
+
+test('getStatistics builds meaningful saved-game performance metrics', () => {
+  resetState();
+
+  setLocalStorage('savedGames', [
+    {
+      usTeamName: 'Alice & Bob',
+      demTeamName: 'Cara & Dan',
+      usPlayers: ['Alice', 'Bob'],
+      demPlayers: ['Cara', 'Dan'],
+      winner: 'us',
+      timestamp: '2026-01-01T12:00:00.000Z',
+      durationMs: 30 * 60_000,
+      finalScore: { us: 520, dem: 300 },
+      rounds: [
+        { bidAmount: 120, biddingTeam: 'us', usPoints: 125, demPoints: 55, runningTotals: { us: 125, dem: 55 } },
+        { bidAmount: 130, biddingTeam: 'dem', usPoints: 180, demPoints: -130, runningTotals: { us: 305, dem: -75 } },
+        { bidAmount: 360, biddingTeam: 'us', usPoints: 360, demPoints: 0, runningTotals: { us: 665, dem: -75 } },
+      ],
+    },
+    {
+      usTeamName: 'Echo & Finn',
+      demTeamName: 'Alice & Bob',
+      usPlayers: ['Echo', 'Finn'],
+      demPlayers: ['Alice', 'Bob'],
+      winner: 'us',
+      timestamp: '2026-01-02T12:00:00.000Z',
+      durationMs: 45 * 60_000,
+      finalScore: { us: 500, dem: 450 },
+      rounds: [
+        { bidAmount: 140, biddingTeam: 'dem', usPoints: 50, demPoints: 150, runningTotals: { us: 50, dem: 150 } },
+        { bidAmount: 160, biddingTeam: 'us', usPoints: -160, demPoints: 180, runningTotals: { us: -110, dem: 330 } },
+        { bidAmount: 120, biddingTeam: 'dem', usPoints: 180, demPoints: -120, runningTotals: { us: 70, dem: 210 } },
+      ],
+    },
+    {
+      usTeamName: 'Alice & Bob',
+      demTeamName: 'Cara & Dan',
+      usPlayers: ['Alice', 'Bob'],
+      demPlayers: ['Cara', 'Dan'],
+      winner: 'us',
+      timestamp: '2026-01-03T12:00:00.000Z',
+      durationMs: 35 * 60_000,
+      finalScore: { us: 505, dem: 480 },
+      rounds: [
+        { bidAmount: 120, biddingTeam: 'dem', usPoints: 45, demPoints: 135, runningTotals: { us: 45, dem: 135 } },
+        { bidAmount: 160, biddingTeam: 'us', usPoints: 170, demPoints: 10, runningTotals: { us: 215, dem: 145 } },
+        { bidAmount: 150, biddingTeam: 'dem', usPoints: 290, demPoints: -150, runningTotals: { us: 505, dem: -5 } },
+      ],
+    },
+  ]);
+
+  const stats = getStatistics();
+  const aliceBob = stats.teamsData.find(team => team.key === 'alice||bob');
+  const alice = stats.playersData.find(player => player.key === 'alice');
+
+  assert.ok(aliceBob);
+  assert.equal(stats.totalGames, 3);
+  assert.equal(stats.totalRounds, 9);
+  assert.equal(stats.totalBidAttempts, 9);
+  assert.equal(stats.totalBidsMade, 5);
+  assert.equal(stats.totalSetsForced, 4);
+  assert.equal(stats.totalPerfect360s, 1);
+  assert.equal(Number(stats.overallBidMakePct.toFixed(1)), 55.6);
+
+  assert.equal(aliceBob.gamesPlayed, 3);
+  assert.equal(aliceBob.wins, 2);
+  assert.equal(aliceBob.losses, 1);
+  assert.equal(aliceBob.winPercent, '66.7');
+  assert.equal(aliceBob.netPerGame, 65);
+  assert.equal(aliceBob.bidAttempts, 5);
+  assert.equal(aliceBob.bidsMade, 4);
+  assert.equal(Number(aliceBob.bidMakePct.toFixed(1)), 80.0);
+  assert.equal(aliceBob.bidsSet, 1);
+  assert.equal(aliceBob.setsForced, 3);
+  assert.equal(aliceBob.perfect360s, 1);
+  assert.equal(aliceBob.closeWins, 1);
+  assert.equal(aliceBob.closeLosses, 1);
+  assert.equal(aliceBob.comebackWins, 1);
+  assert.equal(aliceBob.bestScore, 520);
+  assert.equal(aliceBob.avgBid, '180');
+  assert.equal(aliceBob.roundsPlayed, 9);
+
+  assert.ok(alice);
+  assert.equal(alice.gamesPlayed, aliceBob.gamesPlayed);
+  assert.equal(alice.netPerGame, aliceBob.netPerGame);
+  assert.equal(alice.setsForced, aliceBob.setsForced);
+
+  const sortedByNet = sortStatisticsData(stats.teamsData, 'most', 'netPerGame');
+  assert.equal(sortedByNet[0].key, 'alice||bob');
 });
 
 test('rematch dealer candidates prefer the current dealing order', () => {
@@ -1344,7 +1437,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.11";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.12";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
