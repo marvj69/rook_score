@@ -5358,6 +5358,7 @@ function buildStatsSpotlightCards(stats, mode) {
       value: bestRecord?.name || 'N/A',
       meta: bestRecord ? `${bestRecord.winPercent}% | ${bestRecord.wins}-${bestRecord.losses}` : 'No games',
       tone: 'blue',
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8m-4-4v4m-6-9a6 6 0 0012 0V4H6v8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6H4a2 2 0 002 4m12-4h2a2 2 0 01-2 4"/></svg>',
     },
     {
       label: 'Point Swing',
@@ -5365,6 +5366,7 @@ function buildStatsSpotlightCards(stats, mode) {
       value: bestNet?.name || 'N/A',
       meta: bestNet ? `${formatSignedStat(bestNet.netPerGame)}/game` : 'No scores',
       tone: 'purple',
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 7h7v7"/></svg>',
     },
     {
       label: 'Bid Boss',
@@ -5372,6 +5374,7 @@ function buildStatsSpotlightCards(stats, mode) {
       value: bidBoss?.name || 'N/A',
       meta: bidBoss ? `${formatPercentStat(bidBoss.bidMakePct)} on ${bidBoss.bidAttempts} bids` : 'No bids',
       tone: 'green',
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z"/></svg>',
     },
     {
       label: 'Pressure',
@@ -5379,17 +5382,33 @@ function buildStatsSpotlightCards(stats, mode) {
       value: pressure?.name || 'N/A',
       meta: pressure ? `${pressure.setsForced} set${pressure.setsForced === 1 ? '' : 's'} forced` : 'No sets',
       tone: 'amber',
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>',
     },
   ];
 
+  const renderCard = (card) => {
+    const inner = `
+      <span class="stats-spotlight-card__top">
+        <span class="stats-spotlight-card__icon" aria-hidden="true">${card.icon}</span>
+        <span class="stats-spotlight-card__label">${escapeHtmlValue(card.label)}</span>
+      </span>
+      <span class="stats-spotlight-card__value">${escapeHtmlValue(card.value)}</span>
+      <span class="stats-spotlight-card__meta">${escapeHtmlValue(card.meta)}</span>`;
+    if (card.item?.key) {
+      return `
+        <button type="button" class="stats-spotlight-card stats-spotlight-card--${card.tone} stats-entity-trigger"
+          data-entity-mode="${escapeAttribute(mode)}"
+          data-entity-key="${escapeAttribute(card.item.key)}"
+          aria-haspopup="dialog">${inner}</button>`;
+    }
+    return `<div class="stats-spotlight-card stats-spotlight-card--${card.tone}">${inner}</div>`;
+  };
+
   return `
-    <div class="stats-spotlight-grid" aria-label="${escapeAttribute(mode === 'players' ? 'Player leaders' : 'Team leaders')}">
-      ${cards.map(card => `
-        <div class="stats-spotlight-card stats-spotlight-card--${card.tone}">
-          <span class="stats-spotlight-card__label">${escapeHtmlValue(card.label)}</span>
-          <span class="stats-spotlight-card__value">${escapeHtmlValue(card.value)}</span>
-          <span class="stats-spotlight-card__meta">${escapeHtmlValue(card.meta)}</span>
-        </div>`).join('')}
+    <div class="stats-spotlight-rail" aria-label="${escapeAttribute(mode === 'players' ? 'Player leaders' : 'Team leaders')}">
+      <div class="stats-spotlight-grid">
+        ${cards.map(renderCard).join('')}
+      </div>
     </div>`;
 }
 
@@ -5420,7 +5439,7 @@ function renderStatisticsContent() {
   }
 
   const segmented = `
-    <div class="stats-segmented" role="tablist" aria-label="Statistics view">
+    <div class="stats-segmented" role="tablist" aria-label="Statistics view" data-active="${escapeAttribute(statsViewMode)}">
       <button type="button" class="stats-segmented__option" role="tab" data-stats-view="teams" aria-pressed="${statsViewMode === 'teams'}" aria-selected="${statsViewMode === 'teams'}">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
         Teams
@@ -5451,42 +5470,38 @@ function renderStatisticsContent() {
 
   const controlsBlock = `<div class="stats-controls bg-white dark:bg-gray-800">${segmented}${filterRow}</div>`;
 
+  const heroBlock = stats.totalGames > 0 ? `
+    <section class="stats-hero" aria-label="Overall stats">
+      <div class="stats-hero__lead">
+        <span class="stats-hero__value">${escapeHtmlValue(String(stats.totalGames))}</span>
+        <span class="stats-hero__label">game${stats.totalGames === 1 ? '' : 's'} logged</span>
+      </div>
+      <dl class="stats-hero__minis">
+        <div class="stats-hero__mini">
+          <dt class="stats-hero__mini-label">Avg margin</dt>
+          <dd class="stats-hero__mini-value">${escapeHtmlValue(formatStatNumber(stats.averageMargin))}</dd>
+        </div>
+        <div class="stats-hero__mini">
+          <dt class="stats-hero__mini-label">Bid make</dt>
+          <dd class="stats-hero__mini-value">${escapeHtmlValue(formatPercentStat(stats.overallBidMakePct))}</dd>
+        </div>
+        <div class="stats-hero__mini">
+          <dt class="stats-hero__mini-label">Sets</dt>
+          <dd class="stats-hero__mini-value">${escapeHtmlValue(String(stats.totalSetsForced))}</dd>
+        </div>
+      </dl>
+    </section>` : '';
+
   const statsDataForMode = statsViewMode === 'teams' ? stats.teamsData : stats.playersData;
   const sortedStats = sortStatisticsData(statsDataForMode, statsSortKey, statsMetricKey);
   const tableHtml = renderStatsTable(statsViewMode, sortedStats, statsMetricKey);
   const spotlightHtml = buildStatsSpotlightCards(stats, statsViewMode);
 
-  contentEl.innerHTML = `${controlsBlock}${spotlightHtml}<div id="teamStatsTableWrapper" class="stats-results">${tableHtml}</div>`;
-
-  if (footerEl && stats.totalGames > 0) {
-    footerEl.innerHTML = `
-      <div class="kpi-grid">
-        <div class="kpi-card kpi-card--blue">
-          <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Games</span>
-          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalGames))}</span>
-        </div>
-        <div class="kpi-card kpi-card--purple">
-          <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Avg Margin</span>
-          <span class="kpi-card__value">${escapeHtmlValue(formatStatNumber(stats.averageMargin))}</span>
-        </div>
-        <div class="kpi-card kpi-card--green">
-          <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Bid Make</span>
-          <span class="kpi-card__value">${escapeHtmlValue(formatPercentStat(stats.overallBidMakePct))}</span>
-        </div>
-        <div class="kpi-card kpi-card--amber">
-          <span class="kpi-card__accent"></span>
-          <span class="kpi-card__label">Sets</span>
-          <span class="kpi-card__value">${escapeHtmlValue(String(stats.totalSetsForced))}</span>
-        </div>
-      </div>`;
-    footerEl.classList.remove("hidden");
-  }
+  contentEl.innerHTML = `${controlsBlock}${heroBlock}${spotlightHtml}<div id="teamStatsTableWrapper" class="stats-results">${tableHtml}</div>`;
 
   bindStatsControlHandlers();
   ensureStatisticsEntityInteraction();
+  ensureStatsSheetGesture('statisticsModal', closeStatisticsModal);
 }
 
 function bindStatsControlHandlers() {
@@ -5495,7 +5510,26 @@ function bindStatsControlHandlers() {
       const next = btn.getAttribute('data-stats-view') === 'players' ? 'players' : 'teams';
       if (next === statsViewMode) return;
       statsViewMode = next;
-      renderStatisticsContent();
+      const seg = btn.closest('.stats-segmented');
+      if (seg) seg.setAttribute('data-active', statsViewMode);
+      document.querySelectorAll('[data-stats-view]').forEach(el => {
+        const active = el.getAttribute('data-stats-view') === statsViewMode;
+        el.setAttribute('aria-pressed', String(active));
+        el.setAttribute('aria-selected', String(active));
+      });
+      const latest = getStatistics();
+      const data = statsViewMode === 'players' ? latest.playersData : latest.teamsData;
+      const sorted = sortStatisticsData(data, statsSortKey, statsMetricKey);
+      const wrapper = document.getElementById('teamStatsTableWrapper');
+      if (wrapper) wrapper.innerHTML = renderStatsTable(statsViewMode, sorted, statsMetricKey);
+      const spotlightHtml = buildStatsSpotlightCards(latest, statsViewMode);
+      const rail = document.querySelector('#statisticsModalContent .stats-spotlight-rail');
+      if (rail) {
+        if (spotlightHtml) rail.outerHTML = spotlightHtml;
+        else rail.remove();
+      } else if (spotlightHtml && wrapper) {
+        wrapper.insertAdjacentHTML('beforebegin', spotlightHtml);
+      }
     });
   });
 
@@ -5525,6 +5559,47 @@ function bindStatsControlHandlers() {
       renderStatisticsContent();
     });
   }
+}
+
+function ensureStatsSheetGesture(modalId, closeFn) {
+  const modal = document.getElementById(modalId);
+  if (!modal || modal.dataset.sheetGestureBound === 'true') return;
+  const shell = modal.querySelector('.stats-modal__shell');
+  const dragZones = modal.querySelectorAll('[data-sheet-drag]');
+  if (!shell || !dragZones.length) return;
+
+  let startY = 0;
+  let deltaY = 0;
+  let dragging = false;
+
+  const onStart = (e) => {
+    if (window.innerWidth > 640) return;
+    dragging = true;
+    startY = e.touches[0].clientY;
+    deltaY = 0;
+    shell.style.transition = 'none';
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    deltaY = Math.max(0, e.touches[0].clientY - startY);
+    shell.style.transform = deltaY ? `translateY(${deltaY}px)` : '';
+    if (deltaY > 0 && e.cancelable) e.preventDefault();
+  };
+  const onEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    shell.style.transition = '';
+    shell.style.transform = '';
+    if (deltaY > 90) closeFn();
+  };
+
+  dragZones.forEach((zone) => {
+    zone.addEventListener('touchstart', onStart, { passive: true });
+    zone.addEventListener('touchmove', onMove, { passive: false });
+    zone.addEventListener('touchend', onEnd);
+    zone.addEventListener('touchcancel', onEnd);
+  });
+  modal.dataset.sheetGestureBound = 'true';
 }
 
 function ensureStatisticsEntityInteraction() {
@@ -5566,6 +5641,7 @@ function openEntityStatisticsModal(mode, entityKey) {
   if (!entity) return;
   renderEntityStatisticsContent(normalizedMode, entity);
   openModal('entityStatisticsModal');
+  ensureStatsSheetGesture('entityStatisticsModal', closeEntityStatisticsModal);
 }
 
 function closeEntityStatisticsModal() {
@@ -5672,11 +5748,15 @@ function renderEntityStatisticsContent(mode, entity) {
           <h3 class="entity-hero__name">${escapeHtmlValue(displayName)}</h3>
           ${subline}
         </div>
-        <div class="entity-hero__win">
-          <span class="entity-hero__win-label">Win Rate</span>
-          <span class="entity-hero__win-value win-tier-${winTier}">${escapeHtmlValue(String(entity.winPercent ?? '0.0'))}%</span>
-          <span class="entity-hero__win-bar" aria-hidden="true">
-            <span class="entity-hero__win-bar-fill" style="--win-pct: ${Math.max(0, Math.min(100, winPct))}%;"></span>
+        <div class="entity-hero__win" role="img" aria-label="Win rate ${escapeAttribute(String(entity.winPercent ?? '0.0'))} percent">
+          <svg class="entity-ring win-tier-${winTier}" viewBox="0 0 72 72" aria-hidden="true">
+            <circle class="entity-ring__track" cx="36" cy="36" r="30"></circle>
+            <circle class="entity-ring__fill" cx="36" cy="36" r="30"
+              stroke-dasharray="${(Math.max(0, Math.min(100, winPct)) * 1.885).toFixed(1)} 188.5"></circle>
+          </svg>
+          <span class="entity-ring__center" aria-hidden="true">
+            <span class="entity-ring__value win-tier-${winTier}">${escapeHtmlValue(String(entity.winPercent ?? '0.0'))}<small>%</small></span>
+            <span class="entity-ring__label">wins</span>
           </span>
         </div>
       </section>
@@ -5941,8 +6021,8 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
     return `<p class="stats-results__empty">${emptyLabel}</p>`;
   }
 
-  const cards = statsData.map(item => buildStatsRowCard(mode, item, additionalStatKey)).join('');
-  const tableRows = statsData.map((item) => buildStatsTableRow(mode, item, additionalStatKey)).join('');
+  const cards = statsData.map((item, idx) => buildStatsRowCard(mode, item, additionalStatKey, idx + 1)).join('');
+  const tableRows = statsData.map((item, idx) => buildStatsTableRow(mode, item, additionalStatKey, idx + 1)).join('');
 
   return `
     <div class="stats-cards-view stats-rows" role="list" aria-label="${escapeAttribute(nameHeader + ' statistics')}">
@@ -5965,7 +6045,13 @@ function renderStatsTable(mode, statsData, additionalStatKey) {
     </div>`;
 }
 
-function buildStatsRowCard(mode, item, additionalStatKey) {
+function buildStatsRankBadge(rank) {
+  if (!Number.isFinite(rank) || rank < 1) return '';
+  const medal = statsSortKey === 'most' && rank <= 3 ? ` stats-rank--${rank}` : '';
+  return `<span class="stats-rank${medal}" aria-hidden="true">${rank}</span>`;
+}
+
+function buildStatsRowCard(mode, item, additionalStatKey, rank) {
   const metricConf = STATS_METRIC_CONFIG[additionalStatKey] || { label: 'Stat', long: 'Stat' };
   const entityKey = item.key;
   const displayName = item.name || (mode === 'teams'
@@ -5987,7 +6073,10 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
       aria-haspopup="dialog"
       role="listitem">
       <span class="stats-row-card__main">
-        <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+        <span class="stats-row-card__avatar">
+          <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+          ${buildStatsRankBadge(rank)}
+        </span>
         <span class="stats-row-card__title">
           <span class="stats-row-card__name">${escapeHtmlValue(displayName)}</span>
           ${subline}
@@ -6009,7 +6098,7 @@ function buildStatsRowCard(mode, item, additionalStatKey) {
     </button>`;
 }
 
-function buildStatsTableRow(mode, item, additionalStatKey) {
+function buildStatsTableRow(mode, item, additionalStatKey, rank) {
   const entityKey = item.key;
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')
@@ -6030,7 +6119,10 @@ function buildStatsTableRow(mode, item, additionalStatKey) {
       role="button"
       aria-haspopup="dialog">
       <td class="stats-table__td-name">
-        <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+        <span class="stats-row-card__avatar">
+          <span class="stats-initials" aria-hidden="true">${escapeHtmlValue(initials)}</span>
+          ${buildStatsRankBadge(rank)}
+        </span>
         <span class="stats-table__name-block">
           <span class="stats-table__name">${escapeHtmlValue(displayName)}</span>
           ${subline}
