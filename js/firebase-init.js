@@ -1,9 +1,9 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
 const SAME_ORIGIN_FIREBASE_CONFIG_URL = "/api/firebase-config";
 const VERCEL_FIREBASE_CONFIG_URL = "https://rook-score.vercel.app/api/firebase-config";
+const FIREBASE_APP_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+const FIREBASE_AUTH_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+const FIREBASE_FIRESTORE_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+const FIREBASE_CONFIG_TIMEOUT_MS = 3500;
 const GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
 const REQUIRED_FIREBASE_CONFIG_KEYS = [
   "apiKey",
@@ -18,6 +18,18 @@ let app = null;
 let auth = null;
 let db = null;
 let googleProvider = null;
+let firebaseLibraryPromise = null;
+let initializeApp = null;
+let getAuth = null;
+let onAuthStateChanged = null;
+let GoogleAuthProvider = null;
+let signInWithPopup = null;
+let signOut = null;
+let signInAnonymously = null;
+let getFirestore = null;
+let doc = null;
+let setDoc = null;
+let getDoc = null;
 const reportedSyncFailures = new Set();
 
 window.firebaseReady = false;
@@ -26,9 +38,9 @@ window.firebaseInitError = null;
 window.firebaseApp = null;
 window.firebaseAuth = null;
 window.firestoreDB = null;
-window.firestoreDoc = doc;
-window.firestoreSetDoc = setDoc;
-window.firestoreGetDoc = getDoc;
+window.firestoreDoc = null;
+window.firestoreSetDoc = null;
+window.firestoreGetDoc = null;
 window.googleProvider = null;
 
 function getAnalyticsSyncKeyLabel(key) {
@@ -147,12 +159,28 @@ function disableFirebase(error) {
   }
 }
 
+function fetchWithTimeout(url, options = {}, timeoutMs = FIREBASE_CONFIG_TIMEOUT_MS) {
+  const controller = typeof AbortController === "undefined" ? null : new AbortController();
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (controller) controller.abort();
+      reject(new Error(`Firebase config request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  const fetchPromise = fetch(url, controller ? { ...options, signal: controller.signal } : options);
+  fetchPromise.catch(() => undefined);
+
+  return Promise.race([fetchPromise, timeoutPromise])
+    .finally(() => clearTimeout(timeoutId));
+}
+
 async function loadFirebaseConfig() {
   const configUrl = GITHUB_PAGES_HOSTNAMES.has(window.location.hostname)
     ? VERCEL_FIREBASE_CONFIG_URL
     : SAME_ORIGIN_FIREBASE_CONFIG_URL;
 
-  const response = await fetch(configUrl, {
+  const response = await fetchWithTimeout(configUrl, {
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
@@ -168,6 +196,34 @@ async function loadFirebaseConfig() {
   }
 
   return config;
+}
+
+async function loadFirebaseLibraries() {
+  if (firebaseLibraryPromise) return firebaseLibraryPromise;
+
+  firebaseLibraryPromise = Promise.all([
+    import(FIREBASE_APP_MODULE_URL),
+    import(FIREBASE_AUTH_MODULE_URL),
+    import(FIREBASE_FIRESTORE_MODULE_URL),
+  ]).then(([appModule, authModule, firestoreModule]) => {
+    initializeApp = appModule.initializeApp;
+    getAuth = authModule.getAuth;
+    onAuthStateChanged = authModule.onAuthStateChanged;
+    GoogleAuthProvider = authModule.GoogleAuthProvider;
+    signInWithPopup = authModule.signInWithPopup;
+    signOut = authModule.signOut;
+    signInAnonymously = authModule.signInAnonymously;
+    getFirestore = firestoreModule.getFirestore;
+    doc = firestoreModule.doc;
+    setDoc = firestoreModule.setDoc;
+    getDoc = firestoreModule.getDoc;
+
+    window.firestoreDoc = doc;
+    window.firestoreSetDoc = setDoc;
+    window.firestoreGetDoc = getDoc;
+  });
+
+  return firebaseLibraryPromise;
 }
 
 window.mergeLocalStorageWithFirestore = async function(user) {
@@ -267,6 +323,10 @@ async function mergeUserDataForCurrentUser(user) {
 }
 
 window.signInWithGoogle = async function() {
+  if ((!auth || !googleProvider) && typeof window.startFirebaseInitialization === "function") {
+    await window.startFirebaseInitialization({ retry: Boolean(window.firebaseInitError) });
+  }
+
   if (!auth || !googleProvider) {
     console.warn("Google sign-in is unavailable because Firebase is not configured.");
     trackSyncFailure("auth", "firebase_unavailable");
@@ -381,6 +441,7 @@ function watchAuthState() {
 
 async function initializeFirebaseFromVercelEnv() {
   const firebaseConfig = await loadFirebaseConfig();
+  await loadFirebaseLibraries();
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -400,4 +461,34 @@ async function initializeFirebaseFromVercelEnv() {
   }
 }
 
-window.firebaseInitPromise = initializeFirebaseFromVercelEnv().catch(disableFirebase);
+function startFirebaseInitialization(options = {}) {
+  const shouldRetry = Boolean(options.retry);
+  if (shouldRetry && !auth) {
+    window.firebaseInitPromise = null;
+    window.firebaseInitError = null;
+    window.firebaseConfigLoaded = false;
+    firebaseLibraryPromise = null;
+  }
+
+  if (!window.firebaseInitPromise) {
+    window.firebaseInitPromise = initializeFirebaseFromVercelEnv().catch(disableFirebase);
+  }
+  return window.firebaseInitPromise;
+}
+
+function scheduleFirebaseInitialization() {
+  const startAfterAppLoad = () => {
+    setTimeout(startFirebaseInitialization, 0);
+  };
+
+  if (document.readyState === "complete") {
+    startAfterAppLoad();
+    return;
+  }
+
+  window.addEventListener("load", startAfterAppLoad, { once: true });
+}
+
+window.firebaseInitPromise = null;
+window.startFirebaseInitialization = startFirebaseInitialization;
+scheduleFirebaseInitialization();

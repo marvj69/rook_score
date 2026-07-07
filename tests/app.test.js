@@ -1437,10 +1437,21 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.12";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.13";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+});
+
+test('firebase cloud sync does not block the initial app shell render', () => {
+  const source = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+
+  assert.doesNotMatch(source, /^\s*import\s+\{/m);
+  assert.match(source, /import\(FIREBASE_APP_MODULE_URL\)/);
+  assert.match(source, /window\.addEventListener\("load", startAfterAppLoad, \{ once: true \}\)/);
+  assert.match(source, /setTimeout\(startFirebaseInitialization, 0\)/);
+  assert.match(source, /FIREBASE_CONFIG_TIMEOUT_MS = 3500/);
+  assert.match(source, /Promise\.race\(\[fetchPromise, timeoutPromise\]\)/);
 });
 
 test('version surfaces are aligned for the 2.1 release', () => {
