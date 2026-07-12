@@ -36,6 +36,10 @@ function updateState(newState) {
     nextState.startingTotals = sanitizeTotals(nextState.startingTotals);
   }
 
+  if (has(nextState, 'misdealDealers')) {
+    nextState.misdealDealers = normalizeMisdealDealers(nextState.misdealDealers);
+  }
+
   state = { ...state, ...nextState };
   scheduleRender();
 }

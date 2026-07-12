@@ -76,9 +76,7 @@ function renderApp() {
   // Calculate current dealer badge (including misdeals in the count)
   let dealerRow = "";
   if (state.dealers && state.dealers.length > 0) {
-    const totalDeals = (roundNumber - 1) + (state.misdealCount || 0);
-    const dealerIndex = totalDeals % state.dealers.length;
-    const currentDealer = state.dealers[dealerIndex];
+    const currentDealer = getCurrentDealer(state);
     const escapedDealer = escapeHtml(currentDealer);
     dealerRow = `<div class="mt-2 flex flex-row items-center justify-center gap-2">
       <span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${escapedDealer}</span>

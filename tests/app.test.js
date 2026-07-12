@@ -201,11 +201,14 @@ const {
   deriveTeamDisplay,
   getTeamSnapshotForSide,
   getGameTeamDisplay,
+  normalizeMisdealDealers,
+  getCurrentDealer,
   normalizeTeamsStorage,
   applyTeamResultDelta,
   getRematchDealerCandidates,
   buildDealerOrderStartingWith,
   buildRematchSetupState,
+  handleMisdeal,
   startRematchWithFirstDealer,
   playersEqual,
   renderReadOnlyGameDetails,
@@ -476,6 +479,7 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
       timestamp: '2026-01-01T12:00:00.000Z',
       durationMs: 30 * 60_000,
       finalScore: { us: 520, dem: 300 },
+      misdealDealers: ['Alice', 'Dan'],
       rounds: [
         { bidAmount: 120, biddingTeam: 'us', usPoints: 125, demPoints: 55, runningTotals: { us: 125, dem: 55 } },
         { bidAmount: 130, biddingTeam: 'dem', usPoints: 180, demPoints: -130, runningTotals: { us: 305, dem: -75 } },
@@ -491,6 +495,7 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
       timestamp: '2026-01-02T12:00:00.000Z',
       durationMs: 45 * 60_000,
       finalScore: { us: 500, dem: 450 },
+      misdealDealers: ['Finn'],
       rounds: [
         { bidAmount: 140, biddingTeam: 'dem', usPoints: 50, demPoints: 150, runningTotals: { us: 50, dem: 150 } },
         { bidAmount: 160, biddingTeam: 'us', usPoints: -160, demPoints: 180, runningTotals: { us: -110, dem: 330 } },
@@ -506,6 +511,7 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
       timestamp: '2026-01-03T12:00:00.000Z',
       durationMs: 35 * 60_000,
       finalScore: { us: 505, dem: 480 },
+      misdealDealers: ['Alice', 'Alice'],
       rounds: [
         { bidAmount: 120, biddingTeam: 'dem', usPoints: 45, demPoints: 135, runningTotals: { us: 45, dem: 135 } },
         { bidAmount: 160, biddingTeam: 'us', usPoints: 170, demPoints: 10, runningTotals: { us: 215, dem: 145 } },
@@ -525,6 +531,7 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
   assert.equal(stats.totalBidsMade, 5);
   assert.equal(stats.totalSetsForced, 4);
   assert.equal(stats.totalPerfect360s, 1);
+  assert.equal(stats.totalMisdeals, 5);
   assert.equal(Number(stats.overallBidMakePct.toFixed(1)), 55.6);
 
   assert.equal(aliceBob.gamesPlayed, 3);
@@ -538,6 +545,7 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
   assert.equal(aliceBob.bidsSet, 1);
   assert.equal(aliceBob.setsForced, 3);
   assert.equal(aliceBob.perfect360s, 1);
+  assert.equal(aliceBob.misdeals, 3);
   assert.equal(aliceBob.closeWins, 1);
   assert.equal(aliceBob.closeLosses, 1);
   assert.equal(aliceBob.comebackWins, 1);
@@ -549,9 +557,12 @@ test('getStatistics builds meaningful saved-game performance metrics', () => {
   assert.equal(alice.gamesPlayed, aliceBob.gamesPlayed);
   assert.equal(alice.netPerGame, aliceBob.netPerGame);
   assert.equal(alice.setsForced, aliceBob.setsForced);
+  assert.equal(alice.misdeals, 3);
 
   const sortedByNet = sortStatisticsData(stats.teamsData, 'most', 'netPerGame');
   assert.equal(sortedByNet[0].key, 'alice||bob');
+  const sortedByMisdeals = sortStatisticsData(stats.playersData, 'most', 'misdeals');
+  assert.equal(sortedByMisdeals[0].key, 'alice');
 });
 
 test('rematch dealer candidates prefer the current dealing order', () => {
@@ -607,6 +618,7 @@ test('buildRematchSetupState keeps players and clears game progress', () => {
   assert.deepEqual(nextState.demPlayers, ['Bob', 'Dan']);
   assert.deepEqual(nextState.dealers, ['Bob', 'Carol', 'Dan', 'Alice']);
   assert.equal(nextState.misdealCount, 0);
+  assert.deepEqual(nextState.misdealDealers, []);
   assert.equal(nextState.showWinProbability, true);
 });
 
@@ -1234,6 +1246,8 @@ test('starting a rematch saves the completed prior game before clearing the boar
     usPlayers: ['Alice', 'Carol'],
     demPlayers: ['Bob', 'Dan'],
     dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    misdealCount: 2,
+    misdealDealers: ['Alice', 'Carol'],
     startingTotals: { us: 320, dem: 260 },
     accumulatedTime: 120000,
     startTime: null,
@@ -1251,8 +1265,12 @@ test('starting a rematch saves the completed prior game before clearing the boar
   assert.equal(savedGames[0].demTeamName, 'Bob & Dan');
   assert.deepEqual(savedGames[0].usPlayers, ['Alice', 'Carol']);
   assert.deepEqual(savedGames[0].demPlayers, ['Bob', 'Dan']);
+  assert.equal(savedGames[0].misdealCount, 2);
+  assert.deepEqual(savedGames[0].misdealDealers, ['Alice', 'Carol']);
   assert.deepEqual(activeGame.rounds, []);
   assert.deepEqual(activeGame.dealers, ['Bob', 'Carol', 'Dan', 'Alice']);
+  assert.equal(activeGame.misdealCount, 0);
+  assert.deepEqual(activeGame.misdealDealers, []);
   assert.equal(activeGame.usTeamName, 'Alice & Carol');
   assert.equal(activeGame.demTeamName, 'Bob & Dan');
 });
@@ -1396,6 +1414,34 @@ test('win probability cache key changes when current round model features change
 
 // --- Dealer Order & Misdeal Handling Tests ---
 
+test('current dealer accounts for completed rounds and prior misdeals', () => {
+  assert.equal(getCurrentDealer({
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    rounds: [{}, {}],
+    misdealCount: 1,
+  }), 'Dan');
+  assert.equal(getCurrentDealer({ dealers: [], rounds: [], misdealCount: 0 }), '');
+});
+
+test('misdeal click attributes the active dealer and persists the game', () => {
+  resetState();
+  updateState({
+    rounds: [{}],
+    undoneRounds: [],
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+    misdealCount: 1,
+    misdealDealers: ['Alice'],
+    gameOver: false,
+    startTime: null,
+    accumulatedTime: 0,
+  });
+
+  assert.equal(handleMisdeal(), true);
+  const activeGame = getLocalStorage('activeGameState', null);
+  assert.equal(activeGame.misdealCount, 2);
+  assert.deepEqual(activeGame.misdealDealers, ['Alice', 'Carol']);
+});
+
 test('escapeHtml returns empty string for non-string input', () => {
   assert.equal(escapeHtml(null), '');
   assert.equal(escapeHtml(undefined), '');
@@ -1437,7 +1483,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.13";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.14";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

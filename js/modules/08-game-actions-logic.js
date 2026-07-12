@@ -450,11 +450,20 @@ function handleRedo() {
   saveCurrentGameState();
 }
 function handleMisdeal() {
-  // Increment misdeal counter to skip to next dealer
-  const newMisdealCount = (state.misdealCount || 0) + 1;
-  updateState({ misdealCount: newMisdealCount });
+  const currentDealer = getCurrentDealer(state);
+  if (!currentDealer) return false;
+
+  // Attribute the misdeal before advancing to the next dealer.
+  const parsedMisdealCount = Number(state.misdealCount);
+  const currentMisdealCount = Number.isFinite(parsedMisdealCount)
+    ? Math.max(0, Math.trunc(parsedMisdealCount))
+    : 0;
+  const newMisdealCount = currentMisdealCount + 1;
+  const misdealDealers = [...normalizeMisdealDealers(state.misdealDealers), currentDealer];
+  updateState({ misdealCount: newMisdealCount, misdealDealers });
   saveCurrentGameState();
-  showSaveIndicator("Moved to next dealer");
+  showSaveIndicator(`Misdeal tracked for ${currentDealer}`);
+  return true;
 }
 function handleNewGame() {
   openConfirmationModal(
@@ -523,6 +532,7 @@ function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled
     startingTotals: { us: 0, dem: 0 },
     dealers,
     misdealCount: 0,
+    misdealDealers: [],
     pendingPenalty: null,
   };
 }
@@ -678,6 +688,9 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
       startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
+      dealers: Array.isArray(state.dealers) ? [...state.dealers] : [],
+      misdealCount: state.misdealCount || 0,
+      misdealDealers: normalizeMisdealDealers(state.misdealDealers),
       // Simplified playerStats, more complex stats are in general statistics
       playerStats: { 
           [usDisplay]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
@@ -793,7 +806,9 @@ async function freezeCurrentGame() {
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
       customBidValue: state.customBidValue, showCustomBid: state.showCustomBid,
       enterBidderPoints: state.enterBidderPoints, lastBidAmount: state.lastBidAmount, lastBidTeam: state.lastBidTeam,
-      dealers: state.dealers || [], misdealCount: state.misdealCount || 0
+      dealers: state.dealers || [],
+      misdealCount: state.misdealCount || 0,
+      misdealDealers: normalizeMisdealDealers(state.misdealDealers)
   };
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
@@ -844,7 +859,8 @@ function loadFreezerGame(index) {
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],
-          misdealCount: chosen.misdealCount || 0
+          misdealCount: chosen.misdealCount || 0,
+          misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
       });
       freezerGames.splice(index, 1); // Remove from freezer
       setLocalStorage("freezerGames", freezerGames);

@@ -40,10 +40,30 @@ const DEFAULT_STATE = {
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
   misdealCount: 0,
+  misdealDealers: [],
 };
 
 function sanitizePlayerName(name) {
   return (typeof name === "string" ? name : "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeMisdealDealers(input) {
+  if (!Array.isArray(input)) return [];
+  return input.map(sanitizePlayerName).filter(Boolean);
+}
+
+function getCurrentDealer(sourceState = {}) {
+  const dealers = Array.isArray(sourceState?.dealers)
+    ? sourceState.dealers.map(sanitizePlayerName)
+    : [];
+  if (!dealers.length) return "";
+
+  const roundCount = Array.isArray(sourceState?.rounds) ? sourceState.rounds.length : 0;
+  const parsedMisdealCount = Number(sourceState?.misdealCount);
+  const misdealCount = Number.isFinite(parsedMisdealCount)
+    ? Math.max(0, Math.trunc(parsedMisdealCount))
+    : 0;
+  return dealers[(roundCount + misdealCount) % dealers.length] || "";
 }
 
 const HTML_ESCAPE_CHARS = {

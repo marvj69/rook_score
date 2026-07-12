@@ -44,10 +44,30 @@ const DEFAULT_STATE = {
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
   misdealCount: 0,
+  misdealDealers: [],
 };
 
 function sanitizePlayerName(name) {
   return (typeof name === "string" ? name : "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeMisdealDealers(input) {
+  if (!Array.isArray(input)) return [];
+  return input.map(sanitizePlayerName).filter(Boolean);
+}
+
+function getCurrentDealer(sourceState = {}) {
+  const dealers = Array.isArray(sourceState?.dealers)
+    ? sourceState.dealers.map(sanitizePlayerName)
+    : [];
+  if (!dealers.length) return "";
+
+  const roundCount = Array.isArray(sourceState?.rounds) ? sourceState.rounds.length : 0;
+  const parsedMisdealCount = Number(sourceState?.misdealCount);
+  const misdealCount = Number.isFinite(parsedMisdealCount)
+    ? Math.max(0, Math.trunc(parsedMisdealCount))
+    : 0;
+  return dealers[(roundCount + misdealCount) % dealers.length] || "";
 }
 
 const HTML_ESCAPE_CHARS = {
@@ -1770,6 +1790,10 @@ function updateState(newState) {
     nextState.startingTotals = sanitizeTotals(nextState.startingTotals);
   }
 
+  if (has(nextState, 'misdealDealers')) {
+    nextState.misdealDealers = normalizeMisdealDealers(nextState.misdealDealers);
+  }
+
   state = { ...state, ...nextState };
   scheduleRender();
 }
@@ -3091,11 +3115,20 @@ function handleRedo() {
   saveCurrentGameState();
 }
 function handleMisdeal() {
-  // Increment misdeal counter to skip to next dealer
-  const newMisdealCount = (state.misdealCount || 0) + 1;
-  updateState({ misdealCount: newMisdealCount });
+  const currentDealer = getCurrentDealer(state);
+  if (!currentDealer) return false;
+
+  // Attribute the misdeal before advancing to the next dealer.
+  const parsedMisdealCount = Number(state.misdealCount);
+  const currentMisdealCount = Number.isFinite(parsedMisdealCount)
+    ? Math.max(0, Math.trunc(parsedMisdealCount))
+    : 0;
+  const newMisdealCount = currentMisdealCount + 1;
+  const misdealDealers = [...normalizeMisdealDealers(state.misdealDealers), currentDealer];
+  updateState({ misdealCount: newMisdealCount, misdealDealers });
   saveCurrentGameState();
-  showSaveIndicator("Moved to next dealer");
+  showSaveIndicator(`Misdeal tracked for ${currentDealer}`);
+  return true;
 }
 function handleNewGame() {
   openConfirmationModal(
@@ -3164,6 +3197,7 @@ function buildRematchSetupState(sourceState = state, firstDealer, proModeEnabled
     startingTotals: { us: 0, dem: 0 },
     dealers,
     misdealCount: 0,
+    misdealDealers: [],
     pendingPenalty: null,
   };
 }
@@ -3319,6 +3353,9 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
       startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
+      dealers: Array.isArray(state.dealers) ? [...state.dealers] : [],
+      misdealCount: state.misdealCount || 0,
+      misdealDealers: normalizeMisdealDealers(state.misdealDealers),
       // Simplified playerStats, more complex stats are in general statistics
       playerStats: { 
           [usDisplay]: { totalPoints: lastRoundTotals.us, wins: state.winner === "us" ? 1 : 0 },
@@ -3434,7 +3471,9 @@ async function freezeCurrentGame() {
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
       customBidValue: state.customBidValue, showCustomBid: state.showCustomBid,
       enterBidderPoints: state.enterBidderPoints, lastBidAmount: state.lastBidAmount, lastBidTeam: state.lastBidTeam,
-      dealers: state.dealers || [], misdealCount: state.misdealCount || 0
+      dealers: state.dealers || [],
+      misdealCount: state.misdealCount || 0,
+      misdealDealers: normalizeMisdealDealers(state.misdealDealers)
   };
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
@@ -3485,7 +3524,8 @@ function loadFreezerGame(index) {
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],
-          misdealCount: chosen.misdealCount || 0
+          misdealCount: chosen.misdealCount || 0,
+          misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
       });
       freezerGames.splice(index, 1); // Remove from freezer
       setLocalStorage("freezerGames", freezerGames);
@@ -4368,9 +4408,7 @@ function renderApp() {
   // Calculate current dealer badge (including misdeals in the count)
   let dealerRow = "";
   if (state.dealers && state.dealers.length > 0) {
-    const totalDeals = (roundNumber - 1) + (state.misdealCount || 0);
-    const dealerIndex = totalDeals % state.dealers.length;
-    const currentDealer = state.dealers[dealerIndex];
+    const currentDealer = getCurrentDealer(state);
     const escapedDealer = escapeHtml(currentDealer);
     dealerRow = `<div class="mt-2 flex flex-row items-center justify-center gap-2">
       <span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${escapedDealer}</span>
@@ -5178,6 +5216,11 @@ const STATS_METRIC_CONFIG = {
     long: 'Perfect 360s',
     icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.05 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>',
   },
+  misdeals: {
+    label: 'Misdeals',
+    long: 'Misdeals',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h10"/><path stroke-linecap="round" stroke-linejoin="round" d="M18 15l2 2 3-4"/></svg>',
+  },
   games: {
     label: 'Games',
     long: 'Games Played',
@@ -5244,6 +5287,7 @@ function getMetricSortValue(item, metricKey) {
     case 'comebacks': return item.comebackWins;
     case 'closeWins': return item.closeWins;
     case 'perfect360s': return item.perfect360s;
+    case 'misdeals': return item.misdeals;
     default: return null;
   }
 }
@@ -5310,6 +5354,7 @@ function getMetricDisplay(metricKey, item) {
     case 'comebacks': return String(item.comebackWins ?? 0);
     case 'closeWins': return String(item.closeWins ?? 0);
     case 'perfect360s': return String(item.perfect360s ?? 0);
+    case 'misdeals': return String(item.misdeals ?? 0);
     default: return '0';
   }
 }
@@ -5488,6 +5533,10 @@ function renderStatisticsContent() {
         <div class="stats-hero__mini">
           <dt class="stats-hero__mini-label">Sets</dt>
           <dd class="stats-hero__mini-value">${escapeHtmlValue(String(stats.totalSetsForced))}</dd>
+        </div>
+        <div class="stats-hero__mini">
+          <dt class="stats-hero__mini-label">Misdeals</dt>
+          <dd class="stats-hero__mini-value">${escapeHtmlValue(String(stats.totalMisdeals))}</dd>
         </div>
       </dl>
     </section>` : '';
@@ -5678,7 +5727,7 @@ function renderEntityStatisticsContent(mode, entity) {
     { label: 'Games', value: formatNumber(entity.gamesPlayed ?? 0) },
     { label: 'Net/G', value: formatSignedStat(entity.netPerGame) },
     { label: 'Bid Make', value: formatPercentStat(entity.bidMakePct) },
-    { label: 'Sets', value: formatNumber(entity.setsForced ?? 0) },
+    { label: 'Misdeals', value: formatNumber(entity.misdeals ?? 0) },
   ].map(card => `
     <div class="entity-quickstat">
       <span class="entity-quickstat__label">${escapeHtmlValue(card.label)}</span>
@@ -5713,6 +5762,7 @@ function renderEntityStatisticsContent(mode, entity) {
       rows: [
         { label: 'Sets Forced', value: formatNumber(entity.setsForced ?? 0) },
         { label: 'Perfect 360s', value: formatNumber(entity.perfect360s ?? 0) },
+        { label: 'Misdeals', value: formatNumber(entity.misdeals ?? 0) },
         { label: 'Comeback Wins', value: formatNumber(entity.comebackWins ?? 0) },
         { label: 'Close Wins', value: formatNumber(entity.closeWins ?? 0) },
         { label: 'Best Score', value: formatStatNumber(entity.bestScore) },
@@ -5783,6 +5833,7 @@ function getStatistics() {
   let totalBidAmount = 0;
   let totalSetsForced = 0;
   let totalPerfect360s = 0;
+  let totalMisdeals = 0;
   let totalRounds = 0;
   let totalAbsoluteMargin = 0;
   let totalGameDuration = 0;
@@ -5803,6 +5854,7 @@ function getStatistics() {
     roundsWon: 0,
     setsForced: 0,
     perfect360s: 0,
+    misdeals: 0,
     comebackWins: 0,
     closeWins: 0,
     closeLosses: 0,
@@ -5869,6 +5921,19 @@ function getStatistics() {
       us: [usTeam, ...usPlayerRecords],
       dem: [demTeam, ...demPlayerRecords],
     };
+
+    const playerSideByKey = new Map();
+    usPlayers.filter(Boolean).forEach(name => playerSideByKey.set(name.toLowerCase(), 'us'));
+    demPlayers.filter(Boolean).forEach(name => playerSideByKey.set(name.toLowerCase(), 'dem'));
+    normalizeMisdealDealers(game.misdealDealers).forEach(dealer => {
+      const dealerKey = dealer.toLowerCase();
+      const playerRecord = ensurePlayerRecord(dealer, timestampMs);
+      const side = playerSideByKey.get(dealerKey);
+      totalMisdeals++;
+      if (playerRecord) playerRecord.misdeals++;
+      if (side === 'us' && usTeam) usTeam.misdeals++;
+      if (side === 'dem' && demTeam) demTeam.misdeals++;
+    });
 
     let runningTotals = sanitizeTotals(game.startingTotals);
     const trailedBeforeEnd = {
@@ -6003,6 +6068,7 @@ function getStatistics() {
     totalBidsMade,
     totalSetsForced,
     totalPerfect360s,
+    totalMisdeals,
     averageMargin: savedGames.length ? totalAbsoluteMargin / savedGames.length : 0,
     teamsData,
     playersData,
@@ -6534,11 +6600,14 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveTeamDisplay,
     getTeamSnapshotForSide,
     getGameTeamDisplay,
+    normalizeMisdealDealers,
+    getCurrentDealer,
     normalizeTeamsStorage,
     applyTeamResultDelta,
     getRematchDealerCandidates,
     buildDealerOrderStartingWith,
     buildRematchSetupState,
+    handleMisdeal,
     saveCompletedGameSnapshot,
     startRematchWithFirstDealer,
     playersEqual,
