@@ -1483,10 +1483,20 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.14";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.15";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+  assert.match(source, /\.\/icons\/fridge-tracker\.svg/);
+});
+
+test('about modal links to Fridge Tracker with its local app icon', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+
+  assert.match(htmlSource, /id="moreByDeveloperTitle"[^>]*>[\s\S]*More by this Developer/);
+  assert.match(htmlSource, /href="https:\/\/fridgetracker\.app\/"/);
+  assert.match(htmlSource, /src="icons\/fridge-tracker\.svg"/);
+  assert.match(htmlSource, /target="_blank" rel="noopener noreferrer"/);
 });
 
 test('firebase cloud sync does not block the initial app shell render', () => {
