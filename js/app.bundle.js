@@ -6517,6 +6517,9 @@ function renderInAppNumericKeypad(target, label) {
     : String(ephemeralPoints || "");
   const displayValueAttr = escapeAttribute(displayValue);
   const displayPlaceholder = safeTarget === "bid" ? "Enter bid" : "Enter points";
+  const submitRoundButton = safeTarget === "points"
+    ? `<button type="button" class="score-keypad-sheet__submit threed" onclick="handleFormSubmit(event)">Submit Round</button>`
+    : "";
   if (activeScoreKeypadTarget !== safeTarget) return "";
   const animationClass = scoreKeypadShouldAnimate ? " score-keypad-sheet--entering" : "";
   scoreKeypadShouldAnimate = false;
@@ -6536,6 +6539,7 @@ function renderInAppNumericKeypad(target, label) {
           return `<button type="button" class="score-keypad__key${keyClass} threed" onclick="handleScoreKeypadInput('${safeTarget}', '${key}')" aria-label="${ariaLabel}">${display}</button>`;
         }).join("")}
       </div>
+      ${submitRoundButton}
     </section>`;
 }
 function renderScoreInputCard() {

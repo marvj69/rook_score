@@ -1061,6 +1061,26 @@ button:focus-visible {
 .dark .score-keypad__key:hover {
   background: rgba(51, 65, 105, 0.95);
 }
+.score-keypad-sheet__submit {
+  width: 100%;
+  min-height: 3rem;
+  margin-top: 0.65rem;
+  border-radius: 0.85rem;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 900;
+  touch-action: manipulation;
+}
+.score-keypad-sheet__submit:hover {
+  background: #1d4ed8;
+}
+.dark .score-keypad-sheet__submit {
+  background: #3b82f6;
+}
+.dark .score-keypad-sheet__submit:hover {
+  background: #2563eb;
+}
 @keyframes scoreKeypadSlideUp {
   from { transform: translateX(-50%) translateY(110%); }
   to { transform: translateX(-50%) translateY(0); }

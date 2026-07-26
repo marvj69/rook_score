@@ -3067,7 +3067,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.32";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.33";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3088,6 +3088,7 @@ test('score entry uses the in-app keypad and previews totals in the team cards',
   assert.match(source, /id="scoreKeypadSheet"/);
   assert.match(source, /id="scoreKeypadDisplay" type="text" inputmode="none" readonly/);
   assert.match(source, /aria-label="\$\{safeLabel\} value"[^>]*aria-readonly="true"[^>]*aria-live="polite"/);
+  assert.match(source, /safeTarget === "points"[\s\S]*class="score-keypad-sheet__submit threed" onclick="handleFormSubmit\(event\)">Submit Round<\/button>/);
   assert.match(source, /function getRoundScorePreview/);
   assert.match(source, /id="teamScore-\$\{teamKey\}"/);
   assert.match(source, /class="team-score-value[^"]*"[^>]*aria-live="polite"/);
@@ -3100,6 +3101,7 @@ test('score entry uses the in-app keypad and previews totals in the team cards',
   assert.match(css, /\.score-keypad-backdrop\s*\{[\s\S]*position:\s*fixed[\s\S]*z-index:\s*7990/);
   assert.match(css, /\.score-keypad-sheet\s*\{[\s\S]*z-index:\s*8000/);
   assert.match(css, /\.score-keypad-sheet__display\s*\{/);
+  assert.match(css, /\.score-keypad-sheet__submit\s*\{[\s\S]*width:\s*100%/);
   assert.match(css, /\.team-card--score-preview \.team-score-value/);
   assert.doesNotMatch(css, /\.score-outcome-preview/);
   assert.match(css, /@keyframes scoreKeypadSlideUp/);
