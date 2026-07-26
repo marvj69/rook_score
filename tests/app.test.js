@@ -1338,8 +1338,11 @@ test('voice transcription endpoint handles preflight requests', async () => {
 test('voice command endpoint reports missing OpenRouter configuration', async () => {
   const originalApiKey = process.env.OPENROUTER_API_KEY;
   const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  const originalConsoleError = console.error;
+  const loggedErrors = [];
   delete process.env.OPENROUTER_API_KEY;
   process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = 'false';
+  console.error = (...args) => loggedErrors.push(args);
 
   const request = createMockRequest({
     body: JSON.stringify({
@@ -1362,11 +1365,21 @@ test('voice command endpoint reports missing OpenRouter configuration', async ()
     } else {
       process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
     }
+    console.error = originalConsoleError;
   }
 
   assert.equal(response.statusCode, 500);
   assert.deepEqual(response.body, { error: 'Voice command planning is temporarily unavailable. Please try again.' });
   assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
+  assert.deepEqual(loggedErrors, [[
+    'voice-score-command failed',
+    {
+      code: 'OPENROUTER_MISSING_KEY',
+      statusCode: 500,
+      providerFailure: false,
+      message: 'OpenRouter is not configured.',
+    },
+  ]]);
 });
 
 test('voice command endpoint uses local fallback without OpenRouter in local dev', async () => {

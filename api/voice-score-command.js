@@ -1044,6 +1044,12 @@ module.exports = async function handler(request, response) {
     }
 
     const statusCode = error.isOpenRouterFailure ? 502 : Number(error.statusCode) || 500;
+    console.error("voice-score-command failed", {
+      code: error.code || "VOICE_COMMAND_FAILED",
+      statusCode,
+      providerFailure: Boolean(error.isOpenRouterFailure),
+      message: String(error.message || "Unknown voice command failure.").slice(0, 240),
+    });
     const safeMessage = statusCode >= 500
       ? "Voice command planning is temporarily unavailable. Please try again."
       : error.message;
