@@ -252,6 +252,10 @@ const {
   getVoiceScoreTranscriptionUrl,
   getVoiceScoreCommandUrl,
   getVoiceScoreRecordingMimeType,
+  isExperimentalFeaturesEnabled,
+  renderVoiceScoreControls,
+  getVoiceScoreAppContext,
+  getVoiceScoreActionTypes,
   normalizeVoiceScorePlan,
   getFilteredPlayerSuggestions,
 } = require('../js/app.js');
@@ -935,7 +939,8 @@ test('voice score plan normalization keeps only supported actions', () => {
       { type: 'openModal', target: 'settings' },
       { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
       { type: 'setBidPresets', presets: [120, 125, 130] },
-      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidSuccessPct' },
+      { type: 'editRound', roundNumber: 2, usTotal: 305 },
+      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidMakePct' },
       { type: 'runJavascript', code: 'alert(1)' },
     ],
   }), {
@@ -947,9 +952,125 @@ test('voice score plan normalization keeps only supported actions', () => {
       { type: 'openModal', target: 'settings' },
       { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
       { type: 'setBidPresets', presets: [120, 125, 130] },
-      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidSuccessPct' },
+      { type: 'editRound', roundNumber: 2, usTotal: 305 },
+      { type: 'setStatsControls', statsView: 'players', statsMetric: 'bidMakePct' },
     ],
   });
+});
+
+test('voice planner schema and browser executor expose the same action catalog', () => {
+  const schemaActionTypes = voiceScoreCommandHandler.ACTION_SCHEMA.properties.actions.items.properties.type.enum;
+  assert.deepEqual(getVoiceScoreActionTypes(), schemaActionTypes);
+  assert.equal(schemaActionTypes.length, 27);
+  assert.ok(schemaActionTypes.includes('editRound'));
+  assert.ok(voiceScoreCommandHandler.ACTION_SCHEMA.properties.actions.items.properties.target.enum.includes('version'));
+  assert.ok(voiceScoreCommandHandler.ACTION_SCHEMA.properties.actions.items.properties.key.enum.includes('experimentalFeatures'));
+});
+
+test('voice app context exposes compact library and statistics entities', () => {
+  resetState();
+  setLocalStorage('savedGames', [
+    {
+      usPlayers: ['Alice', 'Bob'],
+      demPlayers: ['Carol', 'Dan'],
+      usTeamName: 'Alice & Bob',
+      demTeamName: 'Carol & Dan',
+      winner: 'us',
+      finalScore: { us: 510, dem: 390 },
+      timestamp: '2026-01-01T12:00:00.000Z',
+      rounds: [{
+        roundIndex: 0,
+        biddingTeam: 'us',
+        bidAmount: 120,
+        usPoints: 120,
+        demPoints: 60,
+        runningTotals: { us: 510, dem: 390 },
+      }],
+    },
+    {
+      usPlayers: ['Eve', 'Frank'],
+      demPlayers: ['Grace', 'Hank'],
+      usTeamName: 'Eve & Frank',
+      demTeamName: 'Grace & Hank',
+      winner: 'dem',
+      finalScore: { us: 400, dem: 520 },
+      timestamp: '2026-02-01T12:00:00.000Z',
+      rounds: [{
+        roundIndex: 0,
+        biddingTeam: 'dem',
+        bidAmount: 130,
+        usPoints: 50,
+        demPoints: 130,
+        runningTotals: { us: 400, dem: 520 },
+      }],
+    },
+  ]);
+  setLocalStorage('freezerGames', [{
+    usPlayers: ['Ivy', 'Jack'],
+    demPlayers: ['Kara', 'Liam'],
+    timestamp: '2026-03-01T12:00:00.000Z',
+    rounds: [],
+    startingTotals: { us: 100, dem: 80 },
+  }]);
+
+  const context = getVoiceScoreAppContext();
+  assert.equal(context.library.completed[0].position, 1);
+  assert.equal(context.library.completed[0].index, 1);
+  assert.deepEqual(context.library.completed[0].score, { us: 400, dem: 520 });
+  assert.equal(context.library.freezer[0].index, 0);
+  assert.ok(context.statistics.players.some(player => player.key === 'alice' && player.name === 'Alice'));
+  assert.ok(context.statistics.teams.some(team => team.key === 'alice||bob'));
+  assert.ok(Array.isArray(context.ui.openPanels));
+  assert.equal(context.settings.experimentalFeatures, false);
+});
+
+test('local voice planner covers history, version, current stats, teams, and visible game positions', () => {
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'change round 2 us total to 305',
+      context: {},
+    }).actions,
+    [{ type: 'editRound', roundNumber: 2, usTotal: 305 }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'open version',
+      context: {},
+    }).actions,
+    [{ type: 'openModal', target: 'version' }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'show player stats by misdeals',
+      context: {},
+    }).actions,
+    [{ type: 'setStatsControls', statsView: 'players', statsMetric: 'misdeals' }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'turn on experimental features',
+      context: {},
+    }).actions,
+    [{ type: 'setSetting', key: 'experimentalFeatures', value: true }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'set teams Alice and Bob versus Carol and Dan',
+      context: {},
+    }).actions,
+    [{ type: 'setTeams', usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'] }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: 'open first saved game',
+      context: {
+        library: {
+          completed: [{ position: 1, index: 7 }],
+        },
+      },
+    }).actions,
+    [{ type: 'gameLibraryAction', gameAction: 'view', gameType: 'completed', index: 7 }],
+  );
 });
 
 test('voice score recording mime type safely falls back without MediaRecorder', () => {
@@ -969,17 +1090,40 @@ test('voice score recording mime type safely falls back without MediaRecorder', 
 test('voice score control is wired through delegated initialization', () => {
   const voiceSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-scoring.js'), 'utf8');
   const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
+  const cssSource = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
 
   assert.match(voiceSource, /data-voice-score-entry="true"/);
+  assert.match(voiceSource, /state\.gameOver \|\| !isExperimentalFeaturesEnabled\(\)/);
+  assert.match(voiceSource, /if \(!isExperimentalFeaturesEnabled\(\)\) return false;/);
+  assert.match(voiceSource, /class="voice-score-button\$\{activeClass\}"/);
+  assert.doesNotMatch(voiceSource, /<span>\$\{buttonText\}<\/span>/);
   assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
   assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
+  assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*top: calc\(3\.75rem \+ var\(--safe-area-inset-top-effective\)\);[^}]*right: 1rem;/s);
+  assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 2\.25rem;[^}]*height: 2\.25rem;/s);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
+  assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);
   assert.match(initSource, /startVoiceScoreEntry/);
 });
 
-test('voice transcription endpoint reports missing OpenAI configuration', async () => {
-  const originalApiKey = process.env.OPENAI_API_KEY;
+test('experimental features are disabled by default and gate voice controls', () => {
+  resetState();
+  updateState({ gameOver: false });
+
+  assert.equal(isExperimentalFeaturesEnabled(), false);
+  assert.equal(renderVoiceScoreControls(), '');
+
+  setLocalStorage('experimentalFeaturesEnabled', true);
+
+  assert.equal(isExperimentalFeaturesEnabled(), true);
+  assert.match(renderVoiceScoreControls(), /data-voice-score-entry="true"/);
+});
+
+test('voice transcription endpoint reports missing provider configuration', async () => {
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
   delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
 
   const request = createMockRequest({
     body: JSON.stringify({
@@ -992,15 +1136,20 @@ test('voice transcription endpoint reports missing OpenAI configuration', async 
   try {
     await voiceScoreTranscribeHandler(request, response);
   } finally {
-    if (originalApiKey === undefined) {
+    if (originalOpenAiApiKey === undefined) {
       delete process.env.OPENAI_API_KEY;
     } else {
-      process.env.OPENAI_API_KEY = originalApiKey;
+      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
+    if (originalOpenRouterApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
     }
   }
 
   assert.equal(response.statusCode, 500);
-  assert.deepEqual(response.body, { error: 'Voice transcription is unavailable.' });
+  assert.deepEqual(response.body, { error: 'Voice transcription is temporarily unavailable. Please try again.' });
   assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
 });
 
@@ -1056,6 +1205,121 @@ test('voice transcription endpoint sends recorded audio to OpenAI', async () => 
   assert.deepEqual(response.body, { text: 'Dem bid 125 and made 145' });
 });
 
+test('voice transcription endpoint falls back to OpenRouter', async () => {
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
+  const originalModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+
+  delete process.env.OPENAI_API_KEY;
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_TRANSCRIPTION_MODEL = 'test-openrouter-transcribe-model';
+  global.fetch = async (url, options) => {
+    fetchCalled = true;
+    assert.equal(url, 'https://openrouter.ai/api/v1/audio/transcriptions');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
+    assert.equal(options.headers['X-OpenRouter-Title'], 'Rook Score');
+    assert.equal(options.body.get('model'), 'test-openrouter-transcribe-model');
+    assert.equal(options.body.get('response_format'), 'json');
+    assert.equal(options.body.get('file').name, 'rook-voice-score.webm');
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ text: 'Open settings' }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      audioBase64: Buffer.from('fake-audio').toString('base64'),
+      mimeType: 'audio/webm',
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreTranscribeHandler(request, response);
+  } finally {
+    if (originalOpenAiApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
+    if (originalOpenRouterApiKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
+    }
+    if (originalModel === undefined) {
+      delete process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+    } else {
+      process.env.OPENROUTER_TRANSCRIPTION_MODEL = originalModel;
+    }
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(fetchCalled, true);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { text: 'Open settings' });
+});
+
+test('voice transcription endpoint retries a provider error with a fallback model', async () => {
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
+  const originalModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+  const originalFallbackModels = process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS;
+  const originalFetch = global.fetch;
+  const requestedModels = [];
+
+  delete process.env.OPENAI_API_KEY;
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_TRANSCRIPTION_MODEL = 'primary-transcribe-model';
+  process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS = 'backup-transcribe-model';
+  global.fetch = async (_url, options) => {
+    requestedModels.push(options.body.get('model'));
+    if (requestedModels.length === 1) {
+      return {
+        ok: false,
+        status: 400,
+        text: async () => JSON.stringify({ error: { message: 'Provider returned error' } }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ text: 'Open statistics' }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      audioBase64: Buffer.from('fake-audio').toString('base64'),
+      mimeType: 'audio/webm',
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreTranscribeHandler(request, response);
+  } finally {
+    if (originalOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    if (originalOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
+    if (originalModel === undefined) delete process.env.OPENROUTER_TRANSCRIPTION_MODEL;
+    else process.env.OPENROUTER_TRANSCRIPTION_MODEL = originalModel;
+    if (originalFallbackModels === undefined) delete process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS;
+    else process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS = originalFallbackModels;
+    global.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestedModels, ['primary-transcribe-model', 'backup-transcribe-model']);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { text: 'Open statistics' });
+});
+
 test('voice transcription endpoint handles preflight requests', async () => {
   const request = createMockRequest({
     method: 'OPTIONS',
@@ -1101,7 +1365,7 @@ test('voice command endpoint reports missing OpenRouter configuration', async ()
   }
 
   assert.equal(response.statusCode, 500);
-  assert.deepEqual(response.body, { error: 'Voice command planning is unavailable.' });
+  assert.deepEqual(response.body, { error: 'Voice command planning is temporarily unavailable. Please try again.' });
   assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
 });
 
@@ -1148,11 +1412,13 @@ test('voice command endpoint uses local fallback without OpenRouter in local dev
 test('voice command endpoint requests structured OpenRouter action plans', async () => {
   const originalApiKey = process.env.OPENROUTER_API_KEY;
   const originalModel = process.env.OPENROUTER_MODEL;
+  const originalFallbackModels = process.env.OPENROUTER_FALLBACK_MODELS;
   const originalFetch = global.fetch;
   let fetchCalled = false;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   process.env.OPENROUTER_MODEL = 'google/gemini-3-flash-preview';
+  process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
   global.fetch = async (url, options) => {
     fetchCalled = true;
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
@@ -1160,8 +1426,10 @@ test('voice command endpoint requests structured OpenRouter action plans', async
     assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'google/gemini-3-flash-preview');
+    assert.deepEqual(body.models, ['google/gemini-2.5-flash']);
     assert.deepEqual(body.reasoning, { effort: 'low' });
-    assert.equal(body.response_format.type, 'json_object');
+    assert.deepEqual(body.response_format, { type: 'json_object' });
+    assert.deepEqual(body.provider, { require_parameters: true });
     assert.equal(body.messages[0].role, 'system');
     assert.match(body.messages[0].content, /gameLibraryAction/);
     assert.match(body.messages[0].content, /setBidPresets/);
@@ -1207,6 +1475,11 @@ test('voice command endpoint requests structured OpenRouter action plans', async
     } else {
       process.env.OPENROUTER_MODEL = originalModel;
     }
+    if (originalFallbackModels === undefined) {
+      delete process.env.OPENROUTER_FALLBACK_MODELS;
+    } else {
+      process.env.OPENROUTER_FALLBACK_MODELS = originalFallbackModels;
+    }
     global.fetch = originalFetch;
   }
 
@@ -1236,8 +1509,8 @@ test('voice command endpoint retries transient OpenRouter failures', async () =>
     if (fetchCalls === 1) {
       return {
         ok: false,
-        status: 502,
-        text: async () => JSON.stringify({ error: { message: 'Bad gateway' } }),
+        status: 400,
+        text: async () => JSON.stringify({ error: { message: 'Provider returned error' } }),
       };
     }
     return {
@@ -1286,6 +1559,52 @@ test('voice command endpoint retries transient OpenRouter failures', async () =>
   assert.equal(fetchCalls, 2);
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'settings' }]);
+});
+
+test('voice command endpoint does not expose provider error text', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalAttempts = process.env.OPENROUTER_MAX_ATTEMPTS;
+  const originalFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+  const originalFetch = global.fetch;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_MAX_ATTEMPTS = '1';
+  process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = 'false';
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      error: {
+        code: 400,
+        message: 'Provider returned error',
+      },
+    }),
+  });
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: 'perform an unknown provider-only action',
+      context: {},
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    if (originalAttempts === undefined) delete process.env.OPENROUTER_MAX_ATTEMPTS;
+    else process.env.OPENROUTER_MAX_ATTEMPTS = originalAttempts;
+    if (originalFallback === undefined) delete process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
+    else process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK = originalFallback;
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(response.body, {
+    error: 'Voice command planning is temporarily unavailable. Please try again.',
+  });
 });
 
 test('voice command endpoint uses local fallback for local OpenRouter failures', async () => {
@@ -2254,7 +2573,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.24";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.27";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -2357,7 +2676,9 @@ test('settings toggles use shared polished switch styling', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
 
-  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 3);
+  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 4);
+  assert.match(htmlSource, /id="experimentalFeaturesToggle"/);
+  assert.match(htmlSource, />Experimental Features<\/label>/);
   assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
   assert.match(css, /\.settings-switch\s*\{/);
   assert.match(css, /width:\s*3rem;/);

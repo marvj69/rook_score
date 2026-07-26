@@ -6,6 +6,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 const DEFAULT_OPENROUTER_MODEL = "google/gemini-3-flash-preview";
+const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -43,6 +44,7 @@ const ACTION_SCHEMA = {
             type: "string",
             enum: [
               "scoreRound",
+              "editRound",
               "undo",
               "redo",
               "misdeal",
@@ -88,10 +90,14 @@ const ACTION_SCHEMA = {
               "theme",
               "presets",
               "probability",
+              "version",
               "confirmation",
               "all",
             ],
           },
+          roundNumber: { type: "integer", minimum: 1 },
+          usTotal: { type: "number" },
+          demTotal: { type: "number" },
           dealers: {
             type: "array",
             minItems: 4,
@@ -119,6 +125,7 @@ const ACTION_SCHEMA = {
               "mustWinByBid",
               "misdealHandling",
               "proMode",
+              "experimentalFeatures",
               "tableTalkPenaltyType",
               "tableTalkPenaltyPoints",
             ],
@@ -150,7 +157,10 @@ const ACTION_SCHEMA = {
             items: { type: "number" },
           },
           statsView: { type: "string", enum: ["teams", "players"] },
-          statsMetric: { type: "string", enum: ["games", "timePlayed", "avgBid", "bidSuccessPct", "sandbagger", "360s"] },
+          statsMetric: {
+            type: "string",
+            enum: ["netPerGame", "bidMakePct", "setsForced", "comebacks", "closeWins", "perfect360s", "misdeals", "games"],
+          },
           statsSort: { type: "string", enum: ["recent", "most", "least"] },
           entityMode: { type: "string", enum: ["teams", "players"] },
           entityKey: { type: "string" },
@@ -161,6 +171,8 @@ const ACTION_SCHEMA = {
   },
   required: ["status", "summary", "message", "requiresConfirmation", "actions"],
 };
+
+const ACTION_TYPES = new Set(ACTION_SCHEMA.properties.actions.items.properties.type.enum);
 
 function getAllowedOrigins() {
   const configuredOrigins = (process.env.VOICE_SCORE_ALLOWED_ORIGINS || process.env.FIREBASE_CONFIG_ALLOWED_ORIGINS || "")
@@ -238,35 +250,38 @@ function buildSystemPrompt() {
     "Always choose the most likely app action for short voice transcripts.",
     "Prefer concrete app actions over explanation when the user's intent is clear.",
     "Use status=clarify when required values are missing or ambiguous.",
-    "Use requiresConfirmation/status=confirm for destructive actions such as new game, freeze game, save completed game, rematch without a dealer, or ambiguous score assumptions.",
+    "Use requiresConfirmation/status=confirm for destructive actions such as new game, freeze game, save completed game, rematch without a dealer, or ambiguous score assumptions. Game-library delete/resume actions already open the app's own confirmation, so do not add a second planner confirmation for them.",
     "Never invent card play, strategy, or hidden game state. Use only the provided context.",
     "If deterministicParserIntent.type is scoreRound, undo, or misdeal, convert it directly to the matching action unless the transcript contradicts it.",
     "If deterministicParserIntent.type is clarification, treat it only as a failed score-parser result. Do not repeat that clarification when the transcript clearly asks for a non-scoring app action.",
     "Scoring rules: scoreRound requires biddingTeam, bidAmount, points, enterBidderPoints. enterBidderPoints=true means points belong to the bidder; false means points belong to the non-bidding team.",
+    "Use editRound to correct saved round history. roundNumber is one-based; usTotal and demTotal are the cumulative scores shown after that round. Include only fields the user asked to change.",
     "For 'got set' without a score, plan scoreRound with points=180, enterBidderPoints=false, requiresConfirmation=true.",
     "For 'misdeal' or 'next dealer', use misdeal. For 'undo', use undo. For 'redo', use redo.",
-    "Available tool actions: scoreRound, undo, redo, misdeal, newGame, freezeGame, saveGame, openModal, closeModal, setDealerOrder, startPaperGame, setTeams, selectDealerPair, selectBid, setSetting, tableTalkPenalty, rematch, toggleMenu, authAction, confirmationAction, gameLibraryAction, setThemeColors, themeAction, setBidPresets, setStatsControls, noop.",
+    "Available tool actions: scoreRound, editRound, undo, redo, misdeal, newGame, freezeGame, saveGame, openModal, closeModal, setDealerOrder, startPaperGame, setTeams, selectDealerPair, selectBid, setSetting, tableTalkPenalty, rematch, toggleMenu, authAction, confirmationAction, gameLibraryAction, setThemeColors, themeAction, setBidPresets, setStatsControls, noop.",
+    "Actions execute sequentially. For compound requests, return the smallest ordered set of high-level actions, up to five. Do not emit redundant setup actions before a high-level action that already performs the outcome.",
     "Use toggleMenu with open=true or open=false for the hamburger menu.",
     "Use authAction with authAction='signIn', 'signOut', or 'toggle' for account controls.",
     "Use confirmationAction with confirmationChoice='confirm' or 'cancel' to answer the current confirmation dialog.",
-    "Use gameLibraryAction for saved/frozen games: switchTab/search/sort/view/delete/resume. Use gameType completed/freezer and zero-based index for view/delete/resume when needed.",
+    "Use gameLibraryAction for saved/frozen games: switchTab/search/sort/view/delete/resume. Use gameType completed/freezer and the exact zero-based storage index supplied in App context library entries. The position field is the user-facing game number.",
     "Use setThemeColors with usColor and/or demColor as #RRGGBB. Use themeAction randomize/reset/apply for theme modal controls.",
     "Use setBidPresets with presets array for quick bid buttons.",
-    "Use setStatsControls with statsView, statsMetric, statsSort, or entityMode/entityKey to control the statistics modal.",
+    "Use setStatsControls with statsView, statsMetric, statsSort, or entityMode/entityKey to control the statistics modal. Current metrics: netPerGame, bidMakePct, setsForced, comebacks, closeWins, perfect360s, misdeals, games.",
     "Examples:",
     "Transcript 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
     "Transcript 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
     "Transcript 'Dem bid 125 and made 145' => status execute, action {type:'scoreRound', biddingTeam:'dem', bidAmount:125, points:145, enterBidderPoints:true}.",
     "Transcript 'Us bid 130 and got set' => status confirm, requiresConfirmation true, action {type:'scoreRound', biddingTeam:'us', bidAmount:130, points:180, enterBidderPoints:false}.",
+    "Transcript 'change round 2 Us total to 305' => status execute, action {type:'editRound', roundNumber:2, usTotal:305}.",
     "Transcript 'set dealers Alice Bob Carol Dan' => status execute, action {type:'setDealerOrder', dealers:['Alice','Bob','Carol','Dan']}.",
     "Transcript 'turn on pro mode' => status execute, action {type:'setSetting', key:'proMode', value:true}.",
     "Transcript 'search saved games for Alice' => status execute, action {type:'gameLibraryAction', gameAction:'search', gameType:'completed', query:'Alice'}.",
     "Transcript 'show frozen games' => status execute, action {type:'gameLibraryAction', gameAction:'switchTab', tab:'freezer'}.",
     "Transcript 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
     "Transcript 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
-    "Transcript 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidSuccessPct'}.",
-    "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, confirmation, all.",
-    "Settings keys: mustWinByBid, misdealHandling, proMode, tableTalkPenaltyType, tableTalkPenaltyPoints.",
+    "Transcript 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidMakePct'}.",
+    "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, version, confirmation, all.",
+    "Settings keys: mustWinByBid, misdealHandling, proMode, experimentalFeatures, tableTalkPenaltyType, tableTalkPenaltyPoints.",
     "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
   ].join("\n");
 }
@@ -307,7 +322,11 @@ function extractJsonObject(text) {
 
 function normalizePlan(plan) {
   const normalized = plan && typeof plan === "object" ? plan : {};
-  const actions = Array.isArray(normalized.actions) ? normalized.actions.slice(0, 5) : [];
+  const actions = Array.isArray(normalized.actions)
+    ? normalized.actions
+        .filter(action => action && typeof action === "object" && ACTION_TYPES.has(action.type))
+        .slice(0, 5)
+    : [];
   const status = ["execute", "confirm", "clarify", "unsupported"].includes(normalized.status)
     ? normalized.status
     : actions.length
@@ -333,10 +352,25 @@ function getOpenRouterMaxAttempts() {
   return Math.max(1, Math.min(4, Math.round(configuredAttempts)));
 }
 
+function getOpenRouterFallbackModels(primaryModel) {
+  const configuredModels = String(process.env.OPENROUTER_FALLBACK_MODELS || "")
+    .split(",")
+    .map(model => model.trim())
+    .filter(Boolean);
+  return [...new Set([
+    ...(configuredModels.length ? configuredModels : DEFAULT_OPENROUTER_FALLBACK_MODELS),
+  ])]
+    .filter(model => model !== primaryModel)
+    .slice(0, 3);
+}
+
 function shouldRetryOpenRouterError(error, attempt, maxAttempts) {
   if (attempt >= maxAttempts) return false;
   const statusCode = Number(error?.statusCode) || 0;
-  return statusCode === 429 || statusCode >= 500;
+  return statusCode === 408
+    || statusCode === 429
+    || statusCode >= 500
+    || /provider returned error/i.test(String(error?.message || ""));
 }
 
 function shouldUseLocalCommandFallback() {
@@ -395,7 +429,8 @@ function getLocalToggleValue(text) {
 const LOCAL_MODAL_TARGETS = [
   { target: "savedGames", label: "saved games", patterns: [/\bsaved games?\b/, /\bgame library\b/, /\blibrary\b/] },
   { target: "settings", label: "settings", patterns: [/\bsettings?\b/, /\bpreferences?\b/] },
-  { target: "about", label: "about", patterns: [/\babout\b/, /\bversion\b/, /\binfo\b/] },
+  { target: "version", label: "version information", patterns: [/\bversion\b/, /\brelease notes?\b/] },
+  { target: "about", label: "about", patterns: [/\babout\b/, /\bapp info\b/] },
   { target: "statistics", label: "statistics", patterns: [/\bstatistics?\b/, /\bstats\b/] },
   { target: "dealerOrder", label: "dealer order", patterns: [/\bdealer order\b/, /\bdealers?\b/] },
   { target: "teamSelection", label: "team selection", patterns: [/\bteam selection\b/, /\bteams?\b/, /\bplayers?\b/] },
@@ -477,6 +512,15 @@ function buildLocalSettingPlan(transcript) {
     );
   }
 
+  if (/\bexperimental features?\b/.test(text) && toggleValue !== null) {
+    return createLocalPlan(
+      "execute",
+      toggleValue ? "Turn on experimental features" : "Turn off experimental features",
+      toggleValue ? "Experimental features will be turned on." : "Experimental features will be turned off.",
+      [{ type: "setSetting", key: "experimentalFeatures", value: toggleValue }],
+    );
+  }
+
   if (/\bmust win by bid\b/.test(text) && toggleValue !== null) {
     return createLocalPlan(
       "execute",
@@ -532,7 +576,38 @@ function extractNumberList(text) {
   return (String(text || "").match(/\b\d{1,4}\b/g) || []).map(Number);
 }
 
-function buildLocalExpandedControlPlan(transcript) {
+const LOCAL_GAME_ORDINALS = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+};
+
+function parseLocalGamePosition(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(LOCAL_GAME_ORDINALS, normalized)) {
+    return LOCAL_GAME_ORDINALS[normalized];
+  }
+  const numericMatch = normalized.match(/^(\d+)(?:st|nd|rd|th)?$/);
+  const numeric = numericMatch ? Number(numericMatch[1]) : NaN;
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+}
+
+function resolveContextGameIndex(context, gameType, position) {
+  const contextKey = gameType === "freezer" ? "freezer" : "completed";
+  const entries = Array.isArray(context?.library?.[contextKey]) ? context.library[contextKey] : [];
+  const entry = entries.find(candidate => Number(candidate?.position) === position) || entries[position - 1];
+  const contextIndex = Number(entry?.index);
+  return Number.isInteger(contextIndex) && contextIndex >= 0 ? contextIndex : position - 1;
+}
+
+function buildLocalExpandedControlPlan(transcript, context = {}) {
   const text = normalizeCommandText(transcript);
 
   if (/\b(?:open|show)\s+(?:the\s+)?menu\b/.test(text)) {
@@ -585,6 +660,26 @@ function buildLocalExpandedControlPlan(transcript) {
     return createLocalPlan("execute", "Sort games", "Sorting games.", [{ type: "gameLibraryAction", gameAction: "sort", sort }]);
   }
 
+  const libraryItemMatch = String(transcript || "").match(
+    /\b(view|open|delete|remove|resume|load)\s+(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+(?:(completed|saved|frozen|freezer)\s+)?game\b/i,
+  );
+  if (libraryItemMatch) {
+    const verb = libraryItemMatch[1].toLowerCase();
+    const position = parseLocalGamePosition(libraryItemMatch[2]);
+    const typeHint = String(libraryItemMatch[3] || "").toLowerCase();
+    const gameType = /frozen|freezer/.test(typeHint) || /resume|load/.test(verb) ? "freezer" : "completed";
+    const gameAction = /delete|remove/.test(verb) ? "delete"
+      : /resume|load/.test(verb) ? "resume"
+        : "view";
+    const index = resolveContextGameIndex(context, gameType, position);
+    return createLocalPlan(
+      "execute",
+      `${gameAction === "delete" ? "Delete" : gameAction === "resume" ? "Resume" : "View"} ${gameType} game ${position}`,
+      `${gameAction === "delete" ? "Opening delete confirmation for" : gameAction === "resume" ? "Opening resume confirmation for" : "Opening"} game ${position}.`,
+      [{ type: "gameLibraryAction", gameAction, gameType, index }],
+    );
+  }
+
   const presets = /\bpresets?\b/.test(text) ? extractNumberList(text) : [];
   if (presets.length) {
     return createLocalPlan(
@@ -607,11 +702,14 @@ function buildLocalExpandedControlPlan(transcript) {
     const action = { type: "setStatsControls" };
     if (/\bplayers?|individuals?\b/.test(text)) action.statsView = "players";
     if (/\bteams?\b/.test(text)) action.statsView = "teams";
-    if (/\btime\b/.test(text)) action.statsMetric = "timePlayed";
-    if (/\baverage bid|avg bid\b/.test(text)) action.statsMetric = "avgBid";
-    if (/\bbid (?:win|success)|success percentage|win percentage\b/.test(text)) action.statsMetric = "bidSuccessPct";
-    if (/\bsandbag\b/.test(text)) action.statsMetric = "sandbagger";
-    if (/\b360\b/.test(text)) action.statsMetric = "360s";
+    if (/\bnet(?: per game)?|margin|point differential\b/.test(text)) action.statsMetric = "netPerGame";
+    if (/\bbid (?:make|win|success)|success percentage|win percentage\b/.test(text)) action.statsMetric = "bidMakePct";
+    if (/\bsets? forced|forced sets?\b/.test(text)) action.statsMetric = "setsForced";
+    if (/\bcomebacks?\b/.test(text)) action.statsMetric = "comebacks";
+    if (/\bclose wins?\b/.test(text)) action.statsMetric = "closeWins";
+    if (/\b360s?|perfect 360s?\b/.test(text)) action.statsMetric = "perfect360s";
+    if (/\bmisdeals?\b/.test(text)) action.statsMetric = "misdeals";
+    if (/\bgames? played\b/.test(text)) action.statsMetric = "games";
     if (/\bleast|lowest\b/.test(text)) action.statsSort = "least";
     if (/\bmost|highest\b/.test(text)) action.statsSort = "most";
     if (/\brecent|newest\b/.test(text)) action.statsSort = "recent";
@@ -655,7 +753,7 @@ function buildLocalActionPlanFromIntent(localIntent) {
   return null;
 }
 
-function buildLocalActionPlanFromTranscript(transcript) {
+function buildLocalActionPlanFromTranscript(transcript, context = {}) {
   const text = normalizeCommandText(transcript);
   if (!text) return null;
 
@@ -699,6 +797,17 @@ function buildLocalActionPlanFromTranscript(transcript) {
     return createLocalPlan("execute", "Save current game", "Saving the current game.", [{ type: "saveGame" }]);
   }
 
+  const rematchDealerMatch = String(transcript || "").match(/\brematch\b.*?\b(?:with\s+)?(.+?)\s+(?:dealing|dealer)(?:\s+first)?\b/i);
+  if (rematchDealerMatch?.[1]?.trim()) {
+    const firstDealer = titleCaseName(rematchDealerMatch[1]);
+    return createLocalPlan(
+      "execute",
+      `Start a rematch with ${firstDealer} dealing first`,
+      `Starting a rematch with ${firstDealer} dealing first.`,
+      [{ type: "rematch", firstDealer }],
+    );
+  }
+
   if (/\brematch\b/.test(text)) {
     return createLocalPlan(
       "confirm",
@@ -709,6 +818,30 @@ function buildLocalActionPlanFromTranscript(transcript) {
     );
   }
 
+  const teamsMatch = String(transcript || "").match(/\bset\s+(?:the\s+)?teams?\s+(.+?)\s+(?:vs\.?|versus|against)\s+(.+)$/i);
+  if (teamsMatch) {
+    const parseTeam = value => String(value || "")
+      .split(/\s+and\s+/i)
+      .map(titleCaseName)
+      .filter(Boolean);
+    const usPlayers = parseTeam(teamsMatch[1]);
+    const demPlayers = parseTeam(teamsMatch[2]);
+    if (usPlayers.length === 2 && demPlayers.length === 2) {
+      return createLocalPlan(
+        "execute",
+        `Set teams to ${usPlayers.join(" and ")} versus ${demPlayers.join(" and ")}`,
+        "Updating both teams.",
+        [{ type: "setTeams", usPlayers, demPlayers }],
+      );
+    }
+  }
+
+  const settingPlan = buildLocalSettingPlan(transcript);
+  if (settingPlan) return settingPlan;
+
+  const expandedControlPlan = buildLocalExpandedControlPlan(transcript, context);
+  if (expandedControlPlan) return expandedControlPlan;
+
   const modalPlan = buildLocalModalPlan(transcript);
   if (modalPlan) return modalPlan;
 
@@ -718,11 +851,24 @@ function buildLocalActionPlanFromTranscript(transcript) {
   const paperGamePlan = buildLocalPaperGamePlan(transcript);
   if (paperGamePlan) return paperGamePlan;
 
-  const settingPlan = buildLocalSettingPlan(transcript);
-  if (settingPlan) return settingPlan;
-
-  const expandedControlPlan = buildLocalExpandedControlPlan(transcript);
-  if (expandedControlPlan) return expandedControlPlan;
+  const editRoundMatch = String(transcript || "").match(/\b(?:edit|change|fix|set)\s+round\s+(\d+)\b/i);
+  if (editRoundMatch) {
+    const action = { type: "editRound", roundNumber: Number(editRoundMatch[1]) };
+    const bidMatch = String(transcript || "").match(/\bbid(?:\s+amount)?\s*(?:to|is|=)?\s*(-?\d+)\b/i);
+    const usMatch = String(transcript || "").match(/\b(?:us|our)\s+(?:score|total)\s*(?:to|is|=)?\s*(-?\d+)\b/i);
+    const demMatch = String(transcript || "").match(/\b(?:dem|their)\s+(?:score|total)\s*(?:to|is|=)?\s*(-?\d+)\b/i);
+    if (bidMatch) action.bidAmount = Number(bidMatch[1]);
+    if (usMatch) action.usTotal = Number(usMatch[1]);
+    if (demMatch) action.demTotal = Number(demMatch[1]);
+    if (bidMatch || usMatch || demMatch) {
+      return createLocalPlan(
+        "execute",
+        `Edit round ${action.roundNumber}`,
+        `Updating round ${action.roundNumber}.`,
+        [action],
+      );
+    }
+  }
 
   if (/\b(?:pair one three|pair 1 3|pair 13|one three)\b/.test(text)) {
     return createLocalPlan("execute", "Select dealer pair one-three", "Selecting dealer pair one-three.", [{ type: "selectDealerPair", pair: "13" }]);
@@ -757,7 +903,7 @@ function buildLocalActionPlanFromTranscript(transcript) {
 
 function buildLocalActionPlan(payload) {
   return buildLocalActionPlanFromIntent(payload.localIntent)
-    || buildLocalActionPlanFromTranscript(payload.transcript);
+    || buildLocalActionPlanFromTranscript(payload.transcript, payload.context);
 }
 
 function shouldReplaceProviderPlanWithLocalFallback(plan) {
@@ -768,6 +914,8 @@ function shouldReplaceProviderPlanWithLocalFallback(plan) {
 }
 
 async function fetchOpenRouterPlan(payload, apiKey) {
+  const primaryModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  const fallbackModels = getOpenRouterFallbackModels(primaryModel);
   let response;
   try {
     response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
@@ -779,7 +927,8 @@ async function fetchOpenRouterPlan(payload, apiKey) {
         "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE || "Rook Score",
       },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL,
+        model: primaryModel,
+        ...(fallbackModels.length ? { models: fallbackModels } : {}),
         messages: [
           { role: "system", content: buildSystemPrompt() },
           { role: "user", content: buildUserContent(payload) },
@@ -787,7 +936,11 @@ async function fetchOpenRouterPlan(payload, apiKey) {
         temperature: 0,
         max_tokens: 700,
         reasoning: { effort: DEFAULT_OPENROUTER_REASONING_EFFORT },
+        // Gemini rejects the complete action schema as too complex for constrained
+        // decoding. JSON object mode still guarantees parseable JSON, while
+        // normalizePlan enforces the server-owned action allowlist below.
         response_format: { type: "json_object" },
+        provider: { require_parameters: true },
       }),
     });
   } catch (error) {
@@ -808,6 +961,13 @@ async function fetchOpenRouterPlan(payload, apiKey) {
     const message = responseJson?.error?.message || `OpenRouter failed with HTTP ${response.status}.`;
     const error = new Error(message);
     error.statusCode = response.status;
+    error.isOpenRouterFailure = true;
+    throw error;
+  }
+
+  if (responseJson?.error) {
+    const error = new Error(responseJson.error.message || "OpenRouter returned an in-band provider error.");
+    error.statusCode = Number(responseJson.error.code) || 502;
     error.isOpenRouterFailure = true;
     throw error;
   }
@@ -852,7 +1012,7 @@ async function requestOpenRouterPlan(payload) {
 module.exports = async function handler(request, response) {
   setCorsHeaders(request, response);
   response.setHeader("Cache-Control", "no-store, max-age=0");
-  response.setHeader("X-Voice-Command-Revision", "local-fallback-v1");
+  response.setHeader("X-Voice-Command-Revision", "json-object-v3");
 
   if (request.method === "OPTIONS") {
     return response.status(204).end();
@@ -883,10 +1043,14 @@ module.exports = async function handler(request, response) {
       }
     }
 
-    const statusCode = Number(error.statusCode) || 500;
+    const statusCode = error.isOpenRouterFailure ? 502 : Number(error.statusCode) || 500;
     const safeMessage = statusCode >= 500
-      ? "Voice command planning is unavailable."
+      ? "Voice command planning is temporarily unavailable. Please try again."
       : error.message;
     return response.status(statusCode).json({ error: safeMessage });
   }
 };
+
+module.exports.ACTION_SCHEMA = ACTION_SCHEMA;
+module.exports.buildSystemPrompt = buildSystemPrompt;
+module.exports.buildLocalActionPlan = buildLocalActionPlan;

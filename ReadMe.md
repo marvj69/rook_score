@@ -7,7 +7,7 @@
 ## ✨ Features
 
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
-*   **Voice Score Entry:** Use the in-game microphone button to record common score commands such as made bids, set bids, misdeals, and undo.
+*   **Voice Score Entry:** Enable Experimental Features to show the in-game microphone button and record voice actions.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
 *   **Undo/Redo Functionality:** Easily correct mistakes in score entry.
@@ -150,7 +150,7 @@ Accessible via the hamburger icon (☰) in the top-left:
 *   **Resume Paper Game:** A guided modal to enter current scores, player names, and (optionally) dealers so you can keep playing digitally.
 *   **View Saved Game Details:** A read-only detailed view of a completed game's rounds and stats.
 *   **Team Selection:** Prompts for "Us" and "Dem" team names, allowing selection from previously used names or adding new ones. Dealer entry can auto-create the two teams.
-*   **Settings:** Configure game rules, Pro Mode, table-talk penalties, misdeal handling, theme colors, and bid presets.
+*   **Settings:** Configure game rules, Pro Mode, Experimental Features, table-talk penalties, misdeal handling, theme colors, and bid presets.
 *   **Theme Customization:** Pick custom primary (Us) and accent (Dem) colors.
 *   **Confirmation:** A generic modal to confirm actions like starting a new game, deleting items, etc.
 *   **Zero Points Helper:** Assists in correctly scoring when one team gets 0 points.
@@ -164,8 +164,9 @@ Access these via **Menu -> Settings**:
 *   **Game Rules:**
     *   **Must win by making bid:** If enabled, the bidding team must achieve their bid value to win the game, even if their total score is over 500 but they failed their last bid.
     *   **Misdeal Handling:** Show a Misdeal button to skip to the next dealer without changing scores.
-    *   **Appearance & Features:**
+*   **Appearance & Features:**
     *   **Pro Mode:** Toggle to enable/disable the win probability display during active games.
+    *   **Experimental Features:** Show preview controls such as the microphone-powered voice actions. This is off by default.
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
     *   **Table-Talk Penalties:** Choose whether penalties subtract the bid amount or a custom point value (multiples of 5).
@@ -209,15 +210,28 @@ FIREBASE_APP_ID
 OPENAI_API_KEY
 OPENAI_TRANSCRIPTION_MODEL
 OPENROUTER_API_KEY
+OPENROUTER_TRANSCRIPTION_MODEL
+OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS
 OPENROUTER_MODEL
+OPENROUTER_FALLBACK_MODELS
 OPENROUTER_SITE_URL
 OPENROUTER_APP_TITLE
 VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 ```
 
-`OPENAI_TRANSCRIPTION_MODEL` is optional; the voice scoring endpoint defaults to `gpt-4o-mini-transcribe`.
-`OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3-flash-preview` with low reasoning effort. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+Voice transcription prefers `OPENAI_API_KEY` when configured and otherwise automatically uses `OPENROUTER_API_KEY`. `OPENAI_TRANSCRIPTION_MODEL` defaults to `gpt-4o-mini-transcribe`, while `OPENROUTER_TRANSCRIPTION_MODEL` defaults to `openai/gpt-4o-mini-transcribe`. `OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS` is an optional comma-separated list and defaults to `openai/whisper-large-v3`.
+`OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3-flash-preview` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
+
+The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
+
+- Scoring and game state: score or edit a round, undo, redo, record a misdeal, start/reset, freeze, save, or rematch a game.
+- Setup and gameplay: set teams or dealer order, start from paper scores, choose the dealer pair or bid, change rules, and apply a table-talk penalty.
+- Navigation and account: open or close app panels, toggle the menu, sign in or out, confirm or cancel a visible prompt, and view/search/sort/delete/resume games.
+- Personalization and statistics: set theme colors, randomize/reset/apply the theme, edit bid presets, and change statistics view, metric, sort, or selected entity.
+- `noop` safely records that no action should be taken.
+
+The planner can return up to five ordered actions for one compound request. It cannot execute arbitrary JavaScript, access unrelated device data, grant microphone permission, or send the prefilled bug-report email; those remain explicit user actions.
 
 For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
 

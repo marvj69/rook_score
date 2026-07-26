@@ -10,6 +10,7 @@ const VERCEL_VOICE_SCORE_COMMAND_URL = "https://rook-score.vercel.app/api/voice-
 const VOICE_SCORE_GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
 const VOICE_SCORE_ACTION_TYPES = new Set([
   "scoreRound",
+  "editRound",
   "undo",
   "redo",
   "misdeal",
@@ -544,6 +545,46 @@ function getVoiceScoreCurrentDealer() {
   return state.dealers[totalDeals % state.dealers.length] || "";
 }
 
+function getVoiceScoreLibraryContext(storageKey) {
+  const games = getLocalStorage(storageKey, []);
+  const entries = Array.isArray(games)
+    ? games.map((game, index) => ({ game, index })).filter(entry => entry.game && typeof entry.game === "object")
+    : [];
+  const selectedSort = document.getElementById("gameSortSelect")?.value;
+  const sortedEntries = sortGamesBy(entries, ["newest", "oldest", "highest", "lowest"].includes(selectedSort) ? selectedSort : "newest");
+
+  return sortedEntries.slice(0, 20).map(({ game, index }, positionIndex) => {
+    const lastRound = Array.isArray(game.rounds) ? game.rounds[game.rounds.length - 1] : null;
+    return {
+      position: positionIndex + 1,
+      index,
+      us: getGameTeamDisplay(game, "us"),
+      dem: getGameTeamDisplay(game, "dem"),
+      score: sanitizeTotals(game.finalScore || lastRound?.runningTotals || game.startingTotals),
+      timestamp: typeof game.timestamp === "string" ? game.timestamp : null,
+      name: typeof game.name === "string" ? game.name.slice(0, 80) : "",
+    };
+  });
+}
+
+function getVoiceScoreStatisticsContext() {
+  const statistics = getStatistics();
+  const compactEntity = entity => ({
+    key: entity.key,
+    name: entity.name,
+  });
+  return {
+    teams: statistics.teamsData.slice(0, 30).map(compactEntity),
+    players: statistics.playersData.slice(0, 30).map(compactEntity),
+  };
+}
+
+function getVoiceScoreOpenPanels() {
+  return Array.from(document.querySelectorAll(".modal:not(.hidden)"))
+    .map(panel => panel.id)
+    .filter(Boolean);
+}
+
 function getVoiceScoreAppContext() {
   const totals = getCurrentTotals();
   const recentRounds = Array.isArray(state.rounds)
@@ -575,10 +616,21 @@ function getVoiceScoreAppContext() {
     misdealCount: state.misdealCount || 0,
     undoneRoundsCount: Array.isArray(state.undoneRounds) ? state.undoneRounds.length : 0,
     recentRounds,
+    bidPresets: presetBids.filter(bid => Number.isFinite(Number(bid))).map(Number),
+    library: {
+      completed: getVoiceScoreLibraryContext("savedGames"),
+      freezer: getVoiceScoreLibraryContext("freezerGames"),
+    },
+    statistics: getVoiceScoreStatisticsContext(),
+    ui: {
+      menuOpen: Boolean(document.getElementById("menu")?.classList.contains("show")),
+      openPanels: getVoiceScoreOpenPanels(),
+    },
     settings: {
       mustWinByBid: Boolean(getLocalStorage(MUST_WIN_BY_BID_KEY, false)),
       misdealHandling: Boolean(getLocalStorage(MISDEAL_HANDLING_KEY, false)),
       proMode: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
+      experimentalFeatures: isExperimentalFeaturesEnabled(),
       tableTalkPenaltyType: getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints"),
       tableTalkPenaltyPoints: Number(getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180")) || 180,
     },
@@ -638,6 +690,7 @@ function getVoiceScoreModalHandlers(target) {
     theme: { open: () => openThemeModal(null), close: () => closeThemeModal(null) },
     presets: { open: openPresetEditorModal, close: closePresetEditorModal },
     probability: { open: openProbabilityModal, close: closeProbabilityModal },
+    version: { open: showVersionNum, close: closeVersionInfoModal },
     confirmation: { open: () => {}, close: closeConfirmationModal },
   }[target] || null;
 }
@@ -655,8 +708,14 @@ function closeVoiceScoreModalTarget(target) {
       () => closeThemeModal(null),
       closePresetEditorModal,
       closeProbabilityModal,
+      closeVersionInfoModal,
       closeConfirmationModal,
       closeTableTalkModal,
+      closeEntityStatisticsModal,
+      closeDealerPairSelectionModal,
+      () => closeRematchDealerModal(false),
+      () => closeModal("viewSavedGameModal"),
+      () => closeModal("zeroPointsModal"),
     ].forEach(closeHandler => {
       try {
         closeHandler();
@@ -725,6 +784,11 @@ function applyVoiceScoreSetting(action) {
     showSaveIndicator("Settings Saved");
     return isPro ? "Pro mode is on." : "Pro mode is off.";
   }
+  if (key === "experimentalFeatures") {
+    const isEnabled = Boolean(value);
+    toggleExperimentalFeatures({ checked: isEnabled });
+    return isEnabled ? "Experimental features are on." : "Experimental features are off.";
+  }
   if (key === "tableTalkPenaltyType") {
     const penaltyType = value === "loseBid" ? "loseBid" : "setPoints";
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltyType);
@@ -770,14 +834,53 @@ function applyVoiceScoreStartPaperGame(action) {
 function applyVoiceScoreSetTeams(action) {
   const usPlayers = ensurePlayersArray(action.usPlayers || state.usPlayers);
   const demPlayers = ensurePlayersArray(action.demPlayers || state.demPlayers);
+  if (usPlayers.some(player => !player) || demPlayers.some(player => !player)) {
+    throw new Error("Say two players for each team.");
+  }
+  const allPlayers = [...usPlayers, ...demPlayers];
+  if (new Set(allPlayers.map(player => player.toLowerCase())).size !== 4) {
+    throw new Error("Each player needs a different name.");
+  }
+  if (buildTeamKey(usPlayers) === buildTeamKey(demPlayers)) {
+    throw new Error("Choose two different teams.");
+  }
+  const usTeamName = deriveTeamDisplay(usPlayers, "Us");
+  const demTeamName = deriveTeamDisplay(demPlayers, "Dem");
   updateState({
     usPlayers,
     demPlayers,
-    usTeamName: deriveTeamDisplay(usPlayers, state.usTeamName || "Us"),
-    demTeamName: deriveTeamDisplay(demPlayers, state.demTeamName || "Dem"),
+    usTeamName,
+    demTeamName,
   });
+  addTeamIfNotExists(usPlayers, usTeamName);
+  addTeamIfNotExists(demPlayers, demTeamName);
   saveCurrentGameState();
+  closeTeamSelectionModal();
   return "Teams updated.";
+}
+
+function applyVoiceScoreEditRound(action) {
+  const roundNumber = Math.trunc(Number(action.roundNumber));
+  const rounds = Array.isArray(state.rounds) ? state.rounds : [];
+  if (!Number.isInteger(roundNumber) || roundNumber < 1 || roundNumber > rounds.length) {
+    throw new Error(`Choose a round from 1 to ${rounds.length || 1}.`);
+  }
+
+  const edits = [];
+  if (action.bidAmount !== undefined) edits.push(["bid", Number(action.bidAmount)]);
+  if (action.usTotal !== undefined) edits.push(["us", Number(action.usTotal)]);
+  if (action.demTotal !== undefined) edits.push(["dem", Number(action.demTotal)]);
+  if (!edits.length || edits.some(([, value]) => !Number.isFinite(value))) {
+    throw new Error("Say the bid or cumulative team total to change.");
+  }
+
+  updateState({ error: "" });
+  for (const [field, value] of edits) {
+    commitHistoryEdit(roundNumber - 1, field, value);
+    if (state.error) throw new Error(state.error);
+  }
+  showSaveIndicator(`Round ${roundNumber} updated`);
+  return `Round ${roundNumber} updated.`;
 }
 
 function applyVoiceScoreToggleMenu(action) {
@@ -909,10 +1012,14 @@ function applyVoiceScoreBidPresets(action) {
 }
 
 function applyVoiceScoreStatsControls(action) {
+  const metricAliases = {
+    bidSuccessPct: "bidMakePct",
+    "360s": "perfect360s",
+  };
   openStatisticsModal();
   setStatisticsControls({
     view: action.statsView,
-    metric: action.statsMetric,
+    metric: metricAliases[action.statsMetric] || action.statsMetric,
     sort: action.statsSort,
     entityMode: action.entityMode,
     entityKey: action.entityKey,
@@ -939,6 +1046,8 @@ async function executeVoiceScoreAction(action, options = {}) {
     showSaveIndicator("Voice score recorded");
     return "Voice score recorded.";
   }
+
+  if (action.type === "editRound") return applyVoiceScoreEditRound(action);
 
   if (action.type === "undo") {
     if (!state.rounds.length) throw new Error("No hand to undo.");
@@ -1003,7 +1112,7 @@ async function executeVoiceScoreAction(action, options = {}) {
 
   if (action.type === "setDealerOrder") {
     const dealers = sanitizeVoiceScoreDealers(action.dealers);
-    updateState({ dealers, misdealCount: 0 });
+    updateState({ dealers, misdealCount: 0, misdealDealers: [] });
     saveCurrentGameState();
     showSaveIndicator("Dealer order saved");
     return `Dealer order set: ${dealers.join(", ")}.`;
@@ -1060,6 +1169,10 @@ async function executeVoiceScoreAction(action, options = {}) {
   throw new Error("That voice action is not supported.");
 }
 
+function getVoiceScoreActionTypes() {
+  return [...VOICE_SCORE_ACTION_TYPES];
+}
+
 async function executeVoiceScorePlanActions(plan, options = {}) {
   const messages = [];
   for (const action of plan.actions) {
@@ -1081,6 +1194,35 @@ function clearVoiceScoreRecordingTimer() {
     clearTimeout(voiceScoreRecordingTimer);
     voiceScoreRecordingTimer = null;
   }
+}
+
+function cancelVoiceScoreEntry() {
+  clearVoiceScoreRecordingTimer();
+
+  if (voiceScoreRecognition) {
+    try {
+      voiceScoreRecognition.abort();
+    } catch (_) {}
+    voiceScoreRecognition = null;
+  }
+
+  if (voiceScoreRecorder) {
+    const recorder = voiceScoreRecorder;
+    recorder.ondataavailable = null;
+    recorder.onerror = null;
+    recorder.onstop = null;
+    try {
+      if (recorder.state === "recording") recorder.stop();
+    } catch (_) {}
+    voiceScoreRecorder = null;
+  }
+
+  stopVoiceScoreRecorderStream();
+  voiceScoreListening = false;
+  voiceScoreMode = "";
+  voiceScoreStatus = "";
+  voiceScoreStatusTone = "info";
+  scheduleRender();
 }
 
 function blobToVoiceScoreBase64(blob) {
@@ -1195,29 +1337,27 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
 }
 
 function renderVoiceScoreControls() {
-  if (state.gameOver) return "";
+  if (state.gameOver || !isExperimentalFeaturesEnabled()) return "";
   const toneClass = voiceScoreStatusTone === "error"
     ? "text-red-200"
     : voiceScoreStatusTone === "success"
       ? "text-green-200"
       : "text-blue-100";
   const activeClass = voiceScoreListening
-    ? "bg-red-600 hover:bg-red-700 focus:ring-red-400"
-    : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-400";
-  const buttonText = voiceScoreListening ? "Stop" : "Voice";
+    ? " voice-score-button--active"
+    : "";
   const buttonLabel = voiceScoreListening ? "Stop voice score entry" : "Start voice score entry";
   return `
-    <div class="mt-2 flex flex-col items-center gap-1">
+    <div class="voice-score-control">
       <button type="button"
         data-voice-score-entry="true"
-        class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-white shadow-sm transition focus:outline-none focus:ring-2 ${activeClass} threed"
+        class="voice-score-button${activeClass}"
         aria-pressed="${voiceScoreListening}"
         aria-label="${buttonLabel}"
         title="${buttonLabel}">
         ${Icons.Mic}
-        <span>${buttonText}</span>
       </button>
-      ${voiceScoreStatus ? `<p class="max-w-xs text-center text-xs font-medium ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
+      ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
     </div>`;
 }
 
@@ -1361,6 +1501,8 @@ function applyVoiceScoreIntent(intent) {
 }
 
 function startVoiceScoreEntry() {
+  if (!isExperimentalFeaturesEnabled()) return false;
+
   if (voiceScoreListening && voiceScoreRecognition) {
     voiceScoreRecognition.abort();
     return;

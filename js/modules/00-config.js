@@ -8,6 +8,7 @@ const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
 const ACTIVE_GAME_KEY = "activeGameState";
 const PRO_MODE_KEY = "proModeEnabled";
+const EXPERIMENTAL_FEATURES_KEY = "experimentalFeaturesEnabled";
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
 const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";

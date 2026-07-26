@@ -18,6 +18,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   initializeVoiceScoreControls();
 
+  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
+  if (experimentalFeaturesToggle) {
+    experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
+    experimentalFeaturesToggle.addEventListener("change", event => toggleExperimentalFeatures(event.target));
+  }
+
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
   if (proModeToggleModal) {
@@ -303,7 +309,10 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreTranscriptionUrl,
     getVoiceScoreCommandUrl,
     getVoiceScoreRecordingMimeType,
+    isExperimentalFeaturesEnabled,
+    renderVoiceScoreControls,
     getVoiceScoreAppContext,
+    getVoiceScoreActionTypes,
     normalizeVoiceScorePlan,
     getOrderedPlayerSuggestions,
     getFilteredPlayerSuggestions,

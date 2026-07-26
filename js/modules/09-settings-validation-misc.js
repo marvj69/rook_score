@@ -8,6 +8,11 @@ function saveSettings() {
   const misdealToggle = document.getElementById("misdealHandlingToggle");
   if (misdealToggle) setLocalStorage(MISDEAL_HANDLING_KEY, misdealToggle.checked);
 
+  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
+  if (experimentalFeaturesToggle) {
+    setLocalStorage(EXPERIMENTAL_FEATURES_KEY, experimentalFeaturesToggle.checked);
+  }
+
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
 
@@ -41,6 +46,27 @@ function toggleProMode(checkbox) {
   updateProModeUI(isPro);
   saveCurrentGameState(); // Save state with new pro mode setting
   emitRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
+}
+
+function isExperimentalFeaturesEnabled() {
+  return Boolean(getLocalStorage(EXPERIMENTAL_FEATURES_KEY, false));
+}
+
+function updateExperimentalFeaturesUI(isEnabled) {
+  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
+  if (experimentalFeaturesToggle) experimentalFeaturesToggle.checked = Boolean(isEnabled);
+}
+
+function toggleExperimentalFeatures(checkbox) {
+  const isEnabled = Boolean(checkbox?.checked);
+  setLocalStorage(EXPERIMENTAL_FEATURES_KEY, isEnabled);
+  updateExperimentalFeaturesUI(isEnabled);
+  if (!isEnabled && typeof cancelVoiceScoreEntry === "function") {
+    cancelVoiceScoreEntry();
+  } else {
+    scheduleRender();
+  }
+  showSaveIndicator(isEnabled ? "Experimental Features On" : "Experimental Features Off");
 }
 
 function handleTableTalkPenaltyChange() {

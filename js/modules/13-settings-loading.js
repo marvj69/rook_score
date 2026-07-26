@@ -10,6 +10,8 @@ function loadSettings() {
     misdealToggle.checked = !!getLocalStorage(MISDEAL_HANDLING_KEY, false);
   }
 
+  updateExperimentalFeaturesUI(isExperimentalFeaturesEnabled());
+
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
@@ -148,4 +150,3 @@ function performTeamPlayerMigration() {
     console.error('Team/player migration encountered an issue:', err);
   }
 }
-

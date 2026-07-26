@@ -7,6 +7,10 @@ const DEFAULT_ALLOWED_ORIGINS = [
 
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+const DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL = "openai/gpt-4o-mini-transcribe";
+const DEFAULT_OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS = ["openai/whisper-large-v3"];
+const OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions";
+const OPENROUTER_TRANSCRIPTIONS_URL = "https://openrouter.ai/api/v1/audio/transcriptions";
 const MIME_EXTENSION_MAP = {
   "audio/webm": "webm",
   "audio/mp4": "mp4",
@@ -102,25 +106,44 @@ function getAudioFilename(mimeType) {
   return `rook-voice-score.${extension}`;
 }
 
-async function transcribeAudio({ audioBuffer, mimeType }) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    const error = new Error("OpenAI transcription is not configured.");
-    error.statusCode = 500;
-    throw error;
-  }
-
+function createTranscriptionFormData({ audioBuffer, mimeType, model }) {
   const formData = new FormData();
   formData.append("file", new Blob([audioBuffer], { type: mimeType }), getAudioFilename(mimeType));
-  formData.append("model", process.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL);
+  formData.append("model", model);
   formData.append("response_format", "json");
+  return formData;
+}
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+function getOpenRouterTranscriptionModels() {
+  const primaryModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL || DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL;
+  const configuredFallbacks = String(process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS || "")
+    .split(",")
+    .map(model => model.trim())
+    .filter(Boolean);
+  return [...new Set([
+    primaryModel,
+    ...(configuredFallbacks.length ? configuredFallbacks : DEFAULT_OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS),
+  ])].slice(0, 4);
+}
+
+function shouldTryNextTranscriptionModel(error) {
+  const statusCode = Number(error?.statusCode) || 0;
+  return statusCode === 400 || statusCode === 408 || statusCode === 429 || statusCode >= 500;
+}
+
+async function requestTranscription({ audioBuffer, mimeType, apiKey, model, useOpenRouter }) {
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (useOpenRouter) {
+    headers["HTTP-Referer"] = process.env.OPENROUTER_SITE_URL || "https://rook-score.vercel.app";
+    headers["X-OpenRouter-Title"] = process.env.OPENROUTER_APP_TITLE || "Rook Score";
+  }
+
+  const response = await fetch(useOpenRouter ? OPENROUTER_TRANSCRIPTIONS_URL : OPENAI_TRANSCRIPTIONS_URL, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: formData,
+    headers,
+    body: createTranscriptionFormData({ audioBuffer, mimeType, model }),
   });
 
   const responseText = await response.text();
@@ -135,10 +158,49 @@ async function transcribeAudio({ audioBuffer, mimeType }) {
     const message = responseJson?.error?.message || `Transcription failed with HTTP ${response.status}.`;
     const error = new Error(message);
     error.statusCode = response.status;
+    error.isProviderFailure = true;
     throw error;
   }
 
   return String(responseJson.text || "").trim();
+}
+
+async function transcribeAudio({ audioBuffer, mimeType }) {
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  if (openAiApiKey) {
+    return requestTranscription({
+      audioBuffer,
+      mimeType,
+      apiKey: openAiApiKey,
+      model: process.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_TRANSCRIPTION_MODEL,
+      useOpenRouter: false,
+    });
+  }
+
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  if (!openRouterApiKey) {
+    const error = new Error("Voice transcription is not configured.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const models = getOpenRouterTranscriptionModels();
+  let lastError = null;
+  for (let index = 0; index < models.length; index += 1) {
+    try {
+      return await requestTranscription({
+        audioBuffer,
+        mimeType,
+        apiKey: openRouterApiKey,
+        model: models[index],
+        useOpenRouter: true,
+      });
+    } catch (error) {
+      lastError = error;
+      if (index === models.length - 1 || !shouldTryNextTranscriptionModel(error)) break;
+    }
+  }
+  throw lastError;
 }
 
 module.exports = async function handler(request, response) {
@@ -160,9 +222,9 @@ module.exports = async function handler(request, response) {
     const text = await transcribeAudio(audioPayload);
     return response.status(200).json({ text });
   } catch (error) {
-    const statusCode = Number(error.statusCode) || 500;
+    const statusCode = error.isProviderFailure ? 502 : Number(error.statusCode) || 500;
     const safeMessage = statusCode >= 500
-      ? "Voice transcription is unavailable."
+      ? "Voice transcription is temporarily unavailable. Please try again."
       : error.message;
     return response.status(statusCode).json({ error: safeMessage });
   }

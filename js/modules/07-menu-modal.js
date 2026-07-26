@@ -484,6 +484,10 @@ function openSettingsModal() {
   if (mustWinToggle) mustWinToggle.checked = !!getLocalStorage(MUST_WIN_BY_BID_KEY, false);
   const proToggleModal = document.getElementById("proModeToggleModal");
   if (proToggleModal) proToggleModal.checked = !!getLocalStorage(PRO_MODE_KEY, false);
+  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
+  if (experimentalFeaturesToggle) {
+    experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
+  }
   document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
 
   // Load all settings using the common function
