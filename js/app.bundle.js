@@ -3780,6 +3780,7 @@ function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen ga
 
 // --- Voice Score Entry ---
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;
+const VOICE_SCORE_PERMISSION_NOTICE_DELAY_MS = 300;
 const VOICE_SCORE_RECORDING_MAX_MS = 6500;
 const VOICE_SCORE_AUDIO_BITS_PER_SECOND = 32000;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
@@ -3822,6 +3823,7 @@ let voiceScoreMode = "";
 let voiceScoreStatus = "";
 let voiceScoreStatusTone = "info";
 let voiceScoreStatusTimer = null;
+let voiceScorePermissionNoticeTimer = null;
 let voiceScoreRecordingTimer = null;
 let voiceScoreConversation = [];
 let voiceScoreOperationId = 0;
@@ -5141,10 +5143,28 @@ function clearVoiceScoreRecordingTimer() {
   }
 }
 
+function clearVoiceScorePermissionNoticeTimer() {
+  if (voiceScorePermissionNoticeTimer) {
+    clearTimeout(voiceScorePermissionNoticeTimer);
+    voiceScorePermissionNoticeTimer = null;
+  }
+}
+
+function scheduleVoiceScorePermissionNotice(operationId) {
+  clearVoiceScorePermissionNoticeTimer();
+  voiceScorePermissionNoticeTimer = setTimeout(() => {
+    voiceScorePermissionNoticeTimer = null;
+    if (operationId === voiceScoreOperationId && voiceScoreMode === "starting") {
+      setVoiceScoreStatus("Requesting microphone permission...", "info", false);
+    }
+  }, VOICE_SCORE_PERMISSION_NOTICE_DELAY_MS);
+}
+
 function cancelVoiceScoreEntry() {
   voiceScoreOperationId += 1;
   voiceScoreHeldPointerId = null;
   voiceScoreHeldKey = "";
+  clearVoiceScorePermissionNoticeTimer();
   clearVoiceScoreRecordingTimer();
   if (voiceScoreStatusTimer) {
     clearTimeout(voiceScoreStatusTimer);
@@ -5219,9 +5239,11 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
   let requestedStream = null;
 
   try {
-    setVoiceScoreStatus("Requesting microphone permission...", "info", false);
+    setVoiceScoreStatus("", "info", false);
+    scheduleVoiceScorePermissionNotice(operationId);
     const stream = await navigator.mediaDevices.getUserMedia(getVoiceScoreAudioConstraints());
     requestedStream = stream;
+    clearVoiceScorePermissionNoticeTimer();
     if (operationId !== voiceScoreOperationId || !isExperimentalFeaturesEnabled()) {
       stopVoiceScoreRecorderStream(stream);
       return false;
@@ -5280,6 +5302,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
     refreshVoiceScoreControls();
     return true;
   } catch (error) {
+    clearVoiceScorePermissionNoticeTimer();
     if (operationId !== voiceScoreOperationId) {
       stopVoiceScoreRecorderStream(requestedStream);
       return false;

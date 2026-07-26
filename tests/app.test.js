@@ -1416,6 +1416,71 @@ test('rapid taps cannot open overlapping microphone streams while permission is 
   }
 });
 
+test('voice entry defers the permission notice so approved microphones start without a flash', async () => {
+  const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const testNavigator = window.navigator;
+  const originalMediaDevices = testNavigator.mediaDevices;
+  const originalMediaRecorder = window.MediaRecorder;
+  let resolveStream;
+
+  class FakeMediaRecorder {
+    constructor() {
+      this.mimeType = 'audio/mp4';
+      this.state = 'inactive';
+    }
+    start() {
+      this.state = 'recording';
+    }
+    stop() {
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: testNavigator,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    navigator.mediaDevices = {
+      getUserMedia: () => new Promise(resolve => {
+        resolveStream = resolve;
+      }),
+    };
+    window.MediaRecorder = FakeMediaRecorder;
+    setLocalStorage('experimentalFeaturesEnabled', true);
+    updateState({ gameOver: false });
+    cancelVoiceScoreEntry();
+
+    const startPromise = startVoiceScoreEntry();
+    assert.doesNotMatch(renderVoiceScoreControls(), /Requesting microphone permission/);
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.match(renderVoiceScoreControls(), /Requesting microphone permission/);
+
+    resolveStream({
+      getTracks: () => [{ stop() {} }],
+    });
+    assert.equal(await startPromise, true);
+    assert.match(renderVoiceScoreControls(), /Listening\.\.\. release to send\./);
+  } finally {
+    cancelVoiceScoreEntry();
+    if (originalMediaDevices === undefined) {
+      delete navigator.mediaDevices;
+    } else {
+      navigator.mediaDevices = originalMediaDevices;
+    }
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+    Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
+  }
+});
+
 test('releasing voice entry stops the active recording', async () => {
   const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const testNavigator = window.navigator;
@@ -3067,7 +3132,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.33";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.34";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
