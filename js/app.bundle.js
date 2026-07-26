@@ -3782,6 +3782,7 @@ function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen ga
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;
 const VOICE_SCORE_PERMISSION_NOTICE_DELAY_MS = 300;
 const VOICE_SCORE_RECORDING_MAX_MS = 6500;
+const VOICE_SCORE_STREAM_IDLE_TIMEOUT_MS = 60000;
 const VOICE_SCORE_AUDIO_BITS_PER_SECOND = 32000;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
 const SAME_ORIGIN_VOICE_SCORE_COMMAND_URL = "/api/voice-score-command";
@@ -3825,6 +3826,7 @@ let voiceScoreStatusTone = "info";
 let voiceScoreStatusTimer = null;
 let voiceScorePermissionNoticeTimer = null;
 let voiceScoreRecordingTimer = null;
+let voiceScoreStreamIdleTimer = null;
 let voiceScoreConversation = [];
 let voiceScoreOperationId = 0;
 let voiceScoreRequestController = null;
@@ -5130,10 +5132,62 @@ async function executeVoiceScorePlanActions(plan, options = {}) {
 }
 
 function stopVoiceScoreRecorderStream(stream = voiceScoreRecorderStream) {
+  if (stream === voiceScoreRecorderStream && voiceScoreStreamIdleTimer) {
+    clearTimeout(voiceScoreStreamIdleTimer);
+    voiceScoreStreamIdleTimer = null;
+  }
   if (stream && typeof stream.getTracks === "function") {
     stream.getTracks().forEach(track => track.stop());
   }
   if (stream === voiceScoreRecorderStream) voiceScoreRecorderStream = null;
+}
+
+function getVoiceScoreRecorderStreamTracks(stream) {
+  if (!stream) return [];
+  if (typeof stream.getAudioTracks === "function") return stream.getAudioTracks();
+  if (typeof stream.getTracks === "function") return stream.getTracks();
+  return [];
+}
+
+function isVoiceScoreRecorderStreamUsable(stream = voiceScoreRecorderStream) {
+  const tracks = getVoiceScoreRecorderStreamTracks(stream);
+  return tracks.length > 0 && tracks.some(track => track.readyState !== "ended");
+}
+
+function setVoiceScoreRecorderStreamEnabled(stream, enabled) {
+  getVoiceScoreRecorderStreamTracks(stream).forEach(track => {
+    track.enabled = Boolean(enabled);
+  });
+}
+
+function reuseVoiceScoreRecorderStream() {
+  if (!isVoiceScoreRecorderStreamUsable()) {
+    stopVoiceScoreRecorderStream();
+    return null;
+  }
+  if (voiceScoreStreamIdleTimer) {
+    clearTimeout(voiceScoreStreamIdleTimer);
+    voiceScoreStreamIdleTimer = null;
+  }
+  setVoiceScoreRecorderStreamEnabled(voiceScoreRecorderStream, true);
+  return voiceScoreRecorderStream;
+}
+
+function keepVoiceScoreRecorderStreamReady(stream) {
+  if ((typeof document !== "undefined" && document.hidden)
+      || stream !== voiceScoreRecorderStream
+      || !isVoiceScoreRecorderStreamUsable(stream)) {
+    stopVoiceScoreRecorderStream(stream);
+    return;
+  }
+  setVoiceScoreRecorderStreamEnabled(stream, false);
+  if (voiceScoreStreamIdleTimer) clearTimeout(voiceScoreStreamIdleTimer);
+  voiceScoreStreamIdleTimer = setTimeout(() => {
+    voiceScoreStreamIdleTimer = null;
+    if (stream === voiceScoreRecorderStream && !voiceScoreRecorder) {
+      stopVoiceScoreRecorderStream(stream);
+    }
+  }, VOICE_SCORE_STREAM_IDLE_TIMEOUT_MS);
 }
 
 function clearVoiceScoreRecordingTimer() {
@@ -5241,7 +5295,8 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
   try {
     setVoiceScoreStatus("", "info", false);
     scheduleVoiceScorePermissionNotice(operationId);
-    const stream = await navigator.mediaDevices.getUserMedia(getVoiceScoreAudioConstraints());
+    const stream = reuseVoiceScoreRecorderStream()
+      || await navigator.mediaDevices.getUserMedia(getVoiceScoreAudioConstraints());
     requestedStream = stream;
     clearVoiceScorePermissionNoticeTimer();
     if (operationId !== voiceScoreOperationId || !isExperimentalFeaturesEnabled()) {
@@ -5280,7 +5335,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
         return;
       }
       clearVoiceScoreRecordingTimer();
-      stopVoiceScoreRecorderStream(stream);
+      keepVoiceScoreRecorderStreamReady(stream);
       if (voiceScoreRecorder === recorder) voiceScoreRecorder = null;
       voiceScoreListening = false;
       voiceScoreMode = "processing";
@@ -5372,10 +5427,11 @@ function renderVoiceScoreControls() {
   const activeClass = voiceScoreListening
     ? " voice-score-button--active"
     : "";
-  const busyClass = voiceScoreMode === "starting" || voiceScoreMode === "processing"
+  const busyClass = voiceScoreMode === "processing"
     ? " voice-score-button--busy"
     : "";
   const isBusy = voiceScoreMode === "starting" || voiceScoreMode === "processing";
+  const isProcessing = voiceScoreMode === "processing";
   const buttonLabel = voiceScoreMode === "processing"
     ? "Processing voice command"
     : voiceScoreMode === "starting"
@@ -5391,7 +5447,7 @@ function renderVoiceScoreControls() {
         aria-pressed="${voiceScoreListening}"
         aria-busy="${isBusy}"
         aria-label="${buttonLabel}"
-        title="${buttonLabel}"${isBusy ? " disabled" : ""}>
+        title="${buttonLabel}"${isProcessing ? " disabled" : ""}>
         ${Icons.Mic}
       </button>
       ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
@@ -5449,7 +5505,9 @@ function initializeVoiceScoreControls() {
 
   window.addEventListener("blur", releaseVoiceScoreHold);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) releaseVoiceScoreHold();
+    if (!document.hidden) return;
+    releaseVoiceScoreHold();
+    if (!voiceScoreRecorder) stopVoiceScoreRecorderStream();
   });
 }
 

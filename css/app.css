@@ -299,9 +299,13 @@ body.liquid-glass .version-badge:hover {
   background: #dc2626;
   border-color: rgba(254, 202, 202, 0.65);
   transform: scale(0.94);
+  transition-duration: 60ms;
+  transition-timing-function: ease-out;
 }
 .voice-score-button--active:hover {
   background: #b91c1c;
+  transform: scale(0.94);
+  box-shadow: var(--shadow-3d-sm);
 }
 .voice-score-button--busy,
 .voice-score-button:disabled {

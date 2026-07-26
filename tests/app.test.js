@@ -1254,7 +1254,7 @@ test('voice capture requests mono speech audio at a compact bitrate', () => {
   });
 });
 
-test('repeated voice entries use fresh, fully released MediaRecorder sessions', async () => {
+test('cancelled voice entries fully release their MediaRecorder sessions', async () => {
   const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const testNavigator = window.navigator;
   const originalUserAgent = testNavigator.userAgent;
@@ -1455,7 +1455,11 @@ test('voice entry defers the permission notice so approved microphones start wit
     cancelVoiceScoreEntry();
 
     const startPromise = startVoiceScoreEntry();
-    assert.doesNotMatch(renderVoiceScoreControls(), /Requesting microphone permission/);
+    const startingMarkup = renderVoiceScoreControls();
+    assert.doesNotMatch(startingMarkup, /Requesting microphone permission/);
+    assert.match(startingMarkup, /voice-score-button--active/);
+    assert.doesNotMatch(startingMarkup, /voice-score-button--busy/);
+    assert.doesNotMatch(startingMarkup, /\sdisabled/);
 
     await new Promise(resolve => setTimeout(resolve, 350));
     assert.match(renderVoiceScoreControls(), /Requesting microphone permission/);
@@ -1529,8 +1533,97 @@ test('releasing voice entry stops the active recording', async () => {
     assert.equal(await startVoiceScoreEntry(), true);
     assert.equal(stopVoiceScoreEntry(), true);
     assert.equal(recorderStops, 1);
-    assert.equal(trackStops, 1);
+    assert.equal(trackStops, 0);
     assert.equal(stopVoiceScoreEntry(), false);
+    cancelVoiceScoreEntry();
+    assert.equal(trackStops, 1);
+  } finally {
+    cancelVoiceScoreEntry();
+    if (originalMediaDevices === undefined) {
+      delete navigator.mediaDevices;
+    } else {
+      navigator.mediaDevices = originalMediaDevices;
+    }
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+    Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
+  }
+});
+
+test('completed voice entry reuses a muted microphone stream for an instant next press', async () => {
+  const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const testNavigator = window.navigator;
+  const originalMediaDevices = testNavigator.mediaDevices;
+  const originalMediaRecorder = window.MediaRecorder;
+  let getUserMediaCalls = 0;
+  let recorderStarts = 0;
+  let trackStops = 0;
+  const track = {
+    enabled: true,
+    readyState: 'live',
+    stop() {
+      trackStops += 1;
+      this.readyState = 'ended';
+    },
+  };
+  const stream = {
+    getAudioTracks: () => [track],
+    getTracks: () => [track],
+  };
+
+  class FakeMediaRecorder {
+    constructor() {
+      this.mimeType = 'audio/mp4';
+      this.state = 'inactive';
+      this.ondataavailable = null;
+      this.onerror = null;
+      this.onstop = null;
+    }
+
+    start() {
+      this.state = 'recording';
+      recorderStarts += 1;
+    }
+
+    stop() {
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: testNavigator,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    navigator.mediaDevices = {
+      getUserMedia: async () => {
+        getUserMediaCalls += 1;
+        return stream;
+      },
+    };
+    window.MediaRecorder = FakeMediaRecorder;
+    setLocalStorage('experimentalFeaturesEnabled', true);
+    updateState({ gameOver: false });
+    cancelVoiceScoreEntry();
+
+    assert.equal(await startVoiceScoreEntry(), true);
+    assert.equal(stopVoiceScoreEntry(), true);
+    assert.equal(track.enabled, false);
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.equal(await startVoiceScoreEntry(), true);
+    assert.equal(track.enabled, true);
+    assert.equal(getUserMediaCalls, 1);
+    assert.equal(recorderStarts, 2);
+
+    cancelVoiceScoreEntry();
+    assert.equal(trackStops, 1);
   } finally {
     cancelVoiceScoreEntry();
     if (originalMediaDevices === undefined) {
@@ -1577,6 +1670,8 @@ test('voice score control is wired as a delegated hold-to-record button', () => 
   assert.doesNotMatch(voiceSource, /readAsDataURL/);
   assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*right: calc\(1rem \+ env\(safe-area-inset-right, 0px\)\);[^}]*bottom: calc\(1rem \+ var\(--safe-area-inset-bottom-effective\)\);/s);
   assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 4rem;[^}]*height: 4rem;[^}]*touch-action: none;/s);
+  assert.match(cssSource, /\.voice-score-button--active\s*{[^}]*transition-duration: 60ms;[^}]*transition-timing-function: ease-out;/s);
+  assert.match(cssSource, /\.voice-score-button--active:hover\s*{[^}]*transform: scale\(0\.94\);/s);
   assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
@@ -3132,7 +3227,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.34";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.35";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
