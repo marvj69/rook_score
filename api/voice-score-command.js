@@ -10,6 +10,8 @@ const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_CONVERSATION_MESSAGES = 6;
+const MAX_CONVERSATION_CONTENT_LENGTH = 1000;
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const ACTION_SCHEMA = {
@@ -239,8 +241,24 @@ function parsePayload(bodyText) {
 
   const context = payload.context && typeof payload.context === "object" ? payload.context : {};
   const localIntent = payload.localIntent && typeof payload.localIntent === "object" ? payload.localIntent : null;
+  const conversation = sanitizeConversation(payload.conversation);
 
-  return { transcript, context, localIntent };
+  return { transcript, context, localIntent, conversation };
+}
+
+function sanitizeConversation(conversation) {
+  if (!Array.isArray(conversation)) return [];
+
+  return conversation
+    .filter(message => message && (message.role === "user" || message.role === "assistant"))
+    .map(message => ({
+      role: message.role,
+      content: typeof message.content === "string"
+        ? message.content.trim().slice(0, MAX_CONVERSATION_CONTENT_LENGTH)
+        : "",
+    }))
+    .filter(message => message.content)
+    .slice(-MAX_CONVERSATION_MESSAGES);
 }
 
 function buildSystemPrompt() {
@@ -250,6 +268,8 @@ function buildSystemPrompt() {
     "Always choose the most likely app action for short voice transcripts.",
     "Prefer concrete app actions over explanation when the user's intent is clear.",
     "Use status=clarify when required values are missing or ambiguous.",
+    "Recent conversation messages, when present, contain earlier voice transcripts and your clarification questions. Use them to interpret a short follow-up answer and complete the original request.",
+    "If the latest transcript is clearly a new standalone command instead of an answer, handle it as a new request.",
     "Use requiresConfirmation/status=confirm for destructive actions such as new game, freeze game, save completed game, rematch without a dealer, or ambiguous score assumptions. Game-library delete/resume actions already open the app's own confirmation, so do not add a second planner confirmation for them.",
     "Never invent card play, strategy, or hidden game state. Use only the provided context.",
     "If deterministicParserIntent.type is scoreRound, undo, or misdeal, convert it directly to the matching action unless the transcript contradicts it.",
@@ -288,12 +308,27 @@ function buildSystemPrompt() {
 
 function buildUserContent({ transcript, context, localIntent }) {
   return [
-    `Transcript: ${transcript}`,
+    `Current voice transcript: ${transcript}`,
     `App context JSON: ${JSON.stringify(context)}`,
     `Deterministic score-parser JSON: ${JSON.stringify(localIntent)}`,
     "The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification, still plan clear non-scoring app actions from the transcript.",
     "Return the action plan JSON now.",
   ].join("\n");
+}
+
+function buildOpenRouterMessages(payload) {
+  const conversation = sanitizeConversation(payload.conversation).map(message => ({
+    role: message.role,
+    content: message.role === "user"
+      ? `Earlier voice transcript: ${message.content}`
+      : `Clarification question: ${message.content}`,
+  }));
+
+  return [
+    { role: "system", content: buildSystemPrompt() },
+    ...conversation,
+    { role: "user", content: buildUserContent(payload) },
+  ];
 }
 
 function extractJsonObject(text) {
@@ -929,10 +964,7 @@ async function fetchOpenRouterPlan(payload, apiKey) {
       body: JSON.stringify({
         model: primaryModel,
         ...(fallbackModels.length ? { models: fallbackModels } : {}),
-        messages: [
-          { role: "system", content: buildSystemPrompt() },
-          { role: "user", content: buildUserContent(payload) },
-        ],
+        messages: buildOpenRouterMessages(payload),
         temperature: 0,
         max_tokens: 700,
         reasoning: { effort: DEFAULT_OPENROUTER_REASONING_EFFORT },
@@ -1060,3 +1092,5 @@ module.exports = async function handler(request, response) {
 module.exports.ACTION_SCHEMA = ACTION_SCHEMA;
 module.exports.buildSystemPrompt = buildSystemPrompt;
 module.exports.buildLocalActionPlan = buildLocalActionPlan;
+module.exports.buildOpenRouterMessages = buildOpenRouterMessages;
+module.exports.sanitizeConversation = sanitizeConversation;

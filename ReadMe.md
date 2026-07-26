@@ -34,6 +34,7 @@
     *   **Dealer Tracking:** Enter a four-player dealing order, auto-set teams by pairing with the dealer across the table, and see a dealer badge during play.
     *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
     *   **Voice Scoring:** Transcribes short score phrases, infers team, bid, points, made/set status, misdeal, and undo actions, and asks for confirmation when the phrase is incomplete.
+    *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question so short answers can complete the same request.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.

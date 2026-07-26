@@ -3,6 +3,7 @@
 // --- Voice Score Entry ---
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;
 const VOICE_SCORE_RECORDING_MAX_MS = 6500;
+const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
 const SAME_ORIGIN_VOICE_SCORE_TRANSCRIBE_URL = "/api/voice-score-transcribe";
 const VERCEL_VOICE_SCORE_TRANSCRIBE_URL = "https://rook-score.vercel.app/api/voice-score-transcribe";
 const SAME_ORIGIN_VOICE_SCORE_COMMAND_URL = "/api/voice-score-command";
@@ -46,6 +47,7 @@ let voiceScoreStatus = "";
 let voiceScoreStatusTone = "info";
 let voiceScoreStatusTimer = null;
 let voiceScoreRecordingTimer = null;
+let voiceScoreConversation = [];
 
 const VOICE_SCORE_UNITS = {
   zero: 0,
@@ -657,6 +659,35 @@ function normalizeVoiceScorePlan(plan) {
   };
 }
 
+function getVoiceScoreConversation() {
+  return voiceScoreConversation.map(message => ({ ...message }));
+}
+
+function clearVoiceScoreConversation() {
+  voiceScoreConversation = [];
+}
+
+function updateVoiceScoreConversation(plan, transcript) {
+  const normalizedPlan = normalizeVoiceScorePlan(plan);
+  if (normalizedPlan.status !== "clarify") {
+    clearVoiceScoreConversation();
+    return getVoiceScoreConversation();
+  }
+
+  const cleanTranscript = String(transcript || "").trim().slice(0, 1000);
+  const clarification = String(normalizedPlan.message || normalizedPlan.summary || "Say that another way.")
+    .trim()
+    .slice(0, 1000);
+  if (!cleanTranscript || !clarification) return getVoiceScoreConversation();
+
+  voiceScoreConversation = [
+    ...voiceScoreConversation,
+    { role: "user", content: cleanTranscript },
+    { role: "assistant", content: clarification },
+  ].slice(-VOICE_SCORE_CONVERSATION_MAX_MESSAGES);
+  return getVoiceScoreConversation();
+}
+
 async function requestVoiceScoreActionPlan(transcript, localIntent) {
   setVoiceScoreStatus("Thinking...", "info", false);
   const response = await fetch(getVoiceScoreCommandUrl(), {
@@ -669,6 +700,7 @@ async function requestVoiceScoreActionPlan(transcript, localIntent) {
       transcript,
       context: getVoiceScoreAppContext(),
       localIntent,
+      conversation: getVoiceScoreConversation(),
     }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -1398,6 +1430,7 @@ function processLocalVoiceScoreIntent(intent) {
 
 async function applyVoiceScorePlan(plan, transcript, localIntent) {
   const normalizedPlan = normalizeVoiceScorePlan(plan);
+  updateVoiceScoreConversation(normalizedPlan, transcript);
   if (normalizedPlan.status === "clarify" || normalizedPlan.status === "unsupported") {
     setVoiceScoreStatus(normalizedPlan.message || normalizedPlan.summary || "Say that another way.", "error");
     return false;
