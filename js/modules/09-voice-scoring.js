@@ -48,6 +48,8 @@ let voiceScoreRecordingTimer = null;
 let voiceScoreConversation = [];
 let voiceScoreOperationId = 0;
 let voiceScoreRequestController = null;
+let voiceScoreHeldPointerId = null;
+let voiceScoreHeldKey = "";
 
 const VOICE_SCORE_UNITS = {
   zero: 0,
@@ -1363,6 +1365,8 @@ function clearVoiceScoreRecordingTimer() {
 
 function cancelVoiceScoreEntry() {
   voiceScoreOperationId += 1;
+  voiceScoreHeldPointerId = null;
+  voiceScoreHeldKey = "";
   clearVoiceScoreRecordingTimer();
   if (voiceScoreStatusTimer) {
     clearTimeout(voiceScoreStatusTimer);
@@ -1453,7 +1457,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
     voiceScoreRecorderStream = stream;
     voiceScoreMode = "recording";
     voiceScoreListening = true;
-    setVoiceScoreStatus("Listening... tap Voice to stop.", "info", false);
+    setVoiceScoreStatus("Listening... release to send.", "info", false);
 
     recorder.ondataavailable = event => {
       if (event.data && event.data.size > 0) audioChunks.push(event.data);
@@ -1512,6 +1516,51 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
   }
 }
 
+function stopVoiceScoreEntry() {
+  if (voiceScoreMode === "starting") {
+    cancelVoiceScoreEntry();
+    return true;
+  }
+
+  if (!voiceScoreRecorder || voiceScoreRecorder.state !== "recording") return false;
+  clearVoiceScoreRecordingTimer();
+  voiceScoreRecorder.stop();
+  return true;
+}
+
+function beginVoiceScoreHold(inputType, inputId = null) {
+  if (voiceScoreHeldPointerId !== null || voiceScoreHeldKey || voiceScoreMode) return false;
+
+  if (inputType === "pointer") {
+    voiceScoreHeldPointerId = inputId;
+  } else if (inputType === "keyboard") {
+    voiceScoreHeldKey = String(inputId || "");
+  } else {
+    return false;
+  }
+
+  const startResult = startVoiceScoreEntry();
+  if (!startResult) {
+    voiceScoreHeldPointerId = null;
+    voiceScoreHeldKey = "";
+  }
+  return startResult;
+}
+
+function releaseVoiceScoreHold() {
+  const wasHolding = voiceScoreHeldPointerId !== null || Boolean(voiceScoreHeldKey);
+  if (!wasHolding) return false;
+  voiceScoreHeldPointerId = null;
+  voiceScoreHeldKey = "";
+  return stopVoiceScoreEntry();
+}
+
+function endVoiceScoreHold(inputType, inputId = null) {
+  if (inputType === "pointer" && voiceScoreHeldPointerId !== inputId) return false;
+  if (inputType === "keyboard" && voiceScoreHeldKey !== String(inputId || "")) return false;
+  return releaseVoiceScoreHold();
+}
+
 function renderVoiceScoreControls() {
   if (state.gameOver || !isExperimentalFeaturesEnabled()) return "";
   const toneClass = voiceScoreStatusTone === "error"
@@ -1529,10 +1578,10 @@ function renderVoiceScoreControls() {
   const buttonLabel = voiceScoreMode === "processing"
     ? "Processing voice command"
     : voiceScoreMode === "starting"
-      ? "Starting voice score entry"
+      ? "Starting voice recording; release to cancel"
       : voiceScoreListening
-        ? "Stop voice score entry"
-        : "Start voice score entry";
+        ? "Recording voice command; release to send"
+        : "Hold microphone to record voice command";
   return `
     <div class="voice-score-control">
       <button type="button"
@@ -1549,13 +1598,57 @@ function renderVoiceScoreControls() {
 }
 
 function initializeVoiceScoreControls() {
+  const getVoiceScoreButton = event => (
+    event.target && typeof event.target.closest === "function"
+      ? event.target.closest("[data-voice-score-entry]")
+      : null
+  );
+
+  document.addEventListener("pointerdown", event => {
+    const target = getVoiceScoreButton(event);
+    if (!target || event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
+    event.preventDefault();
+    try {
+      target.setPointerCapture?.(event.pointerId);
+    } catch (_) {}
+    beginVoiceScoreHold("pointer", event.pointerId);
+  });
+
+  document.addEventListener("pointerup", event => {
+    if (voiceScoreHeldPointerId !== event.pointerId) return;
+    event.preventDefault();
+    endVoiceScoreHold("pointer", event.pointerId);
+  });
+
+  document.addEventListener("pointercancel", event => {
+    if (voiceScoreHeldPointerId !== event.pointerId) return;
+    endVoiceScoreHold("pointer", event.pointerId);
+  });
+
+  document.addEventListener("keydown", event => {
+    const target = getVoiceScoreButton(event);
+    if (!target || event.repeat || (event.key !== " " && event.key !== "Enter")) return;
+    event.preventDefault();
+    beginVoiceScoreHold("keyboard", event.key);
+  });
+
+  document.addEventListener("keyup", event => {
+    if (voiceScoreHeldKey !== event.key) return;
+    event.preventDefault();
+    endVoiceScoreHold("keyboard", event.key);
+  });
+
   document.addEventListener("click", event => {
     const target = event.target && typeof event.target.closest === "function"
       ? event.target.closest("[data-voice-score-entry]")
       : null;
     if (!target) return;
     event.preventDefault();
-    startVoiceScoreEntry();
+  });
+
+  window.addEventListener("blur", releaseVoiceScoreHold);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) releaseVoiceScoreHold();
   });
 }
 
@@ -1691,12 +1784,7 @@ function applyVoiceScoreIntent(intent) {
 function startVoiceScoreEntry() {
   if (!isExperimentalFeaturesEnabled()) return false;
 
-  if (voiceScoreMode === "starting" || voiceScoreMode === "processing") return false;
-
-  if (voiceScoreListening && voiceScoreRecorder) {
-    if (voiceScoreRecorder.state === "recording") voiceScoreRecorder.stop();
-    return false;
-  }
+  if (voiceScoreMode) return false;
 
   if (state.gameOver) {
     setVoiceScoreStatus("Start a new game before scoring.", "error");

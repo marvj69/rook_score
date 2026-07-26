@@ -255,6 +255,7 @@ const {
   shouldPreferRecordedVoiceScoreEntry,
   requestVoiceScoreActionPlan,
   cancelVoiceScoreEntry,
+  stopVoiceScoreEntry,
   getVoiceScoreConversation,
   clearVoiceScoreConversation,
   updateVoiceScoreConversation,
@@ -1415,7 +1416,73 @@ test('rapid taps cannot open overlapping microphone streams while permission is 
   }
 });
 
-test('voice score control is wired through delegated initialization', () => {
+test('releasing voice entry stops the active recording', async () => {
+  const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const testNavigator = window.navigator;
+  const originalMediaDevices = testNavigator.mediaDevices;
+  const originalMediaRecorder = window.MediaRecorder;
+  let recorderStops = 0;
+  let trackStops = 0;
+
+  class FakeMediaRecorder {
+    constructor() {
+      this.mimeType = 'audio/mp4';
+      this.state = 'inactive';
+      this.ondataavailable = null;
+      this.onerror = null;
+      this.onstop = null;
+    }
+
+    start() {
+      this.state = 'recording';
+    }
+
+    stop() {
+      this.state = 'inactive';
+      recorderStops += 1;
+      this.onstop?.();
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: testNavigator,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    navigator.mediaDevices = {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop() { trackStops += 1; } }],
+      }),
+    };
+    window.MediaRecorder = FakeMediaRecorder;
+    setLocalStorage('experimentalFeaturesEnabled', true);
+    updateState({ gameOver: false });
+    cancelVoiceScoreEntry();
+
+    assert.equal(await startVoiceScoreEntry(), true);
+    assert.equal(stopVoiceScoreEntry(), true);
+    assert.equal(recorderStops, 1);
+    assert.equal(trackStops, 1);
+    assert.equal(stopVoiceScoreEntry(), false);
+  } finally {
+    cancelVoiceScoreEntry();
+    if (originalMediaDevices === undefined) {
+      delete navigator.mediaDevices;
+    } else {
+      navigator.mediaDevices = originalMediaDevices;
+    }
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+    Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
+  }
+});
+
+test('voice score control is wired as a delegated hold-to-record button', () => {
   const voiceSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-scoring.js'), 'utf8');
   const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
   const cssSource = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
@@ -1427,6 +1494,15 @@ test('voice score control is wired through delegated initialization', () => {
   assert.doesNotMatch(voiceSource, /<span>\$\{buttonText\}<\/span>/);
   assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
   assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
+  assert.match(voiceSource, /addEventListener\("pointerdown"/);
+  assert.match(voiceSource, /addEventListener\("pointerup"/);
+  assert.match(voiceSource, /addEventListener\("pointercancel"/);
+  assert.match(voiceSource, /addEventListener\("keydown"/);
+  assert.match(voiceSource, /addEventListener\("keyup"/);
+  assert.match(voiceSource, /beginVoiceScoreHold\("pointer", event\.pointerId\)/);
+  assert.match(voiceSource, /endVoiceScoreHold\("pointer", event\.pointerId\)/);
+  assert.match(voiceSource, /Listening\.\.\. release to send\./);
+  assert.match(voiceSource, /Hold microphone to record voice command/);
   assert.match(voiceSource, /return startRecordedVoiceScoreEntry\(\)/);
   assert.match(voiceSource, /processVoiceScoreAudioBlob/);
   assert.match(voiceSource, /audioBitsPerSecond: VOICE_SCORE_AUDIO_BITS_PER_SECOND/);
@@ -1434,8 +1510,9 @@ test('voice score control is wired through delegated initialization', () => {
   assert.doesNotMatch(voiceSource, /voice-score-transcribe/);
   assert.doesNotMatch(voiceSource, /SpeechRecognition/);
   assert.doesNotMatch(voiceSource, /readAsDataURL/);
-  assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*top: calc\(3\.75rem \+ var\(--safe-area-inset-top-effective\)\);[^}]*right: 1rem;/s);
-  assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 2\.25rem;[^}]*height: 2\.25rem;/s);
+  assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*right: calc\(1rem \+ env\(safe-area-inset-right, 0px\)\);[^}]*bottom: calc\(1rem \+ var\(--safe-area-inset-bottom-effective\)\);/s);
+  assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 4rem;[^}]*height: 4rem;[^}]*touch-action: none;/s);
+  assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
   assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);
@@ -2990,7 +3067,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.31";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.32";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
