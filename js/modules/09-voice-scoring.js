@@ -515,6 +515,16 @@ function getVoiceScoreRecognitionConstructor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+function shouldPreferRecordedVoiceScoreEntry({
+  isIOS = isProbablyIOSDevice(),
+  hasGetUserMedia = typeof navigator !== "undefined"
+    && Boolean(navigator.mediaDevices)
+    && typeof navigator.mediaDevices.getUserMedia === "function",
+  hasMediaRecorder = typeof window !== "undefined" && typeof window.MediaRecorder === "function",
+} = {}) {
+  return Boolean(isIOS && hasGetUserMedia && hasMediaRecorder);
+}
+
 function getVoiceScoreTranscriptionUrl() {
   if (typeof window === "undefined" || !window.location) return SAME_ORIGIN_VOICE_SCORE_TRANSCRIBE_URL;
   return VOICE_SCORE_GITHUB_PAGES_HOSTNAMES.has(window.location.hostname)
@@ -1537,7 +1547,9 @@ function startVoiceScoreEntry() {
   if (!isExperimentalFeaturesEnabled()) return false;
 
   if (voiceScoreListening && voiceScoreRecognition) {
-    voiceScoreRecognition.abort();
+    try {
+      voiceScoreRecognition.stop();
+    } catch (_) {}
     return;
   }
   if (voiceScoreListening && voiceScoreRecorder) {
@@ -1550,10 +1562,13 @@ function startVoiceScoreEntry() {
     return;
   }
 
+  if (shouldPreferRecordedVoiceScoreEntry()) {
+    return startRecordedVoiceScoreEntry();
+  }
+
   const Recognition = getVoiceScoreRecognitionConstructor();
   if (!Recognition) {
-    startRecordedVoiceScoreEntry();
-    return;
+    return startRecordedVoiceScoreEntry();
   }
 
   const recognition = new Recognition();
@@ -1584,6 +1599,10 @@ function startVoiceScoreEntry() {
     const errorName = event?.error || "speech error";
     if (errorName === "not-allowed" || errorName === "service-not-allowed") {
       startRecordedVoiceScoreEntry("Voice entry needs microphone permission.");
+      return;
+    }
+    if (errorName === "aborted") {
+      setVoiceScoreStatus("", "info");
       return;
     }
     setVoiceScoreStatus(`Voice entry stopped: ${errorName}.`, "error");

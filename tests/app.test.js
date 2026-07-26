@@ -252,6 +252,7 @@ const {
   getVoiceScoreTranscriptionUrl,
   getVoiceScoreCommandUrl,
   getVoiceScoreRecordingMimeType,
+  shouldPreferRecordedVoiceScoreEntry,
   requestVoiceScoreActionPlan,
   getVoiceScoreConversation,
   clearVoiceScoreConversation,
@@ -1146,6 +1147,109 @@ test('voice score recording mime type safely falls back without MediaRecorder', 
   }
 });
 
+test('iOS voice entry prefers repeatable MediaRecorder capture when available', () => {
+  assert.equal(shouldPreferRecordedVoiceScoreEntry({
+    isIOS: true,
+    hasGetUserMedia: true,
+    hasMediaRecorder: true,
+  }), true);
+  assert.equal(shouldPreferRecordedVoiceScoreEntry({
+    isIOS: false,
+    hasGetUserMedia: true,
+    hasMediaRecorder: true,
+  }), false);
+  assert.equal(shouldPreferRecordedVoiceScoreEntry({
+    isIOS: true,
+    hasGetUserMedia: false,
+    hasMediaRecorder: true,
+  }), false);
+  assert.equal(shouldPreferRecordedVoiceScoreEntry({
+    isIOS: true,
+    hasGetUserMedia: true,
+    hasMediaRecorder: false,
+  }), false);
+});
+
+test('repeated iPhone voice entries use fresh MediaRecorder sessions instead of WebKit recognition', async () => {
+  const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const testNavigator = window.navigator;
+  const originalUserAgent = testNavigator.userAgent;
+  const originalMediaDevices = testNavigator.mediaDevices;
+  const originalMediaRecorder = window.MediaRecorder;
+  const originalWebkitSpeechRecognition = window.webkitSpeechRecognition;
+  let recorderStarts = 0;
+  let recognitionConstructions = 0;
+
+  class FakeMediaRecorder {
+    constructor() {
+      this.mimeType = 'audio/mp4';
+      this.state = 'inactive';
+      this.ondataavailable = null;
+      this.onerror = null;
+      this.onstop = null;
+    }
+
+    start() {
+      this.state = 'recording';
+      recorderStarts += 1;
+    }
+
+    stop() {
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: testNavigator,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)';
+    navigator.mediaDevices = {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop() {} }],
+      }),
+    };
+    window.MediaRecorder = FakeMediaRecorder;
+    window.webkitSpeechRecognition = class {
+      constructor() {
+        recognitionConstructions += 1;
+      }
+    };
+    setLocalStorage('experimentalFeaturesEnabled', true);
+    updateState({ gameOver: false });
+
+    assert.equal(await startVoiceScoreEntry(), true);
+    startVoiceScoreEntry();
+    assert.equal(await startVoiceScoreEntry(), true);
+    startVoiceScoreEntry();
+
+    assert.equal(recorderStarts, 2);
+    assert.equal(recognitionConstructions, 0);
+  } finally {
+    navigator.userAgent = originalUserAgent;
+    if (originalMediaDevices === undefined) {
+      delete navigator.mediaDevices;
+    } else {
+      navigator.mediaDevices = originalMediaDevices;
+    }
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+    if (originalWebkitSpeechRecognition === undefined) {
+      delete window.webkitSpeechRecognition;
+    } else {
+      window.webkitSpeechRecognition = originalWebkitSpeechRecognition;
+    }
+    Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
+  }
+});
+
 test('voice score control is wired through delegated initialization', () => {
   const voiceSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-scoring.js'), 'utf8');
   const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
@@ -1158,6 +1262,9 @@ test('voice score control is wired through delegated initialization', () => {
   assert.doesNotMatch(voiceSource, /<span>\$\{buttonText\}<\/span>/);
   assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
   assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
+  assert.match(voiceSource, /if \(shouldPreferRecordedVoiceScoreEntry\(\)\)/);
+  assert.match(voiceSource, /voiceScoreRecognition\.stop\(\)/);
+  assert.match(voiceSource, /errorName === "aborted"/);
   assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*top: calc\(3\.75rem \+ var\(--safe-area-inset-top-effective\)\);[^}]*right: 1rem;/s);
   assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 2\.25rem;[^}]*height: 2\.25rem;/s);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
@@ -2714,7 +2821,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.28";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.29";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

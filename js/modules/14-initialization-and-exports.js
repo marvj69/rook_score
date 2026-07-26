@@ -309,6 +309,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreTranscriptionUrl,
     getVoiceScoreCommandUrl,
     getVoiceScoreRecordingMimeType,
+    shouldPreferRecordedVoiceScoreEntry,
     requestVoiceScoreActionPlan,
     getVoiceScoreConversation,
     clearVoiceScoreConversation,
