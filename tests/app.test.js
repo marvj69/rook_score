@@ -1789,7 +1789,7 @@ test('experimental onboarding persists consent only after microphone permission 
   }
 });
 
-test('voice improvement samples redact known identities and omit action arguments', () => {
+test('voice improvement samples redact identities and preserve structured training targets', () => {
   resetState();
   updateState({
     usTeamName: 'Kitchen Crew',
@@ -1817,13 +1817,51 @@ test('voice improvement samples redact known identities and omit action argument
     actions: [{ type: 'setStatsControls', entityKey: 'alice', query: 'private value' }],
   }, 'success');
 
-  assert.deepEqual(sample.actionTypes, ['setStatsControls']);
   assert.equal(sample.prompt, "Show Player 1's stats");
-  assert.equal(Object.hasOwn(sample, 'actions'), false);
+  assert.deepEqual(sample.target, {
+    status: 'execute',
+    requiresConfirmation: false,
+    actions: [{
+      type: 'setStatsControls',
+      entityKey: 'player-1',
+    }],
+  });
+  assert.deepEqual(sample.context.teams, {
+    us: { label: 'Us team', players: ['Player 1', 'Player 2'] },
+    dem: { label: 'Dem team', players: ['Player 3', 'Player 4'] },
+  });
+  assert.deepEqual(sample.context.knownPlayers.slice(0, 4), [
+    'Player 1',
+    'Player 2',
+    'Player 3',
+    'Player 4',
+  ]);
+  assert.equal(Object.hasOwn(sample, 'actionTypes'), false);
   assert.equal(JSON.stringify(sample).includes('private value'), false);
+  assert.equal(JSON.stringify(sample).includes('Alice'), false);
+  assert.equal(JSON.stringify(sample).includes('Kitchen Crew'), false);
+
+  const scoreSample = buildVoiceImprovementSample({
+    status: 'execute',
+    heardText: 'We bid 50 and got 100 points',
+    actions: [{
+      type: 'scoreRound',
+      biddingTeam: 'us',
+      bidAmount: 50,
+      points: 100,
+      enterBidderPoints: true,
+    }],
+  }, 'success');
+  assert.deepEqual(scoreSample.target.actions, [{
+    type: 'scoreRound',
+    biddingTeam: 'us',
+    bidAmount: 50,
+    points: 100,
+    enterBidderPoints: true,
+  }]);
 });
 
-test('voice improvement logging never calls Firestore integration without consent', () => {
+test('voice improvement logging requires both Experimental Features and consent', () => {
   resetState();
   const originalLogger = window.logVoiceImprovementSample;
   let writeCount = 0;
@@ -1845,6 +1883,10 @@ test('voice improvement logging never calls Firestore integration without consen
     assert.equal(writeCount, 0);
 
     setLocalStorage('voiceImprovementOptIn', true);
+    assert.equal(recordVoiceImprovementSample(plan, 'success'), false);
+    assert.equal(writeCount, 0);
+
+    setLocalStorage('experimentalFeaturesEnabled', true);
     assert.equal(recordVoiceImprovementSample(plan, 'success'), true);
     assert.equal(writeCount, 1);
 
@@ -3400,7 +3442,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.36";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.37";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3504,11 +3546,14 @@ test('version badge opens an in-app release modal instead of an alert', () => {
 test('settings toggles use shared polished switch styling', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  const settingsSource = readFileSync(path.join(repoRoot, 'js/modules/09-settings-validation-misc.js'), 'utf8');
 
   assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 5);
   assert.match(htmlSource, /id="experimentalFeaturesToggle"/);
   assert.match(htmlSource, />Experimental Features<\/label>/);
+  assert.match(htmlSource, /id="voiceImprovementOptInContainer" class="hidden /);
   assert.match(htmlSource, /id="voiceImprovementOptInToggle"/);
+  assert.match(settingsSource, /settingsContainer\.classList\.toggle\("hidden", !isExperimentalFeaturesEnabled\(\)\)/);
   assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
   assert.match(css, /\.settings-switch\s*\{/);
   assert.match(css, /width:\s*3rem;/);
@@ -3525,11 +3570,16 @@ test('voice improvement Firestore rules are create-only and reject unexpected pa
   assert.match(rulesSource, /allow create: if isSignedInOwner\(userId\) && isValidVoiceImprovementSample\(\)/);
   assert.match(rulesSource, /allow read, update, delete: if false/);
   assert.match(rulesSource, /data\.keys\(\)\.hasOnly\(/);
+  assert.match(rulesSource, /data\.schemaVersion == 2/);
+  assert.match(rulesSource, /isValidVoiceContext\(data\.context\)/);
+  assert.match(rulesSource, /isValidVoiceTarget\(data\.target\)/);
   assert.doesNotMatch(rulesSource, /audio|base64/i);
   assert.match(firebaseSource, /if \(!isVoiceImprovementConsentEnabled\(\)\) return false/);
+  assert.match(firebaseSource, /experimentalFeaturesEnabled/);
+  assert.match(firebaseSource, /schemaVersion: 2/);
   assert.doesNotMatch(firebaseSource, /sample\.audio|audioBase64/);
   assert.match(htmlSource, /Optional and off by default/);
-  assert.match(htmlSource, /Raw audio and full game context are never stored/);
+  assert.match(htmlSource, /Raw audio, real names, and unrelated game-library details are never stored/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {

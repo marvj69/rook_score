@@ -35,7 +35,7 @@
     *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
     *   **Voice Scoring:** Transcribes short score phrases, infers team, bid, points, made/set status, misdeal, and undo actions, and asks for confirmation when the phrase is incomplete.
     *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question so short answers can complete the same request.
-    *   **Optional Improvement Sharing:** Users can separately opt in to share redacted command text, action types, and outcomes for future model improvement. Raw audio and full game context are never stored by Rook Score.
+    *   **Optional Improvement Sharing:** With Experimental Features enabled, users can separately opt in to share redacted command text, sanitized structured action targets, limited game context, and outcomes for future model improvement. Raw audio and real player/team names are never stored by Rook Score.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.
@@ -169,7 +169,7 @@ Access these via **Menu -> Settings**:
 *   **Appearance & Features:**
     *   **Pro Mode:** Toggle to enable/disable the win probability display during active games.
     *   **Experimental Features:** Show preview controls such as the microphone-powered voice actions. This is off by default.
-    *   **Help improve voice actions:** Separately opt in or out of sharing redacted command text and action outcomes. This is off by default and can be disabled at any time without turning off voice actions.
+    *   **Help improve voice actions:** When Experimental Features is on, separately opt in or out of sharing redacted command text, sanitized structured action targets, limited game context, and action outcomes. This control is hidden when Experimental Features is off.
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
     *   **Table-Talk Penalties:** Choose whether penalties subtract the bid amount or a custom point value (multiples of 5).
@@ -221,9 +221,9 @@ VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
-Enabling Experimental Features opens a one-time, device-local onboarding dialog. Continuing requests microphone permission and immediately stops the permission-check stream without recording. Optional model-improvement consent is stored separately from the Experimental Features setting and defaults to off.
+Enabling Experimental Features opens a one-time, device-local onboarding dialog. Continuing requests microphone permission and immediately stops the permission-check stream without recording. Optional model-improvement consent is stored separately from the Experimental Features setting and defaults to off. Its Settings control is visible only while Experimental Features is enabled, and submissions require both settings to be on.
 
-When improvement sharing is enabled, the existing planner response supplies a text transcription without a second model call. Before one small Firestore document is created, Rook Score replaces known player/team names and common email/phone patterns. The document contains only the redacted command text, plan status, action types, execution outcome, planner model/revision, app version, and timestamp. It does not contain raw audio, Base64 audio, the full action payload, account profile fields, or full game context.
+When improvement sharing is enabled, the existing planner response supplies a text transcription without a second model call. Before one Firestore document is created, Rook Score replaces known player/team names and common email/phone patterns. Schema version 2 stores the redacted command, the planner's sanitized structured target (`status`, confirmation requirement, and full whitelisted action arguments), the final execution outcome, and a pre-execution snapshot of limited game state. That context uses placeholders such as `Player 1`, keeps only the scoring/dealer/statistics identifiers needed to resolve the command, and omits real names and unrelated game-library details. Raw audio, Base64 audio, account profile fields, and unsanitized action or game payloads are never stored.
 
 The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
 

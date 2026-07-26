@@ -541,10 +541,10 @@
                             <span class="settings-switch__track" aria-hidden="true"></span>
                         </label>
                     </div>
-                    <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
+                    <div id="voiceImprovementOptInContainer" class="hidden flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
                         <div class="pr-3">
                             <label for="voiceImprovementOptInToggle" class="text-gray-700 dark:text-white font-medium">Help improve voice actions</label>
-                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Optionally share redacted text from voice commands and the resulting action. Audio is never stored.</p>
+                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Optionally share redacted command text, sanitized action arguments, and limited game context. Audio is never stored.</p>
                         </div>
                         <label class="settings-switch ml-4">
                             <input type="checkbox" id="voiceImprovementOptInToggle" class="settings-switch__input" />
@@ -582,7 +582,7 @@
             <input type="checkbox" id="voiceImprovementConsentCheckbox" class="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
             <span>
               <span class="block font-medium text-gray-800 dark:text-white">Share redacted command text to improve future models</span>
-              <span class="mt-1 block text-sm text-gray-600 dark:text-gray-300">Optional and off by default. If selected, known player and team names are replaced before the command text, action types, and outcome are saved. Raw audio and full game context are never stored.</span>
+              <span class="mt-1 block text-sm text-gray-600 dark:text-gray-300">Optional and off by default. If selected, known player and team names are replaced before the command text, structured action target, limited game state, and outcome are saved. Raw audio, real names, and unrelated game-library details are never stored.</span>
             </span>
           </label>
           <p class="text-xs text-gray-500 dark:text-gray-400">You can change this sharing choice later in Settings. Turning it off stops all future submissions.</p>

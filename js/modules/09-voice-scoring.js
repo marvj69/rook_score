@@ -717,64 +717,361 @@ function normalizeVoiceScorePlan(plan) {
   };
 }
 
-function getVoiceImprovementIdentityReplacements() {
-  const replacements = [];
-  const teamNames = [
-    { value: state.usTeamName, replacement: "Us team" },
-    { value: state.demTeamName, replacement: "Dem team" },
-  ];
-  teamNames.forEach(({ value, replacement }) => {
+function buildVoiceImprovementIdentityMap(context = getVoiceScoreAppContext(), actions = []) {
+  const playerTokensByName = new Map();
+  const playerNamesByToken = new Map();
+  const teamReplacements = [];
+  const addPlayer = (value) => {
+    const cleanValue = sanitizePlayerName(value);
+    const normalized = cleanValue.toLowerCase();
+    if (!cleanValue || playerTokensByName.has(normalized)) {
+      return playerTokensByName.get(normalized) || "";
+    }
+    const token = `Player ${playerTokensByName.size + 1}`;
+    playerTokensByName.set(normalized, token);
+    playerNamesByToken.set(token, cleanValue);
+    return token;
+  };
+
+  [
+    ...(context.teams?.us?.players || []),
+    ...(context.teams?.dem?.players || []),
+  ].forEach(addPlayer);
+  (context.statistics?.players || []).forEach(player => addPlayer(player?.name));
+  (context.statistics?.teams || []).forEach(team => {
+    (Array.isArray(team?.players) ? team.players : []).forEach(addPlayer);
+  });
+  actions.forEach(action => {
+    [
+      ...(Array.isArray(action?.dealers) ? action.dealers : []),
+      ...(Array.isArray(action?.usPlayers) ? action.usPlayers : []),
+      ...(Array.isArray(action?.demPlayers) ? action.demPlayers : []),
+      action?.firstDealer,
+    ].forEach(addPlayer);
+  });
+
+  [
+    { value: context.teams?.us?.label, replacement: "Us team" },
+    { value: context.teams?.dem?.label, replacement: "Dem team" },
+  ].forEach(({ value, replacement }) => {
     const cleanValue = sanitizePlayerName(value);
     if (cleanValue && !/^(us|dem)$/i.test(cleanValue)) {
-      replacements.push({ value: cleanValue, replacement });
+      teamReplacements.push({ value: cleanValue, replacement });
     }
   });
 
-  const playerNames = new Set([
-    ...(Array.isArray(state.usPlayers) ? state.usPlayers : []),
-    ...(Array.isArray(state.demPlayers) ? state.demPlayers : []),
-  ].map(sanitizePlayerName).filter(Boolean));
-  const statistics = getVoiceScoreStatisticsContext();
-  (statistics.players || []).forEach(player => {
-    const name = sanitizePlayerName(player?.name);
-    if (name) playerNames.add(name);
-  });
-  (statistics.teams || []).forEach(team => {
-    (Array.isArray(team?.players) ? team.players : []).forEach(player => {
-      const name = sanitizePlayerName(player);
-      if (name) playerNames.add(name);
-    });
+  const replacements = [
+    ...teamReplacements,
+    ...Array.from(playerTokensByName.entries()).map(([normalized, replacement]) => ({
+      value: playerNamesByToken.get(replacement) || normalized,
+      replacement,
+    })),
+  ].sort((left, right) => right.value.length - left.value.length);
+
+  const playerEntityKeys = new Map();
+  (context.statistics?.players || []).forEach(player => {
+    const rawKey = String(player?.key || "").trim();
+    const token = addPlayer(player?.name);
+    if (rawKey && token) {
+      playerEntityKeys.set(rawKey.toLowerCase(), `player-${Number(token.replace("Player ", ""))}`);
+    }
   });
 
-  Array.from(playerNames).forEach((value, index) => {
-    replacements.push({ value, replacement: `Player ${index + 1}` });
+  const teamEntityKeys = new Map();
+  const statisticsTeams = [];
+  (context.statistics?.teams || []).slice(0, 100).forEach((team, index) => {
+    const rawKey = String(team?.key || "").trim();
+    const players = (Array.isArray(team?.players) ? team.players : [])
+      .map(addPlayer)
+      .filter(Boolean)
+      .slice(0, 2);
+    const safeKey = `team-${index + 1}`;
+    if (rawKey) teamEntityKeys.set(rawKey.toLowerCase(), safeKey);
+    statisticsTeams.push({ key: safeKey, players });
   });
 
-  return replacements.sort((left, right) => right.value.length - left.value.length);
+  return {
+    replacements,
+    playerTokensByName,
+    playerEntityKeys,
+    teamEntityKeys,
+    knownPlayers: Array.from(playerNamesByToken.keys()).slice(0, 100),
+    statisticsTeams,
+  };
 }
 
-function redactVoiceImprovementPrompt(prompt) {
-  let redacted = String(prompt || "")
+function redactVoiceImprovementText(text, identityMap) {
+  let redacted = String(text || "")
     .trim()
     .slice(0, 1000)
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
     .replace(/\b(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g, "[phone]");
 
-  getVoiceImprovementIdentityReplacements().forEach(({ value, replacement }) => {
+  identityMap.replacements.forEach(({ value, replacement }) => {
     redacted = redacted.replace(new RegExp(escapeVoiceScoreRegExp(value), "gi"), replacement);
   });
   return redacted.trim().slice(0, 1000);
 }
 
-function buildVoiceImprovementSample(plan, outcome) {
+function redactVoiceImprovementPrompt(prompt) {
+  return redactVoiceImprovementText(
+    prompt,
+    buildVoiceImprovementIdentityMap(getVoiceScoreAppContext()),
+  );
+}
+
+function getVoiceImprovementPlayerToken(value, identityMap) {
+  const normalized = sanitizePlayerName(value).toLowerCase();
+  return identityMap.playerTokensByName.get(normalized) || "";
+}
+
+function sanitizeVoiceImprovementNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function sanitizeVoiceImprovementAction(action, identityMap) {
+  if (!action || !VOICE_SCORE_ACTION_TYPES.has(action.type)) return null;
+  const safe = { type: action.type };
+  const copyNumber = (key) => {
+    const number = sanitizeVoiceImprovementNumber(action[key]);
+    if (number !== null) safe[key] = number;
+  };
+  const copyTeam = (key) => {
+    if (action[key] === "us" || action[key] === "dem") safe[key] = action[key];
+  };
+  const copyEnum = (key, allowed) => {
+    if (allowed.includes(action[key])) safe[key] = action[key];
+  };
+  const copyPlayers = (key, maximum = 4) => {
+    const players = (Array.isArray(action[key]) ? action[key] : [])
+      .map(value => getVoiceImprovementPlayerToken(value, identityMap))
+      .filter(Boolean)
+      .slice(0, maximum);
+    if (players.length) safe[key] = players;
+  };
+
+  if (action.type === "scoreRound") {
+    const biddingTeam = action.biddingTeam || action.team;
+    if (biddingTeam === "us" || biddingTeam === "dem") safe.biddingTeam = biddingTeam;
+    copyNumber("bidAmount");
+    copyNumber("points");
+    safe.enterBidderPoints = action.enterBidderPoints !== false;
+  } else if (action.type === "editRound") {
+    copyNumber("roundNumber");
+    copyNumber("bidAmount");
+    copyNumber("usTotal");
+    copyNumber("demTotal");
+  } else if (action.type === "openModal" || action.type === "closeModal") {
+    copyEnum("target", [
+      "savedGames", "settings", "about", "statistics", "dealerOrder",
+      "teamSelection", "resumeGame", "theme", "presets", "probability",
+      "version", "confirmation", "all",
+    ]);
+  } else if (action.type === "setDealerOrder") {
+    copyPlayers("dealers");
+  } else if (action.type === "startPaperGame") {
+    copyNumber("usScore");
+    copyNumber("demScore");
+    copyPlayers("usPlayers", 2);
+    copyPlayers("demPlayers", 2);
+  } else if (action.type === "setTeams") {
+    copyPlayers("usPlayers", 2);
+    copyPlayers("demPlayers", 2);
+  } else if (action.type === "selectDealerPair") {
+    copyEnum("pair", ["13", "24"]);
+  } else if (action.type === "selectBid") {
+    const biddingTeam = action.biddingTeam || action.team;
+    if (biddingTeam === "us" || biddingTeam === "dem") safe.biddingTeam = biddingTeam;
+    copyNumber("bidAmount");
+  } else if (action.type === "setSetting") {
+    copyEnum("key", [
+      "mustWinByBid", "misdealHandling", "proMode", "experimentalFeatures",
+      "tableTalkPenaltyType", "tableTalkPenaltyPoints",
+    ]);
+    if (typeof action.value === "boolean") safe.value = action.value;
+    else if (sanitizeVoiceImprovementNumber(action.value) !== null) safe.value = Number(action.value);
+    else if (action.value === "loseBid" || action.value === "setPoints") safe.value = action.value;
+  } else if (action.type === "tableTalkPenalty") {
+    const team = action.team || action.biddingTeam;
+    if (team === "us" || team === "dem") safe.team = team;
+  } else if (action.type === "rematch") {
+    const firstDealer = getVoiceImprovementPlayerToken(action.firstDealer, identityMap);
+    if (firstDealer) safe.firstDealer = firstDealer;
+  } else if (action.type === "toggleMenu") {
+    if (typeof action.open === "boolean") safe.open = action.open;
+  } else if (action.type === "authAction") {
+    copyEnum("authAction", ["toggle", "signIn", "signOut"]);
+  } else if (action.type === "confirmationAction") {
+    copyEnum("confirmationChoice", ["confirm", "cancel"]);
+  } else if (action.type === "gameLibraryAction") {
+    copyEnum("gameAction", ["switchTab", "search", "sort", "view", "delete", "resume"]);
+    copyEnum("gameType", ["completed", "freezer"]);
+    copyEnum("tab", ["completed", "freezer"]);
+    copyEnum("sort", ["newest", "oldest", "highest", "lowest"]);
+    copyNumber("index");
+    if (typeof action.query === "string") {
+      safe.query = redactVoiceImprovementText(action.query, identityMap).slice(0, 100);
+    }
+  } else if (action.type === "setThemeColors") {
+    if (/^#[0-9a-f]{6}$/i.test(action.usColor || "")) safe.usColor = action.usColor.toLowerCase();
+    if (/^#[0-9a-f]{6}$/i.test(action.demColor || "")) safe.demColor = action.demColor.toLowerCase();
+  } else if (action.type === "themeAction") {
+    copyEnum("themeAction", ["randomize", "reset", "apply"]);
+  } else if (action.type === "setBidPresets") {
+    const presets = (Array.isArray(action.presets) ? action.presets : [])
+      .map(Number)
+      .filter(Number.isFinite)
+      .slice(0, 12);
+    if (presets.length) safe.presets = presets;
+  } else if (action.type === "setStatsControls") {
+    copyEnum("statsView", ["teams", "players"]);
+    copyEnum("statsMetric", [
+      "netPerGame", "bidMakePct", "setsForced", "comebacks",
+      "closeWins", "perfect360s", "misdeals", "games",
+    ]);
+    copyEnum("statsSort", ["recent", "most", "least"]);
+    copyEnum("entityMode", ["teams", "players"]);
+    const rawKey = String(action.entityKey || "").trim().toLowerCase();
+    const keyMap = action.entityMode === "teams" || action.statsView === "teams"
+      ? identityMap.teamEntityKeys
+      : identityMap.playerEntityKeys;
+    let safeEntityKey = keyMap.get(rawKey);
+    if (!safeEntityKey && keyMap === identityMap.playerEntityKeys) {
+      const playerToken = identityMap.playerTokensByName.get(rawKey);
+      if (playerToken) safeEntityKey = `player-${Number(playerToken.replace("Player ", ""))}`;
+    }
+    if (safeEntityKey) safe.entityKey = safeEntityKey;
+  }
+
+  return safe;
+}
+
+function sanitizeVoiceImprovementRound(round) {
+  const safe = {};
+  ["roundIndex", "bidAmount", "usPoints", "demPoints"].forEach(key => {
+    const number = sanitizeVoiceImprovementNumber(round?.[key]);
+    if (number !== null) safe[key] = number;
+  });
+  if (round?.biddingTeam === "us" || round?.biddingTeam === "dem") {
+    safe.biddingTeam = round.biddingTeam;
+  }
+  safe.runningTotals = sanitizeTotals(round?.runningTotals);
+  return safe;
+}
+
+function sanitizeVoiceImprovementContext(context, identityMap) {
+  const biddingTeam = context.biddingTeam === "us" || context.biddingTeam === "dem"
+    ? context.biddingTeam
+    : "";
+  const bidAmount = sanitizeVoiceImprovementNumber(context.bidAmount);
+  const currentDealer = getVoiceImprovementPlayerToken(context.currentDealer, identityMap);
+  const openPanels = (Array.isArray(context.ui?.openPanels) ? context.ui.openPanels : [])
+    .filter(value => typeof value === "string" && /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(value))
+    .slice(0, 20);
+  const sanitizeLibraryIndexes = (entries) => (Array.isArray(entries) ? entries : [])
+    .map(entry => Number(entry?.index))
+    .filter(value => Number.isInteger(value) && value >= 0)
+    .slice(0, 20);
+
+  return {
+    teams: {
+      us: {
+        label: "Us team",
+        players: (context.teams?.us?.players || [])
+          .map(value => getVoiceImprovementPlayerToken(value, identityMap))
+          .filter(Boolean)
+          .slice(0, 2),
+      },
+      dem: {
+        label: "Dem team",
+        players: (context.teams?.dem?.players || [])
+          .map(value => getVoiceImprovementPlayerToken(value, identityMap))
+          .filter(Boolean)
+          .slice(0, 2),
+      },
+    },
+    knownPlayers: identityMap.knownPlayers,
+    totals: sanitizeTotals(context.totals),
+    roundNumber: Math.max(1, Math.trunc(Number(context.roundNumber) || 1)),
+    gameOver: Boolean(context.gameOver),
+    winner: context.winner === "us" || context.winner === "dem" ? context.winner : "",
+    biddingTeam,
+    hasActiveBid: Boolean(biddingTeam && bidAmount !== null && bidAmount !== 0),
+    bidAmount: bidAmount === null ? 0 : bidAmount,
+    enterBidderPoints: Boolean(context.enterBidderPoints),
+    dealers: (Array.isArray(context.dealers) ? context.dealers : [])
+      .map(value => getVoiceImprovementPlayerToken(value, identityMap))
+      .filter(Boolean)
+      .slice(0, 4),
+    currentDealer,
+    misdealCount: Math.max(0, Math.trunc(Number(context.misdealCount) || 0)),
+    undoneRoundsCount: Math.max(0, Math.trunc(Number(context.undoneRoundsCount) || 0)),
+    recentRounds: (Array.isArray(context.recentRounds) ? context.recentRounds : [])
+      .slice(-5)
+      .map(sanitizeVoiceImprovementRound),
+    bidPresets: (Array.isArray(context.bidPresets) ? context.bidPresets : [])
+      .map(Number)
+      .filter(Number.isFinite)
+      .slice(0, 12),
+    library: {
+      completedIndexes: sanitizeLibraryIndexes(context.library?.completed),
+      freezerIndexes: sanitizeLibraryIndexes(context.library?.freezer),
+    },
+    statistics: {
+      playerTokens: (context.statistics?.players || [])
+        .map(player => getVoiceImprovementPlayerToken(player?.name, identityMap))
+        .filter(Boolean)
+        .slice(0, 100),
+      teams: identityMap.statisticsTeams,
+    },
+    ui: {
+      menuOpen: Boolean(context.ui?.menuOpen),
+      openPanels,
+    },
+    settings: {
+      mustWinByBid: Boolean(context.settings?.mustWinByBid),
+      misdealHandling: Boolean(context.settings?.misdealHandling),
+      proMode: Boolean(context.settings?.proMode),
+      experimentalFeatures: Boolean(context.settings?.experimentalFeatures),
+      tableTalkPenaltyType: context.settings?.tableTalkPenaltyType === "loseBid"
+        ? "loseBid"
+        : "setPoints",
+      tableTalkPenaltyPoints: Number(context.settings?.tableTalkPenaltyPoints) || 180,
+    },
+  };
+}
+
+function createVoiceImprovementSnapshot(plan) {
   const normalizedPlan = normalizeVoiceScorePlan(plan);
-  const prompt = redactVoiceImprovementPrompt(normalizedPlan.heardText);
+  const context = getVoiceScoreAppContext();
+  const identityMap = buildVoiceImprovementIdentityMap(context, normalizedPlan.actions);
+  return {
+    normalizedPlan,
+    identityMap,
+    context: sanitizeVoiceImprovementContext(context, identityMap),
+  };
+}
+
+function buildVoiceImprovementSample(plan, outcome, snapshot = null) {
+  const prepared = snapshot || createVoiceImprovementSnapshot(plan);
+  const normalizedPlan = prepared.normalizedPlan || normalizeVoiceScorePlan(plan);
+  const identityMap = prepared.identityMap
+    || buildVoiceImprovementIdentityMap(getVoiceScoreAppContext(), normalizedPlan.actions);
+  const prompt = redactVoiceImprovementText(normalizedPlan.heardText, identityMap);
   if (!prompt) return null;
 
   return {
     prompt,
-    planStatus: normalizedPlan.status,
-    actionTypes: Array.from(new Set(normalizedPlan.actions.map(action => action.type))).slice(0, 5),
+    context: prepared.context || sanitizeVoiceImprovementContext(getVoiceScoreAppContext(), identityMap),
+    target: {
+      status: normalizedPlan.status,
+      requiresConfirmation: Boolean(normalizedPlan.requiresConfirmation),
+      actions: normalizedPlan.actions
+        .map(action => sanitizeVoiceImprovementAction(action, identityMap))
+        .filter(Boolean)
+        .slice(0, 5),
+    },
     outcome: String(outcome || "failed").slice(0, 40),
     model: String(normalizedPlan.plannerModel || "unknown").slice(0, 120),
     revision: String(normalizedPlan.plannerRevision || "unknown").slice(0, 80),
@@ -782,11 +1079,13 @@ function buildVoiceImprovementSample(plan, outcome) {
   };
 }
 
-function recordVoiceImprovementSample(plan, outcome) {
-  if (!isVoiceImprovementOptedIn() || typeof window.logVoiceImprovementSample !== "function") {
+function recordVoiceImprovementSample(plan, outcome, snapshot = null) {
+  if (!isExperimentalFeaturesEnabled()
+      || !isVoiceImprovementOptedIn()
+      || typeof window.logVoiceImprovementSample !== "function") {
     return false;
   }
-  const sample = buildVoiceImprovementSample(plan, outcome);
+  const sample = buildVoiceImprovementSample(plan, outcome, snapshot);
   if (!sample) return false;
 
   Promise.resolve(window.logVoiceImprovementSample(sample))
@@ -1855,15 +2154,16 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
   const normalizedPlan = normalizeVoiceScorePlan(plan);
   const heardText = normalizedPlan.heardText || String(transcript || "").trim();
   if (!normalizedPlan.heardText && heardText) normalizedPlan.heardText = heardText.slice(0, 1000);
+  const improvementSnapshot = createVoiceImprovementSnapshot(normalizedPlan);
   updateVoiceScoreConversation(normalizedPlan, heardText);
   if (normalizedPlan.status === "clarify" || normalizedPlan.status === "unsupported") {
     setVoiceScoreStatus(normalizedPlan.message || normalizedPlan.summary || "Say that another way.", "error");
-    recordVoiceImprovementSample(normalizedPlan, normalizedPlan.status);
+    recordVoiceImprovementSample(normalizedPlan, normalizedPlan.status, improvementSnapshot);
     return false;
   }
 
   if (!normalizedPlan.actions.length) {
-    recordVoiceImprovementSample(normalizedPlan, "failed");
+    recordVoiceImprovementSample(normalizedPlan, "failed", improvementSnapshot);
     return processLocalVoiceScoreIntent(localIntent);
   }
 
@@ -1873,11 +2173,11 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
       const successMessage = normalizedPlan.summary || messages.find(Boolean) || `Heard: ${transcript}`;
       setVoiceScoreStatus(successMessage, "success");
       emitRookEvent("voice_score_command", getRookGameEventParams(state, { source: "voice_llm" }));
-      recordVoiceImprovementSample(normalizedPlan, "success");
+      recordVoiceImprovementSample(normalizedPlan, "success", improvementSnapshot);
       return true;
     } catch (error) {
       setVoiceScoreStatus(error.message || "Voice action failed.", "error");
-      recordVoiceImprovementSample(normalizedPlan, "failed");
+      recordVoiceImprovementSample(normalizedPlan, "failed", improvementSnapshot);
       return false;
     }
   };
@@ -1892,7 +2192,7 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
       },
       () => {
         closeConfirmationModal();
-        recordVoiceImprovementSample(normalizedPlan, "cancelled");
+        recordVoiceImprovementSample(normalizedPlan, "cancelled", improvementSnapshot);
       }
     );
     return true;

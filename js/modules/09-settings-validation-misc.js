@@ -63,11 +63,16 @@ function isVoiceExperimentalOnboardingComplete() {
 function updateExperimentalFeaturesUI(isEnabled) {
   const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
   if (experimentalFeaturesToggle) experimentalFeaturesToggle.checked = Boolean(isEnabled);
+  updateVoiceImprovementConsentUI();
 }
 
 function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()) {
   const settingsToggle = document.getElementById("voiceImprovementOptInToggle");
   if (settingsToggle) settingsToggle.checked = Boolean(isEnabled);
+  const settingsContainer = document.getElementById("voiceImprovementOptInContainer");
+  if (settingsContainer) {
+    settingsContainer.classList.toggle("hidden", !isExperimentalFeaturesEnabled());
+  }
 }
 
 function setExperimentalFeaturesEnabled(isEnabled, { notify = true } = {}) {
