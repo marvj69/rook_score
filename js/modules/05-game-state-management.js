@@ -56,6 +56,10 @@ function resetGame() {
   confettiTriggered = false;
   ephemeralCustomBid = "";
   ephemeralPoints = "";
+  activeScoreKeypadTarget = "";
+  scoreKeypadShouldAnimate = false;
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
   localStorage.removeItem(ACTIVE_GAME_KEY);
   // Attempt to also clear from Firebase if user is signed in
   if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {

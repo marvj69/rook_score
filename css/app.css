@@ -826,6 +826,164 @@ button:focus-visible {
 .dark input, .dark select, .dark textarea { background-color: rgba(30, 41, 75, 0.7); color: #fff; }
 .dark input::placeholder, .dark textarea::placeholder { color: #a0aec0; }
 
+/* ── In-app scoring keypad and score-card preview ── */
+.score-keypad-field {
+  max-width: 24rem;
+}
+.score-number-display {
+  min-height: 3rem;
+  cursor: default;
+  caret-color: transparent;
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  touch-action: manipulation;
+}
+.score-keypad-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 7990;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.score-keypad-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 50%;
+  z-index: 8000;
+  width: min(100%, 32rem);
+  padding: 0.75rem max(0.75rem, env(safe-area-inset-right, 0px)) max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-bottom: 0;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: rgba(248, 250, 252, 0.98);
+  box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.32);
+  transform: translateX(-50%);
+  will-change: transform;
+}
+.dark .score-keypad-sheet {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(17, 24, 58, 0.98);
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.52);
+}
+.score-keypad-sheet--entering {
+  animation: scoreKeypadSlideUp 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.score-keypad-sheet--closing {
+  animation: scoreKeypadSlideDown 190ms ease-in both;
+  pointer-events: none;
+}
+.score-keypad-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2rem;
+  padding: 0 0.15rem 0.45rem;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dark .score-keypad-sheet__header {
+  color: #cbd5e1;
+}
+.score-keypad-sheet__done {
+  min-height: 2rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.score-keypad-sheet__display {
+  width: 100%;
+  min-height: 3.25rem;
+  margin-bottom: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  caret-color: transparent;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.score-keypad-sheet__display::placeholder {
+  color: #64748b;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+.dark .score-keypad-sheet__display {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+}
+.dark .score-keypad-sheet__display::placeholder {
+  color: #94a3b8;
+}
+.score-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.score-keypad__key {
+  min-height: 2.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2937;
+  font-size: 1rem;
+  font-weight: 900;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.score-keypad__key:hover {
+  background: #f1f5f9;
+}
+.score-keypad__key--action {
+  color: #475569;
+  font-size: 0.8rem;
+}
+.dark .score-keypad__key {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 75, 0.82);
+  color: #f8fafc;
+}
+.dark .score-keypad__key:hover {
+  background: rgba(51, 65, 105, 0.95);
+}
+@keyframes scoreKeypadSlideUp {
+  from { transform: translateX(-50%) translateY(110%); }
+  to { transform: translateX(-50%) translateY(0); }
+}
+@keyframes scoreKeypadSlideDown {
+  from { transform: translateX(-50%) translateY(0); }
+  to { transform: translateX(-50%) translateY(110%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .score-keypad-sheet--entering,
+  .score-keypad-sheet--closing {
+    animation-duration: 1ms;
+  }
+}
+.team-score-value {
+  transition: transform 160ms var(--bounce), filter 160ms var(--smooth);
+}
+.team-card--score-preview .team-score-value {
+  transform: scale(1.12);
+  filter: brightness(1.15);
+}
+
 /* ── Statistics Modal Controls ── */
 .stats-controls {
   position: sticky;

@@ -189,6 +189,7 @@ victoryMethod  = "Set Other Team";
 
 function handleTeamClick(team) {
   if (state.gameOver) return;
+  closeScoreKeypad(true);
   if (state.biddingTeam === team) { // Click active team to deselect
     state.savedScoreInputStates[team] = { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error };
     updateState({ biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: ""});
@@ -203,6 +204,7 @@ function handleTeamClick(team) {
   ephemeralCustomBid = ""; ephemeralPoints = ""; // Clear ephemeral inputs on team switch
 }
 function handleBidSelect(bid) {
+  closeScoreKeypad(true);
   if (bid === "other") {
     updateState({ showCustomBid: true, bidAmount: "", customBidValue: ephemeralCustomBid }); // Keep current custom bid if switching back
   } else {
@@ -219,40 +221,183 @@ function handleBidSelect(bid) {
 // numbers that are technically "valid JSON" but we *don't* want to trigger a re-render for
 const BLOCKED_BIDS = new Set([5, 10, 15]);
 
-function handleCustomBidChange(e) {
-  const valStr = e.target.value.trim();   // what the user just typed
-  ephemeralCustomBid = valStr;            // persist while they're editing
+function applyInAppNumericKey(currentValue, key, maxLength = 3) {
+  const normalizedValue = String(currentValue ?? "").replace(/\D/g, "").slice(0, maxLength);
+  const normalizedKey = String(key ?? "");
 
-  /* 1 ▸ don't redraw yet if…
-  – the bid isn't valid JSON-wise  OR
-  – it's one of the blocked small bids                       */
-  if (validateBid(valStr) !== "" || BLOCKED_BIDS.has(+valStr)) return;
+  if (normalizedKey === "clear") return "";
+  if (normalizedKey === "backspace") return normalizedValue.slice(0, -1);
+  if (!/^\d$/.test(normalizedKey)) return normalizedValue;
+  if (normalizedValue.length >= maxLength) return normalizedValue;
+  if (normalizedValue === "0") return normalizedKey === "0" ? "0" : normalizedKey;
+  return `${normalizedValue}${normalizedKey}`;
+}
 
-  /* 2 ▸ number is good and allowed → commit to state
-  (this will re-render exactly once, keeping focus alive)    */
+function setCustomBidInputValue(value) {
+  const valStr = String(value ?? "").trim();
+  ephemeralCustomBid = valStr;
+  const isValidBid = validateBid(valStr) === "" && !BLOCKED_BIDS.has(Number(valStr));
+
   updateState({
-    customBidValue : valStr,
-    bidAmount      : valStr,
-    lastBidAmount  : valStr,
-    lastBidTeam    : state.biddingTeam
+    customBidValue: valStr,
+    bidAmount: isValidBid ? valStr : "",
+    lastBidAmount: isValidBid ? valStr : null,
+    lastBidTeam: isValidBid ? state.biddingTeam : null,
+    error: "",
   });
+}
+
+function handleCustomBidChange(e) {
+  setCustomBidInputValue(e?.target?.value);
+}
+
+function openScoreKeypad(target) {
+  if (target !== "bid" && target !== "points") return;
+  if (target === "bid" && !state.showCustomBid) return;
+  if (target === "points" && !state.bidAmount) return;
+
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
+  scoreKeypadShouldAnimate = activeScoreKeypadTarget !== target;
+  activeScoreKeypadTarget = target;
+  scheduleRender();
+}
+
+function closeScoreKeypad(immediate = false) {
+  if (!activeScoreKeypadTarget) return;
+  const closingTarget = activeScoreKeypadTarget;
+  const sheet = document.getElementById("scoreKeypadSheet");
+
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
+  if (immediate || !sheet) {
+    activeScoreKeypadTarget = "";
+    scoreKeypadShouldAnimate = false;
+    scheduleRender();
+    return;
+  }
+
+  sheet.classList.add("score-keypad-sheet--closing");
+  scoreKeypadCloseTimer = setTimeout(() => {
+    if (activeScoreKeypadTarget === closingTarget) activeScoreKeypadTarget = "";
+    scoreKeypadShouldAnimate = false;
+    scoreKeypadCloseTimer = null;
+    scheduleRender();
+  }, 190);
+}
+
+function handleScoreKeypadInput(target, key) {
+  if (target === "bid") {
+    setCustomBidInputValue(applyInAppNumericKey(ephemeralCustomBid || state.customBidValue, key));
+    return;
+  }
+  if (target !== "points") return;
+
+  ephemeralPoints = applyInAppNumericKey(ephemeralPoints, key);
+  if (state.error) {
+    updateState({ error: "" });
+    return;
+  }
+
+  const pointsInput = document.getElementById("pointsInput");
+  if (pointsInput) pointsInput.value = ephemeralPoints;
+  const keypadDisplay = document.getElementById("scoreKeypadDisplay");
+  if (keypadDisplay) keypadDisplay.value = ephemeralPoints;
+  updateTeamScorePreview();
 }
 
 function handleBiddingPointsToggle(isBiddingTeamPoints) {
   ephemeralPoints = ""; // Clear ephemeral points input
   updateState({ enterBidderPoints: isBiddingTeamPoints });
 }
+
+function calculateRoundPointsOutcome({
+  biddingTeam,
+  bidAmount,
+  pointsValue,
+  enterBidderPoints = false,
+  currentTotals = { us: 0, dem: 0 },
+  pendingPenalty = null,
+} = {}) {
+  if (biddingTeam !== "us" && biddingTeam !== "dem") {
+    return { error: "Please select a bidding team." };
+  }
+
+  const bidString = String(bidAmount ?? "").trim();
+  const pointsString = String(pointsValue ?? "").trim();
+  if (!pointsString) return { error: "Enter points with the in-app keypad." };
+
+  const bidError = validateBid(bidString);
+  const pointsError = validatePoints(pointsString);
+  if (bidError || pointsError) return { error: bidError || pointsError };
+
+  const numericBid = Number(bidString);
+  const numericPoints = Number(pointsString);
+  let usEarned = 0;
+  let demEarned = 0;
+
+  if (numericPoints === 360) {
+    if (enterBidderPoints) {
+      if (biddingTeam === "us") usEarned = 360;
+      else demEarned = 360;
+    } else if (biddingTeam === "us") {
+      usEarned = -numericBid;
+      demEarned = 360;
+    } else {
+      usEarned = 360;
+      demEarned = -numericBid;
+    }
+  } else {
+    const otherTeamPoints = 180 - numericPoints;
+    if (enterBidderPoints) {
+      if (biddingTeam === "us") {
+        usEarned = numericPoints;
+        demEarned = otherTeamPoints;
+      } else {
+        demEarned = numericPoints;
+        usEarned = otherTeamPoints;
+      }
+    } else if (biddingTeam === "us") {
+      demEarned = numericPoints;
+      usEarned = otherTeamPoints;
+    } else {
+      usEarned = numericPoints;
+      demEarned = otherTeamPoints;
+    }
+
+    if (pendingPenalty?.type === "cheat") {
+      if (pendingPenalty.team === "us") usEarned = -numericBid;
+      else if (pendingPenalty.team === "dem") demEarned = -numericBid;
+    }
+    if (biddingTeam === "us" && usEarned < numericBid) usEarned = -numericBid;
+    else if (biddingTeam === "dem" && demEarned < numericBid) demEarned = -numericBid;
+  }
+
+  const safeTotals = sanitizeTotals(currentTotals);
+  const newTotals = {
+    us: safeTotals.us + usEarned,
+    dem: safeTotals.dem + demEarned,
+  };
+  const bidderEarned = biddingTeam === "us" ? usEarned : demEarned;
+
+  return {
+    error: "",
+    numericBid,
+    numericPoints,
+    usEarned,
+    demEarned,
+    newTotals,
+    bidMade: bidderEarned >= numericBid,
+  };
+}
+
 function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
   if (state.isSubmittingRound) return;
 
   const pointsInputEl = document.getElementById("pointsInput");
-  const pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
-
-  if (!pointsInputEl && !String(pointsVal).trim()) {
-    updateState({ error: "Please enter points before submitting." });
-    return;
-  }
+  let pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
+  if (!String(pointsVal).trim()) pointsVal = "0";
 
   if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
   const bidError = validateBid(bidAmount);
@@ -268,6 +413,7 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
   // blocked — otherwise the flag stays true forever and freezes all submits.
   updateState({ isSubmittingRound: false });
+  closeScoreKeypad(true);
   const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
 
   openZeroPointsModal(chosen => {
@@ -295,32 +441,20 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const isFirstRound = rounds.length === 0;
   if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
 
-  let usEarned = 0, demEarned = 0;
-  const nonBiddingTeamTotal = 180; // Standard total points in a hand excluding Rook
-
-  if (numericPoints === 360) { // Special 360 case (usually means all points + Rook)
-      if (enterBidderPoints) { // Bidding team claims 360
-          biddingTeam === "us" ? (usEarned = 360, demEarned = 0) : (demEarned = 360, usEarned = 0);
-      } else { // Non-bidding team claims 360
-          biddingTeam === "us" ? (usEarned = -numericBid, demEarned = 360) : (demEarned = -numericBid, usEarned = 360);
-      }
-  } else { // Standard point distribution
-      if (enterBidderPoints) { // Points entered for bidding team
-          biddingTeam === "us" ? (usEarned = numericPoints, demEarned = nonBiddingTeamTotal - numericPoints) : (demEarned = numericPoints, usEarned = nonBiddingTeamTotal - numericPoints);
-      } else { // Points entered for non-bidding team
-          biddingTeam === "us" ? (demEarned = numericPoints, usEarned = nonBiddingTeamTotal - numericPoints) : (usEarned = numericPoints, demEarned = nonBiddingTeamTotal - numericPoints);
-      }
-      // Apply penalty if bid not met
-      if (state.pendingPenalty && state.pendingPenalty.type === "cheat") {
-    if (state.pendingPenalty.team === "us")   usEarned  = -numericBid;
-    else                                      demEarned = -numericBid;
-}
-      if (biddingTeam === "us" && usEarned < numericBid) usEarned = -numericBid;
-      else if (biddingTeam === "dem" && demEarned < numericBid) demEarned = -numericBid;
-  }
-
   const lastTotals = getLastRunningTotals();
-  const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
+  const roundOutcome = calculateRoundPointsOutcome({
+    biddingTeam,
+    bidAmount: numericBid,
+    pointsValue: numericPoints,
+    enterBidderPoints,
+    currentTotals: lastTotals,
+    pendingPenalty: state.pendingPenalty,
+  });
+  if (roundOutcome.error) {
+    updateState({ isSubmittingRound: false, error: roundOutcome.error });
+    return;
+  }
+  const { usEarned, demEarned, newTotals } = roundOutcome;
   const newRound = { roundIndex: rounds.length, biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
   const updatedRounds = [...rounds, newRound];
 
@@ -350,6 +484,7 @@ victoryMethod  = "Set Other Team";
     }
 
   ephemeralCustomBid = ""; ephemeralPoints = "";
+  closeScoreKeypad(true);
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
   if (timerRunning && !gameFinished) { /* Time continues */ }
@@ -564,6 +699,8 @@ async function startRematchWithFirstDealer(firstDealer) {
   confettiTriggered = false;
   ephemeralCustomBid = "";
   ephemeralPoints = "";
+  activeScoreKeypadTarget = "";
+  scoreKeypadShouldAnimate = false;
   pendingGameAction = null;
   window.prePopulatedTeamData = null;
   saveCurrentGameState();

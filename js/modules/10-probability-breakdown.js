@@ -47,10 +47,6 @@ function generateProbabilityBreakdown() {
   const currentScores = sanitizeTotals(lastRound?.runningTotals);
   const scoreDiff = currentScores.us - currentScores.dem;
   const roundsPlayed = state.rounds.length;
-  const prevRound = roundsPlayed > 1 ? state.rounds[roundsPlayed - 2] : null;
-  const prevTotals = sanitizeTotals(prevRound?.runningTotals);
-  const prevDiff = prevTotals.us - prevTotals.dem;
-  const momentum = scoreDiff - prevDiff;
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
   const modelSnapshot = getModelProbabilitySnapshotForState(state, probabilityContext.model, probabilityContext.personalization);
@@ -63,13 +59,12 @@ function generateProbabilityBreakdown() {
     winProb,
     games,
     currentScores,
-    momentum,
     probabilityContext,
     modelSnapshot
   );
 }
 
-function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum, probabilityContext, modelSnapshot) {
+function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, probabilityContext, modelSnapshot) {
   const labelUsDisplay = escapeHtmlValue(labelUs || "Us");
   const labelDemDisplay = escapeHtmlValue(labelDem || "Dem");
   const leadLabelDisplay = scoreDiff > 0 ? labelUsDisplay : labelDemDisplay;
@@ -100,121 +95,74 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const baseModelProbUs = snapshot.baseModelProbUs;
   const personalizationRecord = snapshot.personalizationRecord;
   const personalizationActive = snapshot.personalizationActive;
-  const modelId = snapshot.modelId;
+  const historicalContributes = beta > 0;
+  const modelContributes = beta < 1;
+  const personalizationContributes = modelContributes && personalizationActive;
+  const bucketRange = getBucketRange(bucketedScore);
+  const empiricalWeight = Math.round(beta * 100);
+  const modelWeight = Math.round((1 - beta) * 100);
+  const empiricalPercent = Math.round(empirical * 100);
+  const modelPercent = Math.round(modelProbUs * 100);
+  const modelLabel = personalizationContributes ? "Personalized model" : "Regression model";
+  const methodLabel = historicalContributes
+    ? (modelContributes ? `Saved-game history + ${modelLabel.toLowerCase()}` : "Saved-game history")
+    : modelLabel;
 
-  // Score bucketing analysis
-  const bucketAnalysis = (() => {
-    const bucketRange = getBucketRange(bucketedScore);
-    const bucketSize = Math.abs(bucketedScore);
-    let bucketDescription = "";
-
-    if (bucketSize === 0) {
-      bucketDescription = "Tied games";
-    } else if (bucketSize <= 130) {
-      bucketDescription = `Close games (${bucketRange})`;
-    } else if (bucketSize <= 180) {
-      bucketDescription = `Large leads (${bucketRange})`;
-    } else {
-      bucketDescription = `Dominant positions (${bucketRange})`;
-    }
-
-    return {
-      bucketedScore,
-      bucketDescription,
-      bucketRange
-    };
-  })();
-
-  // Historical pattern analysis (exact bucket + round)
-  const historicalAnalysis = (() => {
-    const relevantGames = games.filter(game => {
-      return game.rounds && game.rounds.length > 0 && game.finalScore;
-    });
-
-    if (relevantGames.length === 0) {
+  const estimateAnalysis = (() => {
+    if (!historicalContributes) {
       return {
-        text: "No historical data",
-        explanation: "Model-only estimate (no saved games with complete rounds)",
-        empiricalRate: 0,
-        totalObservations: 0
+        title: "Model Estimate",
+        source: `100% ${modelLabel}`,
+        input: `Current estimate: ${winProb.us.toFixed(1)}% for ${labelUsDisplay}`,
+        detail: "Uses the current score, round, recent score movement, and latest bid context.",
       };
     }
 
-    const explanation = totalObs > 0
-      ? `Exact match: round ${roundsPlayed}, bucket ${bucketAnalysis.bucketRange}`
-      : `No exact matches yet for round ${roundsPlayed} in bucket ${bucketAnalysis.bucketRange}`;
+    if (!modelContributes) {
+      return {
+        title: "Saved-Game Estimate",
+        source: "100% Saved-game history",
+        input: `Historical result: ${empiricalPercent}% for ${labelUsDisplay} -> ${winProb.us.toFixed(1)}%`,
+        detail: `Based on ${totalObs} comparable saved rounds.`,
+      };
+    }
+
     return {
-      text: `${relevantGames.length} saved games available`,
-      explanation,
-      empiricalRate: totalObs > 0 ? empirical : 0,
-      totalObservations: totalObs
+      title: "Probability Blend",
+      source: `${empiricalWeight}% Saved-game history + ${modelWeight}% ${modelLabel}`,
+      input: `${empiricalPercent}% history + ${modelPercent}% model -> ${winProb.us.toFixed(1)}%`,
+      detail: `Based on ${totalObs} comparable saved rounds. Saved history gains influence as more matches are recorded.`,
     };
   })();
 
-  // Blending analysis
-  const blendingAnalysis = (() => {
-    const empiricalWeight = Math.round(beta * 100);
-    const modelWeight = Math.round((1 - beta) * 100);
-    const empiricalPercent = Math.round(empirical * 100);
-    const modelPercent = Math.round(modelProbUs * 100);
-    const baseModelPercent = Math.round(baseModelProbUs * 100);
-    const modelLabel = personalizationActive ? "personalized model" : "base model";
-
-    let confidence = "Low";
-    if (totalObs >= 50) confidence = "Very High";
-    else if (totalObs >= 20) confidence = "High";
-    else if (totalObs >= 10) confidence = "Medium";
-    else if (totalObs >= 5) confidence = "Low-Medium";
-
-    return {
-      empiricalWeight,
-      modelWeight,
-      empiricalPercent,
-      modelPercent,
-      baseModelPercent,
-      modelLabel,
-      confidence,
-      totalObservations: totalObs
-    };
-  })();
-
-  const personalizationAnalysis = (() => {
+  const personalizationAnalysis = personalizationContributes ? (() => {
     const record = normalizePersonalizationRecord(personalizationRecord);
-    if (!record || record.modelId !== modelId) {
-      return {
-        status: "Inactive",
-        detail: "No personalization record for the active model yet.",
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (no personalization applied)`,
-      };
-    }
-
+    if (!record) return null;
     const updatedAtMs = Date.parse(record.updatedAt || "");
     const updatedAtText = Number.isFinite(updatedAtMs) ? formatTimestamp(updatedAtMs, "Unknown") : "Unknown";
-    const baseLossText = Number.isFinite(record.baseLogLoss) ? record.baseLogLoss.toFixed(4) : "N/A";
-    const personalizedLossText = Number.isFinite(record.personalizedLogLoss) ? record.personalizedLogLoss.toFixed(4) : "N/A";
-
-    if (personalizationActive) {
-      return {
-        status: "Active",
-        detail: `${record.gameSamples} games / ${record.roundSamples} rounds • Updated ${updatedAtText}`,
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% -> Personalized: ${Math.round(modelProbUs * 100)}%`,
-      };
-    }
-
-    if (record.gameSamples < PERSONALIZATION_MIN_GAMES || record.roundSamples < PERSONALIZATION_MIN_ROUNDS) {
-      return {
-        status: "Inactive (more local data needed)",
-        detail: `${record.gameSamples}/${PERSONALIZATION_MIN_GAMES} games • ${record.roundSamples}/${PERSONALIZATION_MIN_ROUNDS} rounds`,
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (personalization pending)`,
-      };
-    }
-
     return {
-      status: "Inactive (no reliable gain)",
-      detail: `Log loss: base ${baseLossText} vs personalized ${personalizedLossText}`,
-      effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (guardrails kept identity calibration)`,
+      detail: `${record.gameSamples} games / ${record.roundSamples} rounds • Updated ${updatedAtText}`,
+      effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% -> Personalized: ${Math.round(modelProbUs * 100)}%`,
     };
-  })();
+  })() : null;
+
+  const activeEngineExplanation = [
+    modelContributes
+      ? `<p>• <strong>Current game:</strong> Reads the score after round ${roundsPlayed}, the stage of the game, recent score movement, and the latest bid context.</p>`
+      : `<p>• <strong>Current game:</strong> Matches the score after round ${roundsPlayed} with comparable saved situations.</p>`,
+    modelContributes
+      ? `<p>• <strong>Model estimate:</strong> A pretrained model uses those details to estimate each team's chance of winning.</p>`
+      : "",
+    historicalContributes
+      ? `<p>• <strong>Saved-game history:</strong> Comparable moments from completed games saved on this device contribute to this estimate.</p>`
+      : "",
+    personalizationContributes
+      ? `<p>• <strong>Personalization:</strong> A locally learned adjustment is currently refining the model estimate for your games.</p>`
+      : "",
+    historicalContributes && modelContributes
+      ? `<p>• <strong>Final result:</strong> The displayed probability blends the model estimate with the matching saved-game results.</p>`
+      : `<p>• <strong>Final result:</strong> The displayed probability comes from the ${historicalContributes ? "matching saved-game results" : "model estimate"}.</p>`,
+  ].filter(Boolean).join("\n");
 
   return `
     <div class="space-y-4">
@@ -234,7 +182,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Method: Historical bucket + regression model${personalizationActive ? " + user calibration" : ""} • Confidence: ${blendingAnalysis.confidence}
+          Method: ${escapeHtmlValue(methodLabel)}
         </div>
       </div>
 
@@ -244,15 +192,12 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
 
         <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Score Classification</div>
-            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${escapeHtmlValue(bucketAnalysis.bucketDescription)}</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">Current Score</div>
+            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">Round ${roundsPlayed}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
+            ${currentScores.us} - ${currentScores.dem}
             ${Math.abs(scoreDiff) > 0 ? `(${Math.abs(scoreDiff)} point ${leadLabelDisplay} lead)` : '(Tied)'}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Bucketed as: ${escapeHtmlValue(bucketAnalysis.bucketRange)} • Round ${roundsPlayed}
           </div>
         </div>
       </div>
@@ -261,39 +206,39 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
       <div class="space-y-3">
         <h3 class="font-semibold text-gray-800 dark:text-white">Statistical Analysis</h3>
 
+        ${historicalContributes ? `
         <div class="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Historical Bucket (Exact Match)</div>
-            <div class="text-sm text-green-700 dark:text-green-300 font-medium">${historicalAnalysis.empiricalRate > 0 ? `${Math.round(historicalAnalysis.empiricalRate * 100)}% historical win rate` : 'No exact matches yet'}</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">Saved-Game Matches</div>
+            <div class="text-sm text-green-700 dark:text-green-300 font-medium">${empiricalPercent}% ${labelUsDisplay} win rate</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Data:</strong> ${historicalAnalysis.totalObservations} observations in this exact round + bucket
+            ${totalObs} comparable saved rounds
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${escapeHtmlValue(historicalAnalysis.explanation)}
+            Round ${roundsPlayed} • ${scoreDiff === 0 ? "Tied score" : `${leadLabelDisplay} ahead by ${escapeHtmlValue(bucketRange)} points`}
           </div>
         </div>
+        ` : ""}
 
         <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Probability Blend</div>
-            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${blendingAnalysis.empiricalWeight}% Historical bucket + ${blendingAnalysis.modelWeight}% Regression model</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">${escapeHtmlValue(estimateAnalysis.title)}</div>
+            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${escapeHtmlValue(estimateAnalysis.source)}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Inputs:</strong> ${blendingAnalysis.empiricalPercent}% (bucket) + ${blendingAnalysis.modelPercent}% (${blendingAnalysis.modelLabel}) -> ${winProb.us.toFixed(1)}%
+            ${estimateAnalysis.input}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Base model output before personalization: ${blendingAnalysis.baseModelPercent}%.
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Based on ${blendingAnalysis.totalObservations} observations in this exact bucket. More data = higher historical weight.
+            ${escapeHtmlValue(estimateAnalysis.detail)}
           </div>
         </div>
 
+        ${personalizationAnalysis ? `
         <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
             <div class="font-medium text-gray-700 dark:text-gray-300">Per-User Calibration</div>
-            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">${escapeHtmlValue(personalizationAnalysis.status)}</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">Active</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
             ${escapeHtmlValue(personalizationAnalysis.detail)}
@@ -302,22 +247,18 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
             ${escapeHtmlValue(personalizationAnalysis.effectText)}
           </div>
         </div>
+        ` : ""}
       </div>
 
       <!-- How It Works -->
       <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
         <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-          <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Probability Was Calculated</h4>
+          <h4 class="font-medium text-gray-800 dark:text-white mb-2">How the Win Probability Engine Works</h4>
           <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-            <p>• <strong>Current state:</strong> Uses the live score after round ${roundsPlayed} and momentum (change in score diff from the previous round)</p>
-            <p>• <strong>Historical bucket:</strong> Looks up saved games in the exact round index and 20-point score-diff bucket, with Laplace smoothing (1|1)</p>
-            <p>• <strong>Recency weighting:</strong> Disabled; all saved games count equally</p>
-            <p>• <strong>Regression model:</strong> Computes base probability from 14 features (score diff, round index, momentum, bid context, and interaction terms), then applies global Platt calibration</p>
-            <p>• <strong>User calibration:</strong> Learns per-user slope/intercept from completed local games and applies only when data + log-loss guardrails are met</p>
-            <p>• <strong>Blend:</strong> Final probability = (weight * historical) + (1 - weight) * model; weight grows with the log of observations in this exact bucket (full weight at 30)</p>
+            ${activeEngineExplanation}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-            Historical bucket and user calibration update as you save games; global model coefficients stay fixed until retrained.
+            The estimate updates after each completed round.
           </div>
         </div>
       </div>

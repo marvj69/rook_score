@@ -102,12 +102,13 @@ This will provide an app-like experience with an icon and potentially offline ac
     *   Tap on the team card ("Us" or "Dem") that won the bid for the current round. The selected team's card will appear "sunken".
 4.  **Enter Bid Amount:**
     *   A panel will appear below the team cards.
-    *   Use the **preset bid buttons** (e.g., 120, 125, etc.) or tap "**Other**" to enter a custom bid amount.
+    *   Use the **preset bid buttons** (e.g., 120, 125, etc.) or tap "**Other**" and use the in-app number pad for a custom bid amount.
     *   Custom bids must be positive, multiples of 5, and not exceed 360.
 5.  **Enter Points Scored:**
     *   Once a valid bid is selected/entered, options to input points will appear.
     *   First, select **whose points you are entering**: the bidding team or the non-bidding team.
-    *   Enter the points in the input field. Points must be multiples of 5, between 0-180, or exactly 360.
+    *   Tap the points field to slide the in-app number pad up from the bottom; the app does not open the device keyboard for scoring. Points must be multiples of 5, between 0-180, or exactly 360.
+    *   The Us and Dem score cards show the projected totals as the number is entered.
     *   **0-Point Special Handling:** If you enter '0' for a team, a modal will pop up asking if the bidding team should receive a 180 or 360 point bonus (standard Rook rules for "shooting the moon" or taking all points). You can also choose to keep it as 0.
     *   Click "**Submit**".
 6.  **Scoring Logic:**

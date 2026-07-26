@@ -39,7 +39,8 @@ function launchGameOverConfetti() {
 
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
-  const totals = getCurrentTotals();
+  const scorePreview = getRoundScorePreview();
+  const totals = scorePreview.totals;
   const roundNumber = rounds.length + 1;
 
   const shouldShowWinProbability = state.showWinProbability && !gameOver && rounds.length > 0;
@@ -108,14 +109,19 @@ function renderApp() {
     </div>
     ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
-      ${renderTeamCard("us", totals.us, winProb)}
+      ${renderTeamCard("us", totals.us, winProb, scorePreview.active)}
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
-      ${renderTeamCard("dem", totals.dem, winProb)}
+      ${renderTeamCard("dem", totals.dem, winProb, scorePreview.active)}
     </div>
     ${error ? `<div>${renderErrorAlert(error)}</div>` : ""}
     ${renderScoreInputCard()}
     ${renderHistoryCard()}
     ${renderGameOverOverlay()}
+    ${activeScoreKeypadTarget === "bid"
+      ? renderInAppNumericKeypad("bid", "Custom bid keypad")
+      : activeScoreKeypadTarget === "points"
+        ? renderInAppNumericKeypad("points", "Points keypad")
+        : ""}
   `;
   scheduleViewportCompatibilitySync();
   if (gameOver && !confettiTriggered) {
@@ -123,13 +129,42 @@ function renderApp() {
     launchGameOverConfetti();
   }
 }
-function renderTeamCard(teamKey, score, winProb) {
+function getRoundScorePreview() {
+  const currentTotals = getCurrentTotals();
+  const pointsValue = String(ephemeralPoints ?? "").trim();
+  if (!pointsValue || state.gameOver || !state.biddingTeam || !state.bidAmount) {
+    return { totals: currentTotals, active: false };
+  }
+
+  const outcome = calculateRoundPointsOutcome({
+    biddingTeam: state.biddingTeam,
+    bidAmount: state.bidAmount,
+    pointsValue,
+    enterBidderPoints: state.enterBidderPoints,
+    currentTotals,
+    pendingPenalty: state.pendingPenalty,
+  });
+  return outcome.error
+    ? { totals: currentTotals, active: false }
+    : { totals: outcome.newTotals, active: true };
+}
+function updateTeamScorePreview() {
+  const scorePreview = getRoundScorePreview();
+  ["us", "dem"].forEach((teamKey) => {
+    const scoreElement = document.getElementById(`teamScore-${teamKey}`);
+    const cardElement = document.getElementById(`teamCard-${teamKey}`);
+    if (scoreElement) scoreElement.textContent = String(scorePreview.totals[teamKey]);
+    cardElement?.classList.toggle("team-card--score-preview", scorePreview.active);
+  });
+}
+function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
   const isSelected = state.biddingTeam === teamKey;
   const teamLabel = teamKey === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const teamLabelDisplay = escapeHtmlValue(teamLabel);
   const teamLabelAttr = escapeAttribute(teamLabel);
   const colorClass = teamKey === "us" ? "bg-primary" : "bg-accent";
   const selectedEffect = isSelected ? "sunken-selected" : "";
+  const scorePreviewClass = isScorePreview ? " team-card--score-preview" : "";
   let winProbDisplay = "";
   if (winProb) {
     const prob = teamKey === "us" ? winProb.us : winProb.dem;
@@ -144,13 +179,13 @@ function renderTeamCard(teamKey, score, winProb) {
   const animDelay = teamKey === "us" ? "0s" : "0.1s";
   const animation = getOneShotCardPopAnimation(`team-card:${teamKey}`, { delay: animDelay });
   return `
-    <button type="button"
-    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${animation.className}"${animation.attrs}
+    <button id="teamCard-${teamKey}" type="button"
+    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${scorePreviewClass}${animation.className}"${animation.attrs}
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center">
 <h2 class="text-base sm:text-xl font-bold truncate max-w-[100px] sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
-<p class="text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);">${score}</p>
+<p id="teamScore-${teamKey}" class="team-score-value text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);" aria-live="polite" aria-atomic="true">${score}</p>
 ${winProbDisplay}
     </div>
   </button>`;
@@ -168,6 +203,41 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
 }
 function renderErrorAlert(errorMessage) {
   return `<div role="alert" class="flex items-center border border-red-400 rounded-xl p-4 bg-red-50 text-red-700 space-x-3 dark:bg-red-900/50 dark:border-red-600 dark:text-red-300">${Icons.AlertCircle}<div class="flex-1">${escapeHtmlValue(errorMessage)}</div></div>`;
+}
+function renderInAppNumericKeypad(target, label) {
+  const keys = [
+    ["1", "1"], ["2", "2"], ["3", "3"],
+    ["4", "4"], ["5", "5"], ["6", "6"],
+    ["7", "7"], ["8", "8"], ["9", "9"],
+    ["clear", "Clear"], ["0", "0"], ["backspace", "⌫"],
+  ];
+  const safeTarget = target === "bid" ? "bid" : "points";
+  const safeLabel = escapeAttribute(label);
+  const displayValue = safeTarget === "bid"
+    ? String(ephemeralCustomBid || state.customBidValue || "")
+    : String(ephemeralPoints || "");
+  const displayValueAttr = escapeAttribute(displayValue);
+  const displayPlaceholder = safeTarget === "bid" ? "Enter bid" : "Enter points";
+  if (activeScoreKeypadTarget !== safeTarget) return "";
+  const animationClass = scoreKeypadShouldAnimate ? " score-keypad-sheet--entering" : "";
+  scoreKeypadShouldAnimate = false;
+
+  return `
+    <div id="scoreKeypadBackdrop" class="score-keypad-backdrop" onclick="closeScoreKeypad()" aria-hidden="true"></div>
+    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" data-keypad-target="${safeTarget}" role="dialog" aria-label="${safeLabel}">
+      <div class="score-keypad-sheet__header">
+        <span>${escapeHtmlValue(label)}</span>
+        <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
+      </div>
+      <input id="scoreKeypadDisplay" type="text" inputmode="none" readonly tabindex="-1" class="score-keypad-sheet__display" value="${displayValueAttr}" placeholder="${displayPlaceholder}" aria-label="${safeLabel} value" aria-readonly="true" aria-live="polite" />
+      <div class="score-keypad" role="group" aria-label="${safeLabel}">
+        ${keys.map(([key, display]) => {
+          const keyClass = key === "clear" || key === "backspace" ? " score-keypad__key--action" : "";
+          const ariaLabel = key === "backspace" ? "Delete last digit" : (key === "clear" ? "Clear value" : `Number ${key}`);
+          return `<button type="button" class="score-keypad__key${keyClass} threed" onclick="handleScoreKeypadInput('${safeTarget}', '${key}')" aria-label="${ariaLabel}">${display}</button>`;
+        }).join("")}
+      </div>
+    </section>`;
 }
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
@@ -213,7 +283,9 @@ function renderScoreInputCard() {
                 return `<button type="button" class="${btnBase} ${isActive ? btnActive : btnInactive}" onclick="handleBidSelect('${escapeAttribute(b)}')" aria-pressed="${isActive}">${b === "other" ? "Other" : escapeHtmlValue(b)}</button>`;
               }).join("")}
             </div>
-            ${showCustomBid ? `<div class="mt-2"><input type="number" inputmode="numeric" pattern="[0-9]*" step="5" value="${customBidValueAttr}" oninput="handleCustomBidChange(event)" placeholder="Enter custom bid" class="w-full sm:w-1/2 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" /></div>` : ""}
+            ${showCustomBid ? `<div class="mt-3 score-keypad-field">
+              <input id="customBidInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "bid"}" value="${customBidValueAttr}" placeholder="Tap to enter bid" onclick="openScoreKeypad('bid')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('bid'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+            </div>` : ""}
           </div>
           ${(bidAmount || (showCustomBid && customBidValue && validateBid(customBidValue)==="")) ? renderPointsInput() : ""}
         </form>
@@ -251,10 +323,8 @@ function renderPointsInput() {
       </div>
       <div>
         <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
-        <div class="flex flex-col sm:flex-row sm:items-center sm:gap-5">
-          <input id="pointsInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="360" step="5" value="${ephemeralPointsAttr}" oninput="ephemeralPoints = this.value" placeholder="Enter points" class="w-full sm:flex-grow border border-gray-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
-          <button type="submit" class="mt-2 sm:mt-0 bg-blue-600 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit</button>
-        </div>
+        <input id="pointsInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "points"}" value="${ephemeralPointsAttr}" placeholder="Tap to enter points" onclick="openScoreKeypad('points')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('points'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+        <button type="submit" class="mt-3 w-full bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit Round</button>
       </div>
     </div>`;
 }

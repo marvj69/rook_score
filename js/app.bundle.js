@@ -282,6 +282,9 @@ let state = { ...DEFAULT_STATE };
 let confettiTriggered = false;
 let ephemeralCustomBid = ""; // For temporarily holding input value before state update
 let ephemeralPoints = "";    // Same for points
+let activeScoreKeypadTarget = "";
+let scoreKeypadShouldAnimate = false;
+let scoreKeypadCloseTimer = null;
 let confirmationCallback = null;
 let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first
@@ -1810,6 +1813,10 @@ function resetGame() {
   confettiTriggered = false;
   ephemeralCustomBid = "";
   ephemeralPoints = "";
+  activeScoreKeypadTarget = "";
+  scoreKeypadShouldAnimate = false;
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
   localStorage.removeItem(ACTIVE_GAME_KEY);
   // Attempt to also clear from Firebase if user is signed in
   if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
@@ -2854,6 +2861,7 @@ victoryMethod  = "Set Other Team";
 
 function handleTeamClick(team) {
   if (state.gameOver) return;
+  closeScoreKeypad(true);
   if (state.biddingTeam === team) { // Click active team to deselect
     state.savedScoreInputStates[team] = { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error };
     updateState({ biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: ""});
@@ -2868,6 +2876,7 @@ function handleTeamClick(team) {
   ephemeralCustomBid = ""; ephemeralPoints = ""; // Clear ephemeral inputs on team switch
 }
 function handleBidSelect(bid) {
+  closeScoreKeypad(true);
   if (bid === "other") {
     updateState({ showCustomBid: true, bidAmount: "", customBidValue: ephemeralCustomBid }); // Keep current custom bid if switching back
   } else {
@@ -2884,40 +2893,183 @@ function handleBidSelect(bid) {
 // numbers that are technically "valid JSON" but we *don't* want to trigger a re-render for
 const BLOCKED_BIDS = new Set([5, 10, 15]);
 
-function handleCustomBidChange(e) {
-  const valStr = e.target.value.trim();   // what the user just typed
-  ephemeralCustomBid = valStr;            // persist while they're editing
+function applyInAppNumericKey(currentValue, key, maxLength = 3) {
+  const normalizedValue = String(currentValue ?? "").replace(/\D/g, "").slice(0, maxLength);
+  const normalizedKey = String(key ?? "");
 
-  /* 1 ▸ don't redraw yet if…
-  – the bid isn't valid JSON-wise  OR
-  – it's one of the blocked small bids                       */
-  if (validateBid(valStr) !== "" || BLOCKED_BIDS.has(+valStr)) return;
+  if (normalizedKey === "clear") return "";
+  if (normalizedKey === "backspace") return normalizedValue.slice(0, -1);
+  if (!/^\d$/.test(normalizedKey)) return normalizedValue;
+  if (normalizedValue.length >= maxLength) return normalizedValue;
+  if (normalizedValue === "0") return normalizedKey === "0" ? "0" : normalizedKey;
+  return `${normalizedValue}${normalizedKey}`;
+}
 
-  /* 2 ▸ number is good and allowed → commit to state
-  (this will re-render exactly once, keeping focus alive)    */
+function setCustomBidInputValue(value) {
+  const valStr = String(value ?? "").trim();
+  ephemeralCustomBid = valStr;
+  const isValidBid = validateBid(valStr) === "" && !BLOCKED_BIDS.has(Number(valStr));
+
   updateState({
-    customBidValue : valStr,
-    bidAmount      : valStr,
-    lastBidAmount  : valStr,
-    lastBidTeam    : state.biddingTeam
+    customBidValue: valStr,
+    bidAmount: isValidBid ? valStr : "",
+    lastBidAmount: isValidBid ? valStr : null,
+    lastBidTeam: isValidBid ? state.biddingTeam : null,
+    error: "",
   });
+}
+
+function handleCustomBidChange(e) {
+  setCustomBidInputValue(e?.target?.value);
+}
+
+function openScoreKeypad(target) {
+  if (target !== "bid" && target !== "points") return;
+  if (target === "bid" && !state.showCustomBid) return;
+  if (target === "points" && !state.bidAmount) return;
+
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
+  scoreKeypadShouldAnimate = activeScoreKeypadTarget !== target;
+  activeScoreKeypadTarget = target;
+  scheduleRender();
+}
+
+function closeScoreKeypad(immediate = false) {
+  if (!activeScoreKeypadTarget) return;
+  const closingTarget = activeScoreKeypadTarget;
+  const sheet = document.getElementById("scoreKeypadSheet");
+
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
+  if (immediate || !sheet) {
+    activeScoreKeypadTarget = "";
+    scoreKeypadShouldAnimate = false;
+    scheduleRender();
+    return;
+  }
+
+  sheet.classList.add("score-keypad-sheet--closing");
+  scoreKeypadCloseTimer = setTimeout(() => {
+    if (activeScoreKeypadTarget === closingTarget) activeScoreKeypadTarget = "";
+    scoreKeypadShouldAnimate = false;
+    scoreKeypadCloseTimer = null;
+    scheduleRender();
+  }, 190);
+}
+
+function handleScoreKeypadInput(target, key) {
+  if (target === "bid") {
+    setCustomBidInputValue(applyInAppNumericKey(ephemeralCustomBid || state.customBidValue, key));
+    return;
+  }
+  if (target !== "points") return;
+
+  ephemeralPoints = applyInAppNumericKey(ephemeralPoints, key);
+  if (state.error) {
+    updateState({ error: "" });
+    return;
+  }
+
+  const pointsInput = document.getElementById("pointsInput");
+  if (pointsInput) pointsInput.value = ephemeralPoints;
+  const keypadDisplay = document.getElementById("scoreKeypadDisplay");
+  if (keypadDisplay) keypadDisplay.value = ephemeralPoints;
+  updateTeamScorePreview();
 }
 
 function handleBiddingPointsToggle(isBiddingTeamPoints) {
   ephemeralPoints = ""; // Clear ephemeral points input
   updateState({ enterBidderPoints: isBiddingTeamPoints });
 }
+
+function calculateRoundPointsOutcome({
+  biddingTeam,
+  bidAmount,
+  pointsValue,
+  enterBidderPoints = false,
+  currentTotals = { us: 0, dem: 0 },
+  pendingPenalty = null,
+} = {}) {
+  if (biddingTeam !== "us" && biddingTeam !== "dem") {
+    return { error: "Please select a bidding team." };
+  }
+
+  const bidString = String(bidAmount ?? "").trim();
+  const pointsString = String(pointsValue ?? "").trim();
+  if (!pointsString) return { error: "Enter points with the in-app keypad." };
+
+  const bidError = validateBid(bidString);
+  const pointsError = validatePoints(pointsString);
+  if (bidError || pointsError) return { error: bidError || pointsError };
+
+  const numericBid = Number(bidString);
+  const numericPoints = Number(pointsString);
+  let usEarned = 0;
+  let demEarned = 0;
+
+  if (numericPoints === 360) {
+    if (enterBidderPoints) {
+      if (biddingTeam === "us") usEarned = 360;
+      else demEarned = 360;
+    } else if (biddingTeam === "us") {
+      usEarned = -numericBid;
+      demEarned = 360;
+    } else {
+      usEarned = 360;
+      demEarned = -numericBid;
+    }
+  } else {
+    const otherTeamPoints = 180 - numericPoints;
+    if (enterBidderPoints) {
+      if (biddingTeam === "us") {
+        usEarned = numericPoints;
+        demEarned = otherTeamPoints;
+      } else {
+        demEarned = numericPoints;
+        usEarned = otherTeamPoints;
+      }
+    } else if (biddingTeam === "us") {
+      demEarned = numericPoints;
+      usEarned = otherTeamPoints;
+    } else {
+      usEarned = numericPoints;
+      demEarned = otherTeamPoints;
+    }
+
+    if (pendingPenalty?.type === "cheat") {
+      if (pendingPenalty.team === "us") usEarned = -numericBid;
+      else if (pendingPenalty.team === "dem") demEarned = -numericBid;
+    }
+    if (biddingTeam === "us" && usEarned < numericBid) usEarned = -numericBid;
+    else if (biddingTeam === "dem" && demEarned < numericBid) demEarned = -numericBid;
+  }
+
+  const safeTotals = sanitizeTotals(currentTotals);
+  const newTotals = {
+    us: safeTotals.us + usEarned,
+    dem: safeTotals.dem + demEarned,
+  };
+  const bidderEarned = biddingTeam === "us" ? usEarned : demEarned;
+
+  return {
+    error: "",
+    numericBid,
+    numericPoints,
+    usEarned,
+    demEarned,
+    newTotals,
+    bidMade: bidderEarned >= numericBid,
+  };
+}
+
 function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const { biddingTeam, bidAmount, rounds, enterBidderPoints, usTeamName, demTeamName } = state;
   if (state.isSubmittingRound) return;
 
   const pointsInputEl = document.getElementById("pointsInput");
-  const pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
-
-  if (!pointsInputEl && !String(pointsVal).trim()) {
-    updateState({ error: "Please enter points before submitting." });
-    return;
-  }
+  let pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
+  if (!String(pointsVal).trim()) pointsVal = "0";
 
   if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
   const bidError = validateBid(bidAmount);
@@ -2933,6 +3085,7 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
   // blocked — otherwise the flag stays true forever and freezes all submits.
   updateState({ isSubmittingRound: false });
+  closeScoreKeypad(true);
   const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
 
   openZeroPointsModal(chosen => {
@@ -2960,32 +3113,20 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   const isFirstRound = rounds.length === 0;
   if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
 
-  let usEarned = 0, demEarned = 0;
-  const nonBiddingTeamTotal = 180; // Standard total points in a hand excluding Rook
-
-  if (numericPoints === 360) { // Special 360 case (usually means all points + Rook)
-      if (enterBidderPoints) { // Bidding team claims 360
-          biddingTeam === "us" ? (usEarned = 360, demEarned = 0) : (demEarned = 360, usEarned = 0);
-      } else { // Non-bidding team claims 360
-          biddingTeam === "us" ? (usEarned = -numericBid, demEarned = 360) : (demEarned = -numericBid, usEarned = 360);
-      }
-  } else { // Standard point distribution
-      if (enterBidderPoints) { // Points entered for bidding team
-          biddingTeam === "us" ? (usEarned = numericPoints, demEarned = nonBiddingTeamTotal - numericPoints) : (demEarned = numericPoints, usEarned = nonBiddingTeamTotal - numericPoints);
-      } else { // Points entered for non-bidding team
-          biddingTeam === "us" ? (demEarned = numericPoints, usEarned = nonBiddingTeamTotal - numericPoints) : (usEarned = numericPoints, demEarned = nonBiddingTeamTotal - numericPoints);
-      }
-      // Apply penalty if bid not met
-      if (state.pendingPenalty && state.pendingPenalty.type === "cheat") {
-    if (state.pendingPenalty.team === "us")   usEarned  = -numericBid;
-    else                                      demEarned = -numericBid;
-}
-      if (biddingTeam === "us" && usEarned < numericBid) usEarned = -numericBid;
-      else if (biddingTeam === "dem" && demEarned < numericBid) demEarned = -numericBid;
-  }
-
   const lastTotals = getLastRunningTotals();
-  const newTotals = { us: lastTotals.us + usEarned, dem: lastTotals.dem + demEarned };
+  const roundOutcome = calculateRoundPointsOutcome({
+    biddingTeam,
+    bidAmount: numericBid,
+    pointsValue: numericPoints,
+    enterBidderPoints,
+    currentTotals: lastTotals,
+    pendingPenalty: state.pendingPenalty,
+  });
+  if (roundOutcome.error) {
+    updateState({ isSubmittingRound: false, error: roundOutcome.error });
+    return;
+  }
+  const { usEarned, demEarned, newTotals } = roundOutcome;
   const newRound = { roundIndex: rounds.length, biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
   const updatedRounds = [...rounds, newRound];
 
@@ -3015,6 +3156,7 @@ victoryMethod  = "Set Other Team";
     }
 
   ephemeralCustomBid = ""; ephemeralPoints = "";
+  closeScoreKeypad(true);
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
   if (timerRunning && !gameFinished) { /* Time continues */ }
@@ -3229,6 +3371,8 @@ async function startRematchWithFirstDealer(firstDealer) {
   confettiTriggered = false;
   ephemeralCustomBid = "";
   ephemeralPoints = "";
+  activeScoreKeypadTarget = "";
+  scoreKeypadShouldAnimate = false;
   pendingGameAction = null;
   window.prePopulatedTeamData = null;
   saveCurrentGameState();
@@ -3790,10 +3934,6 @@ function generateProbabilityBreakdown() {
   const currentScores = sanitizeTotals(lastRound?.runningTotals);
   const scoreDiff = currentScores.us - currentScores.dem;
   const roundsPlayed = state.rounds.length;
-  const prevRound = roundsPlayed > 1 ? state.rounds[roundsPlayed - 2] : null;
-  const prevTotals = sanitizeTotals(prevRound?.runningTotals);
-  const prevDiff = prevTotals.us - prevTotals.dem;
-  const momentum = scoreDiff - prevDiff;
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
   const modelSnapshot = getModelProbabilitySnapshotForState(state, probabilityContext.model, probabilityContext.personalization);
@@ -3806,13 +3946,12 @@ function generateProbabilityBreakdown() {
     winProb,
     games,
     currentScores,
-    momentum,
     probabilityContext,
     modelSnapshot
   );
 }
 
-function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, momentum, probabilityContext, modelSnapshot) {
+function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, labelDem, winProb, historicalGames, currentScores, probabilityContext, modelSnapshot) {
   const labelUsDisplay = escapeHtmlValue(labelUs || "Us");
   const labelDemDisplay = escapeHtmlValue(labelDem || "Dem");
   const leadLabelDisplay = scoreDiff > 0 ? labelUsDisplay : labelDemDisplay;
@@ -3843,121 +3982,74 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const baseModelProbUs = snapshot.baseModelProbUs;
   const personalizationRecord = snapshot.personalizationRecord;
   const personalizationActive = snapshot.personalizationActive;
-  const modelId = snapshot.modelId;
+  const historicalContributes = beta > 0;
+  const modelContributes = beta < 1;
+  const personalizationContributes = modelContributes && personalizationActive;
+  const bucketRange = getBucketRange(bucketedScore);
+  const empiricalWeight = Math.round(beta * 100);
+  const modelWeight = Math.round((1 - beta) * 100);
+  const empiricalPercent = Math.round(empirical * 100);
+  const modelPercent = Math.round(modelProbUs * 100);
+  const modelLabel = personalizationContributes ? "Personalized model" : "Regression model";
+  const methodLabel = historicalContributes
+    ? (modelContributes ? `Saved-game history + ${modelLabel.toLowerCase()}` : "Saved-game history")
+    : modelLabel;
 
-  // Score bucketing analysis
-  const bucketAnalysis = (() => {
-    const bucketRange = getBucketRange(bucketedScore);
-    const bucketSize = Math.abs(bucketedScore);
-    let bucketDescription = "";
-
-    if (bucketSize === 0) {
-      bucketDescription = "Tied games";
-    } else if (bucketSize <= 130) {
-      bucketDescription = `Close games (${bucketRange})`;
-    } else if (bucketSize <= 180) {
-      bucketDescription = `Large leads (${bucketRange})`;
-    } else {
-      bucketDescription = `Dominant positions (${bucketRange})`;
-    }
-
-    return {
-      bucketedScore,
-      bucketDescription,
-      bucketRange
-    };
-  })();
-
-  // Historical pattern analysis (exact bucket + round)
-  const historicalAnalysis = (() => {
-    const relevantGames = games.filter(game => {
-      return game.rounds && game.rounds.length > 0 && game.finalScore;
-    });
-
-    if (relevantGames.length === 0) {
+  const estimateAnalysis = (() => {
+    if (!historicalContributes) {
       return {
-        text: "No historical data",
-        explanation: "Model-only estimate (no saved games with complete rounds)",
-        empiricalRate: 0,
-        totalObservations: 0
+        title: "Model Estimate",
+        source: `100% ${modelLabel}`,
+        input: `Current estimate: ${winProb.us.toFixed(1)}% for ${labelUsDisplay}`,
+        detail: "Uses the current score, round, recent score movement, and latest bid context.",
       };
     }
 
-    const explanation = totalObs > 0
-      ? `Exact match: round ${roundsPlayed}, bucket ${bucketAnalysis.bucketRange}`
-      : `No exact matches yet for round ${roundsPlayed} in bucket ${bucketAnalysis.bucketRange}`;
+    if (!modelContributes) {
+      return {
+        title: "Saved-Game Estimate",
+        source: "100% Saved-game history",
+        input: `Historical result: ${empiricalPercent}% for ${labelUsDisplay} -> ${winProb.us.toFixed(1)}%`,
+        detail: `Based on ${totalObs} comparable saved rounds.`,
+      };
+    }
+
     return {
-      text: `${relevantGames.length} saved games available`,
-      explanation,
-      empiricalRate: totalObs > 0 ? empirical : 0,
-      totalObservations: totalObs
+      title: "Probability Blend",
+      source: `${empiricalWeight}% Saved-game history + ${modelWeight}% ${modelLabel}`,
+      input: `${empiricalPercent}% history + ${modelPercent}% model -> ${winProb.us.toFixed(1)}%`,
+      detail: `Based on ${totalObs} comparable saved rounds. Saved history gains influence as more matches are recorded.`,
     };
   })();
 
-  // Blending analysis
-  const blendingAnalysis = (() => {
-    const empiricalWeight = Math.round(beta * 100);
-    const modelWeight = Math.round((1 - beta) * 100);
-    const empiricalPercent = Math.round(empirical * 100);
-    const modelPercent = Math.round(modelProbUs * 100);
-    const baseModelPercent = Math.round(baseModelProbUs * 100);
-    const modelLabel = personalizationActive ? "personalized model" : "base model";
-
-    let confidence = "Low";
-    if (totalObs >= 50) confidence = "Very High";
-    else if (totalObs >= 20) confidence = "High";
-    else if (totalObs >= 10) confidence = "Medium";
-    else if (totalObs >= 5) confidence = "Low-Medium";
-
-    return {
-      empiricalWeight,
-      modelWeight,
-      empiricalPercent,
-      modelPercent,
-      baseModelPercent,
-      modelLabel,
-      confidence,
-      totalObservations: totalObs
-    };
-  })();
-
-  const personalizationAnalysis = (() => {
+  const personalizationAnalysis = personalizationContributes ? (() => {
     const record = normalizePersonalizationRecord(personalizationRecord);
-    if (!record || record.modelId !== modelId) {
-      return {
-        status: "Inactive",
-        detail: "No personalization record for the active model yet.",
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (no personalization applied)`,
-      };
-    }
-
+    if (!record) return null;
     const updatedAtMs = Date.parse(record.updatedAt || "");
     const updatedAtText = Number.isFinite(updatedAtMs) ? formatTimestamp(updatedAtMs, "Unknown") : "Unknown";
-    const baseLossText = Number.isFinite(record.baseLogLoss) ? record.baseLogLoss.toFixed(4) : "N/A";
-    const personalizedLossText = Number.isFinite(record.personalizedLogLoss) ? record.personalizedLogLoss.toFixed(4) : "N/A";
-
-    if (personalizationActive) {
-      return {
-        status: "Active",
-        detail: `${record.gameSamples} games / ${record.roundSamples} rounds • Updated ${updatedAtText}`,
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% -> Personalized: ${Math.round(modelProbUs * 100)}%`,
-      };
-    }
-
-    if (record.gameSamples < PERSONALIZATION_MIN_GAMES || record.roundSamples < PERSONALIZATION_MIN_ROUNDS) {
-      return {
-        status: "Inactive (more local data needed)",
-        detail: `${record.gameSamples}/${PERSONALIZATION_MIN_GAMES} games • ${record.roundSamples}/${PERSONALIZATION_MIN_ROUNDS} rounds`,
-        effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (personalization pending)`,
-      };
-    }
-
     return {
-      status: "Inactive (no reliable gain)",
-      detail: `Log loss: base ${baseLossText} vs personalized ${personalizedLossText}`,
-      effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% (guardrails kept identity calibration)`,
+      detail: `${record.gameSamples} games / ${record.roundSamples} rounds • Updated ${updatedAtText}`,
+      effectText: `Base model: ${Math.round(baseModelProbUs * 100)}% -> Personalized: ${Math.round(modelProbUs * 100)}%`,
     };
-  })();
+  })() : null;
+
+  const activeEngineExplanation = [
+    modelContributes
+      ? `<p>• <strong>Current game:</strong> Reads the score after round ${roundsPlayed}, the stage of the game, recent score movement, and the latest bid context.</p>`
+      : `<p>• <strong>Current game:</strong> Matches the score after round ${roundsPlayed} with comparable saved situations.</p>`,
+    modelContributes
+      ? `<p>• <strong>Model estimate:</strong> A pretrained model uses those details to estimate each team's chance of winning.</p>`
+      : "",
+    historicalContributes
+      ? `<p>• <strong>Saved-game history:</strong> Comparable moments from completed games saved on this device contribute to this estimate.</p>`
+      : "",
+    personalizationContributes
+      ? `<p>• <strong>Personalization:</strong> A locally learned adjustment is currently refining the model estimate for your games.</p>`
+      : "",
+    historicalContributes && modelContributes
+      ? `<p>• <strong>Final result:</strong> The displayed probability blends the model estimate with the matching saved-game results.</p>`
+      : `<p>• <strong>Final result:</strong> The displayed probability comes from the ${historicalContributes ? "matching saved-game results" : "model estimate"}.</p>`,
+  ].filter(Boolean).join("\n");
 
   return `
     <div class="space-y-4">
@@ -3977,7 +4069,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           </div>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Method: Historical bucket + regression model${personalizationActive ? " + user calibration" : ""} • Confidence: ${blendingAnalysis.confidence}
+          Method: ${escapeHtmlValue(methodLabel)}
         </div>
       </div>
 
@@ -3987,15 +4079,12 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
 
         <div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Score Classification</div>
-            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">${escapeHtmlValue(bucketAnalysis.bucketDescription)}</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">Current Score</div>
+            <div class="text-sm text-blue-700 dark:text-blue-300 font-medium">Round ${roundsPlayed}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Current:</strong> ${currentScores.us} - ${currentScores.dem} 
+            ${currentScores.us} - ${currentScores.dem}
             ${Math.abs(scoreDiff) > 0 ? `(${Math.abs(scoreDiff)} point ${leadLabelDisplay} lead)` : '(Tied)'}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Bucketed as: ${escapeHtmlValue(bucketAnalysis.bucketRange)} • Round ${roundsPlayed}
           </div>
         </div>
       </div>
@@ -4004,39 +4093,39 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
       <div class="space-y-3">
         <h3 class="font-semibold text-gray-800 dark:text-white">Statistical Analysis</h3>
 
+        ${historicalContributes ? `
         <div class="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Historical Bucket (Exact Match)</div>
-            <div class="text-sm text-green-700 dark:text-green-300 font-medium">${historicalAnalysis.empiricalRate > 0 ? `${Math.round(historicalAnalysis.empiricalRate * 100)}% historical win rate` : 'No exact matches yet'}</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">Saved-Game Matches</div>
+            <div class="text-sm text-green-700 dark:text-green-300 font-medium">${empiricalPercent}% ${labelUsDisplay} win rate</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Data:</strong> ${historicalAnalysis.totalObservations} observations in this exact round + bucket
+            ${totalObs} comparable saved rounds
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            ${escapeHtmlValue(historicalAnalysis.explanation)}
+            Round ${roundsPlayed} • ${scoreDiff === 0 ? "Tied score" : `${leadLabelDisplay} ahead by ${escapeHtmlValue(bucketRange)} points`}
           </div>
         </div>
+        ` : ""}
 
         <div class="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
-            <div class="font-medium text-gray-700 dark:text-gray-300">Probability Blend</div>
-            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${blendingAnalysis.empiricalWeight}% Historical bucket + ${blendingAnalysis.modelWeight}% Regression model</div>
+            <div class="font-medium text-gray-700 dark:text-gray-300">${escapeHtmlValue(estimateAnalysis.title)}</div>
+            <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">${escapeHtmlValue(estimateAnalysis.source)}</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
-            <strong>Inputs:</strong> ${blendingAnalysis.empiricalPercent}% (bucket) + ${blendingAnalysis.modelPercent}% (${blendingAnalysis.modelLabel}) -> ${winProb.us.toFixed(1)}%
+            ${estimateAnalysis.input}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Base model output before personalization: ${blendingAnalysis.baseModelPercent}%.
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Based on ${blendingAnalysis.totalObservations} observations in this exact bucket. More data = higher historical weight.
+            ${escapeHtmlValue(estimateAnalysis.detail)}
           </div>
         </div>
 
+        ${personalizationAnalysis ? `
         <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
           <div class="flex justify-between items-start mb-2">
             <div class="font-medium text-gray-700 dark:text-gray-300">Per-User Calibration</div>
-            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">${escapeHtmlValue(personalizationAnalysis.status)}</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">Active</div>
           </div>
           <div class="text-sm text-gray-600 dark:text-gray-400">
             ${escapeHtmlValue(personalizationAnalysis.detail)}
@@ -4045,22 +4134,18 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
             ${escapeHtmlValue(personalizationAnalysis.effectText)}
           </div>
         </div>
+        ` : ""}
       </div>
 
       <!-- How It Works -->
       <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
         <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-          <h4 class="font-medium text-gray-800 dark:text-white mb-2">How This Probability Was Calculated</h4>
+          <h4 class="font-medium text-gray-800 dark:text-white mb-2">How the Win Probability Engine Works</h4>
           <div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-            <p>• <strong>Current state:</strong> Uses the live score after round ${roundsPlayed} and momentum (change in score diff from the previous round)</p>
-            <p>• <strong>Historical bucket:</strong> Looks up saved games in the exact round index and 20-point score-diff bucket, with Laplace smoothing (1|1)</p>
-            <p>• <strong>Recency weighting:</strong> Disabled; all saved games count equally</p>
-            <p>• <strong>Regression model:</strong> Computes base probability from 14 features (score diff, round index, momentum, bid context, and interaction terms), then applies global Platt calibration</p>
-            <p>• <strong>User calibration:</strong> Learns per-user slope/intercept from completed local games and applies only when data + log-loss guardrails are met</p>
-            <p>• <strong>Blend:</strong> Final probability = (weight * historical) + (1 - weight) * model; weight grows with the log of observations in this exact bucket (full weight at 30)</p>
+            ${activeEngineExplanation}
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-            Historical bucket and user calibration update as you save games; global model coefficients stay fixed until retrained.
+            The estimate updates after each completed round.
           </div>
         </div>
       </div>
@@ -4371,7 +4456,8 @@ function launchGameOverConfetti() {
 
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
-  const totals = getCurrentTotals();
+  const scorePreview = getRoundScorePreview();
+  const totals = scorePreview.totals;
   const roundNumber = rounds.length + 1;
 
   const shouldShowWinProbability = state.showWinProbability && !gameOver && rounds.length > 0;
@@ -4440,14 +4526,19 @@ function renderApp() {
     </div>
     ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
-      ${renderTeamCard("us", totals.us, winProb)}
+      ${renderTeamCard("us", totals.us, winProb, scorePreview.active)}
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
-      ${renderTeamCard("dem", totals.dem, winProb)}
+      ${renderTeamCard("dem", totals.dem, winProb, scorePreview.active)}
     </div>
     ${error ? `<div>${renderErrorAlert(error)}</div>` : ""}
     ${renderScoreInputCard()}
     ${renderHistoryCard()}
     ${renderGameOverOverlay()}
+    ${activeScoreKeypadTarget === "bid"
+      ? renderInAppNumericKeypad("bid", "Custom bid keypad")
+      : activeScoreKeypadTarget === "points"
+        ? renderInAppNumericKeypad("points", "Points keypad")
+        : ""}
   `;
   scheduleViewportCompatibilitySync();
   if (gameOver && !confettiTriggered) {
@@ -4455,13 +4546,42 @@ function renderApp() {
     launchGameOverConfetti();
   }
 }
-function renderTeamCard(teamKey, score, winProb) {
+function getRoundScorePreview() {
+  const currentTotals = getCurrentTotals();
+  const pointsValue = String(ephemeralPoints ?? "").trim();
+  if (!pointsValue || state.gameOver || !state.biddingTeam || !state.bidAmount) {
+    return { totals: currentTotals, active: false };
+  }
+
+  const outcome = calculateRoundPointsOutcome({
+    biddingTeam: state.biddingTeam,
+    bidAmount: state.bidAmount,
+    pointsValue,
+    enterBidderPoints: state.enterBidderPoints,
+    currentTotals,
+    pendingPenalty: state.pendingPenalty,
+  });
+  return outcome.error
+    ? { totals: currentTotals, active: false }
+    : { totals: outcome.newTotals, active: true };
+}
+function updateTeamScorePreview() {
+  const scorePreview = getRoundScorePreview();
+  ["us", "dem"].forEach((teamKey) => {
+    const scoreElement = document.getElementById(`teamScore-${teamKey}`);
+    const cardElement = document.getElementById(`teamCard-${teamKey}`);
+    if (scoreElement) scoreElement.textContent = String(scorePreview.totals[teamKey]);
+    cardElement?.classList.toggle("team-card--score-preview", scorePreview.active);
+  });
+}
+function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
   const isSelected = state.biddingTeam === teamKey;
   const teamLabel = teamKey === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const teamLabelDisplay = escapeHtmlValue(teamLabel);
   const teamLabelAttr = escapeAttribute(teamLabel);
   const colorClass = teamKey === "us" ? "bg-primary" : "bg-accent";
   const selectedEffect = isSelected ? "sunken-selected" : "";
+  const scorePreviewClass = isScorePreview ? " team-card--score-preview" : "";
   let winProbDisplay = "";
   if (winProb) {
     const prob = teamKey === "us" ? winProb.us : winProb.dem;
@@ -4476,13 +4596,13 @@ function renderTeamCard(teamKey, score, winProb) {
   const animDelay = teamKey === "us" ? "0s" : "0.1s";
   const animation = getOneShotCardPopAnimation(`team-card:${teamKey}`, { delay: animDelay });
   return `
-    <button type="button"
-    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${animation.className}"${animation.attrs}
+    <button id="teamCard-${teamKey}" type="button"
+    class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${scorePreviewClass}${animation.className}"${animation.attrs}
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center">
 <h2 class="text-base sm:text-xl font-bold truncate max-w-[100px] sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
-<p class="text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);">${score}</p>
+<p id="teamScore-${teamKey}" class="team-score-value text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);" aria-live="polite" aria-atomic="true">${score}</p>
 ${winProbDisplay}
     </div>
   </button>`;
@@ -4500,6 +4620,41 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
 }
 function renderErrorAlert(errorMessage) {
   return `<div role="alert" class="flex items-center border border-red-400 rounded-xl p-4 bg-red-50 text-red-700 space-x-3 dark:bg-red-900/50 dark:border-red-600 dark:text-red-300">${Icons.AlertCircle}<div class="flex-1">${escapeHtmlValue(errorMessage)}</div></div>`;
+}
+function renderInAppNumericKeypad(target, label) {
+  const keys = [
+    ["1", "1"], ["2", "2"], ["3", "3"],
+    ["4", "4"], ["5", "5"], ["6", "6"],
+    ["7", "7"], ["8", "8"], ["9", "9"],
+    ["clear", "Clear"], ["0", "0"], ["backspace", "⌫"],
+  ];
+  const safeTarget = target === "bid" ? "bid" : "points";
+  const safeLabel = escapeAttribute(label);
+  const displayValue = safeTarget === "bid"
+    ? String(ephemeralCustomBid || state.customBidValue || "")
+    : String(ephemeralPoints || "");
+  const displayValueAttr = escapeAttribute(displayValue);
+  const displayPlaceholder = safeTarget === "bid" ? "Enter bid" : "Enter points";
+  if (activeScoreKeypadTarget !== safeTarget) return "";
+  const animationClass = scoreKeypadShouldAnimate ? " score-keypad-sheet--entering" : "";
+  scoreKeypadShouldAnimate = false;
+
+  return `
+    <div id="scoreKeypadBackdrop" class="score-keypad-backdrop" onclick="closeScoreKeypad()" aria-hidden="true"></div>
+    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" data-keypad-target="${safeTarget}" role="dialog" aria-label="${safeLabel}">
+      <div class="score-keypad-sheet__header">
+        <span>${escapeHtmlValue(label)}</span>
+        <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
+      </div>
+      <input id="scoreKeypadDisplay" type="text" inputmode="none" readonly tabindex="-1" class="score-keypad-sheet__display" value="${displayValueAttr}" placeholder="${displayPlaceholder}" aria-label="${safeLabel} value" aria-readonly="true" aria-live="polite" />
+      <div class="score-keypad" role="group" aria-label="${safeLabel}">
+        ${keys.map(([key, display]) => {
+          const keyClass = key === "clear" || key === "backspace" ? " score-keypad__key--action" : "";
+          const ariaLabel = key === "backspace" ? "Delete last digit" : (key === "clear" ? "Clear value" : `Number ${key}`);
+          return `<button type="button" class="score-keypad__key${keyClass} threed" onclick="handleScoreKeypadInput('${safeTarget}', '${key}')" aria-label="${ariaLabel}">${display}</button>`;
+        }).join("")}
+      </div>
+    </section>`;
 }
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
@@ -4545,7 +4700,9 @@ function renderScoreInputCard() {
                 return `<button type="button" class="${btnBase} ${isActive ? btnActive : btnInactive}" onclick="handleBidSelect('${escapeAttribute(b)}')" aria-pressed="${isActive}">${b === "other" ? "Other" : escapeHtmlValue(b)}</button>`;
               }).join("")}
             </div>
-            ${showCustomBid ? `<div class="mt-2"><input type="number" inputmode="numeric" pattern="[0-9]*" step="5" value="${customBidValueAttr}" oninput="handleCustomBidChange(event)" placeholder="Enter custom bid" class="w-full sm:w-1/2 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" /></div>` : ""}
+            ${showCustomBid ? `<div class="mt-3 score-keypad-field">
+              <input id="customBidInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "bid"}" value="${customBidValueAttr}" placeholder="Tap to enter bid" onclick="openScoreKeypad('bid')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('bid'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+            </div>` : ""}
           </div>
           ${(bidAmount || (showCustomBid && customBidValue && validateBid(customBidValue)==="")) ? renderPointsInput() : ""}
         </form>
@@ -4583,10 +4740,8 @@ function renderPointsInput() {
       </div>
       <div>
         <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
-        <div class="flex flex-col sm:flex-row sm:items-center sm:gap-5">
-          <input id="pointsInput" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="360" step="5" value="${ephemeralPointsAttr}" oninput="ephemeralPoints = this.value" placeholder="Enter points" class="w-full sm:flex-grow border border-gray-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
-          <button type="submit" class="mt-2 sm:mt-0 bg-blue-600 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit</button>
-        </div>
+        <input id="pointsInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "points"}" value="${ephemeralPointsAttr}" placeholder="Tap to enter points" onclick="openScoreKeypad('points')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('points'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+        <button type="submit" class="mt-3 w-full bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit Round</button>
       </div>
     </div>`;
 }
@@ -6618,6 +6773,7 @@ if (typeof module !== 'undefined' && module.exports) {
     sortStatisticsData,
     bucketScore,
     getBucketRange,
+    generateComplexProbabilityBreakdown,
     buildProbabilityIndex,
     MODEL_FEATURE_SET,
     FALLBACK_RUNTIME_MODEL,
@@ -6642,6 +6798,8 @@ if (typeof module !== 'undefined' && module.exports) {
     calculateWinProbability,
     validateBid,
     validatePoints,
+    applyInAppNumericKey,
+    calculateRoundPointsOutcome,
     calculateSafeTimeAccumulation,
     formatDuration,
     shouldApplyStandaloneSafeAreaFallback,

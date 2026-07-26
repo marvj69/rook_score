@@ -218,6 +218,7 @@ const {
   sortStatisticsData,
   bucketScore,
   getBucketRange,
+  generateComplexProbabilityBreakdown,
   buildProbabilityIndex,
   MODEL_FEATURE_SET,
   FALLBACK_RUNTIME_MODEL,
@@ -234,6 +235,8 @@ const {
   calculateWinProbability,
   validateBid,
   validatePoints,
+  applyInAppNumericKey,
+  calculateRoundPointsOutcome,
   calculateSafeTimeAccumulation,
   formatDuration,
   shouldApplyStandaloneSafeAreaFallback,
@@ -445,6 +448,65 @@ test('validatePoints accepts score-entry bounds including the 360 special case',
   assert.equal(validatePoints('185'), 'Points 0-180 or 360.');
   assert.equal(validatePoints('17'), 'Points must be multiple of 5.');
   assert.equal(validatePoints('abc'), 'Points must be a number.');
+});
+
+test('in-app numeric keypad appends, clears, and deletes without accepting other keys', () => {
+  assert.equal(applyInAppNumericKey('', '1'), '1');
+  assert.equal(applyInAppNumericKey('12', '5'), '125');
+  assert.equal(applyInAppNumericKey('125', '0'), '125');
+  assert.equal(applyInAppNumericKey('125', 'backspace'), '12');
+  assert.equal(applyInAppNumericKey('125', 'clear'), '');
+  assert.equal(applyInAppNumericKey('0', '5'), '5');
+  assert.equal(applyInAppNumericKey('12', 'Enter'), '12');
+});
+
+test('round outcome preview calculation matches made and set bid scoring', () => {
+  assert.deepEqual(calculateRoundPointsOutcome({
+    biddingTeam: 'us',
+    bidAmount: 120,
+    pointsValue: 130,
+    enterBidderPoints: true,
+    currentTotals: { us: 200, dem: 150 },
+  }), {
+    error: '',
+    numericBid: 120,
+    numericPoints: 130,
+    usEarned: 130,
+    demEarned: 50,
+    newTotals: { us: 330, dem: 200 },
+    bidMade: true,
+  });
+
+  const setOutcome = calculateRoundPointsOutcome({
+    biddingTeam: 'dem',
+    bidAmount: 140,
+    pointsValue: 60,
+    enterBidderPoints: true,
+    currentTotals: { us: 100, dem: 90 },
+  });
+  assert.equal(setOutcome.usEarned, 120);
+  assert.equal(setOutcome.demEarned, -140);
+  assert.deepEqual(setOutcome.newTotals, { us: 220, dem: -50 });
+  assert.equal(setOutcome.bidMade, false);
+});
+
+test('round outcome preview calculation handles non-bidder 360 and empty input', () => {
+  const sweep = calculateRoundPointsOutcome({
+    biddingTeam: 'us',
+    bidAmount: 150,
+    pointsValue: 360,
+    enterBidderPoints: false,
+    currentTotals: { us: 300, dem: 100 },
+  });
+  assert.equal(sweep.usEarned, -150);
+  assert.equal(sweep.demEarned, 360);
+  assert.deepEqual(sweep.newTotals, { us: 150, dem: 460 });
+  assert.equal(sweep.bidMade, false);
+  assert.equal(calculateRoundPointsOutcome({
+    biddingTeam: 'us',
+    bidAmount: 120,
+    pointsValue: '',
+  }).error, 'Enter points with the in-app keypad.');
 });
 
 test('calculateSafeTimeAccumulation caps round and game duration defensively', () => {
@@ -832,6 +894,85 @@ test('getBucketRange labels score buckets with matching signed bucket semantics'
   assert.equal(getBucketRange(20), '1-20');
   assert.equal(getBucketRange(-40), '21-40');
   assert.equal(getBucketRange(180), '161+');
+});
+
+test('probability breakdown hides history and personalization when they do not contribute', () => {
+  const html = generateComplexProbabilityBreakdown(
+    -235,
+    3,
+    'Us',
+    'Dem',
+    { us: 39.3, dem: 60.7 },
+    [],
+    { us: -85, dem: 150 },
+    null,
+    {
+      modelId: FALLBACK_RUNTIME_MODEL.modelId,
+      modelProbUs: 0.393,
+      baseModelProbUs: 0.393,
+      personalizationRecord: null,
+      personalizationActive: false,
+    },
+  );
+
+  assert.match(html, /Method: Regression model/);
+  assert.match(html, /Model Estimate/);
+  assert.match(html, /100% Regression model/);
+  assert.doesNotMatch(html, /Saved-Game Matches/);
+  assert.doesNotMatch(html, /Per-User Calibration/);
+  assert.doesNotMatch(html, /Confidence:/);
+  assert.doesNotMatch(html, /Score Classification/);
+  assert.doesNotMatch(html, /<strong>Saved-game history:<\/strong>/);
+  assert.doesNotMatch(html, /<strong>Personalization:<\/strong>/);
+});
+
+test('probability breakdown shows saved history and personalization only when they contribute', () => {
+  const historicalGames = [
+    {
+      winner: 'us',
+      finalScore: { us: 500, dem: 300 },
+      rounds: [
+        { runningTotals: { us: 20, dem: 40 } },
+        { runningTotals: { us: 60, dem: 180 } },
+        { runningTotals: { us: -85, dem: 150 } },
+      ],
+    },
+  ];
+  const personalizationRecord = {
+    schemaVersion: 1,
+    modelId: FALLBACK_RUNTIME_MODEL.modelId,
+    slope: 1.1,
+    intercept: 0.1,
+    roundSamples: 60,
+    gameSamples: 10,
+    gamesHash: 'personalized',
+    updatedAt: '2026-07-25T12:00:00.000Z',
+    baseLogLoss: 0.6,
+    personalizedLogLoss: 0.5,
+  };
+  const html = generateComplexProbabilityBreakdown(
+    -235,
+    3,
+    'Us',
+    'Dem',
+    { us: 44.8, dem: 55.2 },
+    historicalGames,
+    { us: -85, dem: 150 },
+    null,
+    {
+      modelId: FALLBACK_RUNTIME_MODEL.modelId,
+      modelProbUs: 0.41,
+      baseModelProbUs: 0.393,
+      personalizationRecord,
+      personalizationActive: true,
+    },
+  );
+
+  assert.match(html, /Saved-Game Matches/);
+  assert.match(html, /Probability Blend/);
+  assert.match(html, /Per-User Calibration/);
+  assert.match(html, /<strong>Saved-game history:<\/strong>/);
+  assert.match(html, /<strong>Personalization:<\/strong>/);
 });
 
 test('model feature set includes all expected runtime features', () => {
@@ -1483,10 +1624,56 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.16";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.23";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+});
+
+test('score entry uses the in-app keypad and previews totals in the team cards', () => {
+  const source = readFileSync(path.join(repoRoot, 'js/modules/11-rendering.js'), 'utf8');
+  const actionsSource = readFileSync(path.join(repoRoot, 'js/modules/08-game-actions-logic.js'), 'utf8');
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+
+  assert.match(source, /function renderInAppNumericKeypad/);
+  assert.match(source, /id="customBidInput" type="text" inputmode="none" readonly/);
+  assert.match(source, /id="pointsInput" type="text" inputmode="none" readonly/);
+  assert.match(source, /onclick="openScoreKeypad\('bid'\)"/);
+  assert.match(source, /onclick="openScoreKeypad\('points'\)"/);
+  assert.match(source, /activeScoreKeypadTarget !== safeTarget/);
+  assert.match(source, /id="scoreKeypadBackdrop"[^>]*onclick="closeScoreKeypad\(\)"[^>]*aria-hidden="true"/);
+  assert.match(source, /id="scoreKeypadSheet"/);
+  assert.match(source, /id="scoreKeypadDisplay" type="text" inputmode="none" readonly/);
+  assert.match(source, /aria-label="\$\{safeLabel\} value"[^>]*aria-readonly="true"[^>]*aria-live="polite"/);
+  assert.match(source, /function getRoundScorePreview/);
+  assert.match(source, /id="teamScore-\$\{teamKey\}"/);
+  assert.match(source, /class="team-score-value[^"]*"[^>]*aria-live="polite"/);
+  assert.match(actionsSource, /updateTeamScorePreview\(\)/);
+  assert.match(actionsSource, /keypadDisplay\.value = ephemeralPoints/);
+  assert.doesNotMatch(actionsSource, /scrollIntoView/);
+  assert.doesNotMatch(source, /Live outcome|scoreOutcomePreview|Tap the in-app keypad to preview this round/);
+  assert.doesNotMatch(source, /id="pointsInput" type="number"/);
+  assert.match(css, /\.score-keypad-sheet\s*\{[\s\S]*position:\s*fixed/);
+  assert.match(css, /\.score-keypad-backdrop\s*\{[\s\S]*position:\s*fixed[\s\S]*z-index:\s*7990/);
+  assert.match(css, /\.score-keypad-sheet\s*\{[\s\S]*z-index:\s*8000/);
+  assert.match(css, /\.score-keypad-sheet__display\s*\{/);
+  assert.match(css, /\.team-card--score-preview \.team-score-value/);
+  assert.doesNotMatch(css, /\.score-outcome-preview/);
+  assert.match(css, /@keyframes scoreKeypadSlideUp/);
+  assert.match(css, /translateY\(110%\)/);
+});
+
+test('submitting a blank points field opens the 180 or 360 decision flow', () => {
+  const actionsSource = readFileSync(path.join(repoRoot, 'js/modules/08-game-actions-logic.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+
+  assert.match(actionsSource, /let pointsVal = pointsInputEl\?\.value \?\? ephemeralPoints \?\? ""/);
+  assert.match(actionsSource, /if \(!String\(pointsVal\)\.trim\(\)\) pointsVal = "0"/);
+  assert.match(actionsSource, /if \(!skipZeroCheck && numericPoints === 0\)/);
+  assert.match(actionsSource, /openZeroPointsModal\(chosen =>/);
+  assert.doesNotMatch(actionsSource, /Please enter points before submitting/);
+  assert.match(htmlSource, /id="zeroPointsModalTitle"[^>]*>\s*No points entered/);
+  assert.match(htmlSource, /Did the Bidding team score <strong>180 or 360<\/strong>/);
 });
 
 test('about modal links to Fridge Tracker with its self-contained app icon', () => {
