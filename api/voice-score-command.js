@@ -164,8 +164,15 @@ const ACTION_SCHEMA = {
             enum: ["netPerGame", "bidMakePct", "setsForced", "comebacks", "closeWins", "perfect360s", "misdeals", "games"],
           },
           statsSort: { type: "string", enum: ["recent", "most", "least"] },
-          entityMode: { type: "string", enum: ["teams", "players"] },
-          entityKey: { type: "string" },
+          entityMode: {
+            type: "string",
+            enum: ["teams", "players"],
+            description: "Use with entityKey to open one saved team's or player's detailed statistics.",
+          },
+          entityKey: {
+            type: "string",
+            description: "Exact key from App context statistics.teams or statistics.players. Never invent a key.",
+          },
         },
         required: ["type"],
       },
@@ -287,6 +294,8 @@ function buildSystemPrompt() {
     "Use setThemeColors with usColor and/or demColor as #RRGGBB. Use themeAction randomize/reset/apply for theme modal controls.",
     "Use setBidPresets with presets array for quick bid buttons.",
     "Use setStatsControls with statsView, statsMetric, statsSort, or entityMode/entityKey to control the statistics modal. Current metrics: netPerGame, bidMakePct, setsForced, comebacks, closeWins, perfect360s, misdeals, games.",
+    "For statistics about a specific player or team, find the matching entry in App context statistics.players or statistics.teams. Set statsView and entityMode to that collection and copy its exact key into entityKey. Never use a display name as entityKey and never invent a key.",
+    "If a request names two players who appear together in one statistics.teams entry, treat it as that team. If one player is named without asking for their team, use that player's statistics.players entry.",
     "Examples:",
     "Transcript 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
     "Transcript 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
@@ -300,6 +309,8 @@ function buildSystemPrompt() {
     "Transcript 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
     "Transcript 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
     "Transcript 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidMakePct'}.",
+    "Transcript 'show Alice's stats', when statistics.players contains {key:'alice',name:'Alice'}, => status execute, action {type:'setStatsControls', statsView:'players', entityMode:'players', entityKey:'alice'}.",
+    "Transcript 'show Alice and Bob's team stats', when statistics.teams contains {key:'alice||bob',players:['Alice','Bob']}, => status execute, action {type:'setStatsControls', statsView:'teams', entityMode:'teams', entityKey:'alice||bob'}.",
     "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, version, confirmation, all.",
     "Settings keys: mustWinByBid, misdealHandling, proMode, experimentalFeatures, tableTalkPenaltyType, tableTalkPenaltyPoints.",
     "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
@@ -642,6 +653,107 @@ function resolveContextGameIndex(context, gameType, position) {
   return Number.isInteger(contextIndex) && contextIndex >= 0 ? contextIndex : position - 1;
 }
 
+function getContextStatisticsEntries(context, mode) {
+  const entries = Array.isArray(context?.statistics?.[mode]) ? context.statistics[mode] : [];
+  return entries
+    .filter(entry => entry && typeof entry === "object" && typeof entry.key === "string" && entry.key.trim())
+    .map(entry => ({
+      key: entry.key.trim(),
+      name: typeof entry.name === "string" ? entry.name.trim() : "",
+      players: mode === "teams"
+        ? (Array.isArray(entry.players) ? entry.players : entry.key.split("||"))
+            .map(name => String(name || "").trim())
+            .filter(Boolean)
+        : [],
+    }));
+}
+
+function commandTextIncludesPhrase(commandText, phrase) {
+  const normalizedPhrase = normalizeCommandText(phrase);
+  return Boolean(normalizedPhrase)
+    && ` ${commandText} `.includes(` ${normalizedPhrase} `);
+}
+
+function uniqueStatisticsEntries(entries) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const id = `${entry.mode}:${entry.key}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function resolveContextStatisticsEntity(transcript, context = {}) {
+  const text = normalizeCommandText(transcript);
+  if (!text || !/\bstats?\b|\bstatistics?\b/.test(text)) return null;
+
+  const players = getContextStatisticsEntries(context, "players")
+    .map(entry => ({ ...entry, mode: "players" }));
+  const teams = getContextStatisticsEntries(context, "teams")
+    .map(entry => ({ ...entry, mode: "teams" }));
+  const playerMatches = players.filter(entry => commandTextIncludesPhrase(text, entry.name));
+  const teamNameMatches = teams.filter(entry => commandTextIncludesPhrase(text, entry.name));
+  const teamMemberMatches = teams.filter(entry => (
+    entry.players.length > 1
+    && entry.players.every(name => commandTextIncludesPhrase(text, name))
+  ));
+  const teamMatches = uniqueStatisticsEntries([...teamNameMatches, ...teamMemberMatches]);
+  const wantsTeam = /\b(?:teams?|pairs?|duos?|partners?)\b/.test(text);
+  const wantsPlayer = /\b(?:players?|individuals?|persons?)\b/.test(text);
+
+  if (wantsTeam && !wantsPlayer) {
+    if (teamMatches.length === 1) return teamMatches[0];
+    if (playerMatches.length === 1) {
+      const matchedPlayerName = normalizeCommandText(playerMatches[0].name);
+      const teamsWithPlayer = teams.filter(team => team.players.some(
+        name => normalizeCommandText(name) === matchedPlayerName,
+      ));
+      if (teamsWithPlayer.length === 1) return teamsWithPlayer[0];
+    }
+    return null;
+  }
+
+  if (wantsPlayer && !wantsTeam) {
+    return playerMatches.length === 1 ? playerMatches[0] : null;
+  }
+
+  if (teamMatches.length === 1 && (teamNameMatches.length === 1 || playerMatches.length > 1)) {
+    return teamMatches[0];
+  }
+  if (playerMatches.length === 1) return playerMatches[0];
+  return teamMatches.length === 1 ? teamMatches[0] : null;
+}
+
+function buildStatisticsControl(transcript, context = {}) {
+  const text = normalizeCommandText(transcript);
+  if (!/\bstats?\b|\bstatistics?\b/.test(text)) return null;
+
+  const action = { type: "setStatsControls" };
+  if (/\bplayers?|individuals?\b/.test(text)) action.statsView = "players";
+  if (/\bteams?\b/.test(text)) action.statsView = "teams";
+  if (/\bnet(?: per game)?|margin|point differential\b/.test(text)) action.statsMetric = "netPerGame";
+  if (/\bbid (?:make|win|success)|success percentage|win percentage\b/.test(text)) action.statsMetric = "bidMakePct";
+  if (/\bsets? forced|forced sets?\b/.test(text)) action.statsMetric = "setsForced";
+  if (/\bcomebacks?\b/.test(text)) action.statsMetric = "comebacks";
+  if (/\bclose wins?\b/.test(text)) action.statsMetric = "closeWins";
+  if (/\b360s?|perfect 360s?\b/.test(text)) action.statsMetric = "perfect360s";
+  if (/\bmisdeals?\b/.test(text)) action.statsMetric = "misdeals";
+  if (/\bgames? played\b/.test(text)) action.statsMetric = "games";
+  if (/\bleast|lowest\b/.test(text)) action.statsSort = "least";
+  if (/\bmost|highest\b/.test(text)) action.statsSort = "most";
+  if (/\brecent|newest\b/.test(text)) action.statsSort = "recent";
+
+  const entity = resolveContextStatisticsEntity(transcript, context);
+  if (entity) {
+    action.statsView = entity.mode;
+    action.entityMode = entity.mode;
+    action.entityKey = entity.key;
+  }
+
+  return Object.keys(action).length > 1 ? { action, entity } : null;
+}
+
 function buildLocalExpandedControlPlan(transcript, context = {}) {
   const text = normalizeCommandText(transcript);
 
@@ -733,24 +845,15 @@ function buildLocalExpandedControlPlan(transcript, context = {}) {
     return createLocalPlan("execute", "Reset theme colors", "Resetting theme colors.", [{ type: "themeAction", themeAction: "reset" }]);
   }
 
-  if (/\bstats?\b|\bstatistics?\b/.test(text)) {
-    const action = { type: "setStatsControls" };
-    if (/\bplayers?|individuals?\b/.test(text)) action.statsView = "players";
-    if (/\bteams?\b/.test(text)) action.statsView = "teams";
-    if (/\bnet(?: per game)?|margin|point differential\b/.test(text)) action.statsMetric = "netPerGame";
-    if (/\bbid (?:make|win|success)|success percentage|win percentage\b/.test(text)) action.statsMetric = "bidMakePct";
-    if (/\bsets? forced|forced sets?\b/.test(text)) action.statsMetric = "setsForced";
-    if (/\bcomebacks?\b/.test(text)) action.statsMetric = "comebacks";
-    if (/\bclose wins?\b/.test(text)) action.statsMetric = "closeWins";
-    if (/\b360s?|perfect 360s?\b/.test(text)) action.statsMetric = "perfect360s";
-    if (/\bmisdeals?\b/.test(text)) action.statsMetric = "misdeals";
-    if (/\bgames? played\b/.test(text)) action.statsMetric = "games";
-    if (/\bleast|lowest\b/.test(text)) action.statsSort = "least";
-    if (/\bmost|highest\b/.test(text)) action.statsSort = "most";
-    if (/\brecent|newest\b/.test(text)) action.statsSort = "recent";
-    if (action.statsView || action.statsMetric || action.statsSort) {
-      return createLocalPlan("execute", "Update statistics view", "Updating statistics.", [action]);
-    }
+  const statisticsControl = buildStatisticsControl(transcript, context);
+  if (statisticsControl) {
+    const entityName = statisticsControl.entity?.name;
+    return createLocalPlan(
+      "execute",
+      entityName ? `Show statistics for ${entityName}` : "Update statistics view",
+      entityName ? `Showing statistics for ${entityName}.` : "Updating statistics.",
+      [statisticsControl.action],
+    );
   }
 
   return null;
@@ -941,6 +1044,45 @@ function buildLocalActionPlan(payload) {
     || buildLocalActionPlanFromTranscript(payload.transcript, payload.context);
 }
 
+function groundStatisticsEntityPlan(plan, payload) {
+  const normalizedPlan = normalizePlan(plan);
+  const statisticsControl = buildStatisticsControl(payload?.transcript, payload?.context);
+  if (!statisticsControl?.entity) return normalizedPlan;
+
+  const groundedAction = statisticsControl.action;
+  const statsActionIndex = normalizedPlan.actions.findIndex(action => action.type === "setStatsControls");
+  const statisticsModalIndex = normalizedPlan.actions.findIndex(
+    action => action.type === "openModal" && action.target === "statistics",
+  );
+  const actions = [...normalizedPlan.actions];
+
+  if (statsActionIndex >= 0) {
+    actions[statsActionIndex] = {
+      ...groundedAction,
+      ...actions[statsActionIndex],
+      statsView: statisticsControl.entity.mode,
+      entityMode: statisticsControl.entity.mode,
+      entityKey: statisticsControl.entity.key,
+    };
+  } else if (statisticsModalIndex >= 0) {
+    actions[statisticsModalIndex] = groundedAction;
+  } else {
+    return createLocalPlan(
+      "execute",
+      `Show statistics for ${statisticsControl.entity.name}`,
+      `Showing statistics for ${statisticsControl.entity.name}.`,
+      [groundedAction],
+    );
+  }
+
+  return {
+    ...normalizedPlan,
+    status: "execute",
+    requiresConfirmation: false,
+    actions,
+  };
+}
+
 function shouldReplaceProviderPlanWithLocalFallback(plan) {
   const normalizedPlan = normalizePlan(plan);
   return normalizedPlan.status === "clarify"
@@ -1044,7 +1186,7 @@ async function requestOpenRouterPlan(payload) {
 module.exports = async function handler(request, response) {
   setCorsHeaders(request, response);
   response.setHeader("Cache-Control", "no-store, max-age=0");
-  response.setHeader("X-Voice-Command-Revision", "json-object-v3");
+  response.setHeader("X-Voice-Command-Revision", "json-object-v4");
 
   if (request.method === "OPTIONS") {
     return response.status(204).end();
@@ -1059,7 +1201,7 @@ module.exports = async function handler(request, response) {
   try {
     const bodyText = await readRequestBody(request);
     payload = parsePayload(bodyText);
-    const plan = await requestOpenRouterPlan(payload);
+    const plan = groundStatisticsEntityPlan(await requestOpenRouterPlan(payload), payload);
     if (shouldUseLocalCommandFallback() && shouldReplaceProviderPlanWithLocalFallback(plan)) {
       const fallbackPlan = buildLocalActionPlan(payload);
       if (fallbackPlan) {
@@ -1093,4 +1235,5 @@ module.exports.ACTION_SCHEMA = ACTION_SCHEMA;
 module.exports.buildSystemPrompt = buildSystemPrompt;
 module.exports.buildLocalActionPlan = buildLocalActionPlan;
 module.exports.buildOpenRouterMessages = buildOpenRouterMessages;
+module.exports.resolveContextStatisticsEntity = resolveContextStatisticsEntity;
 module.exports.sanitizeConversation = sanitizeConversation;

@@ -114,7 +114,7 @@ This will provide an app-like experience with an icon and potentially offline ac
     *   The Us and Dem score cards show the projected totals as the number is entered.
     *   **0-Point Special Handling:** If you enter '0' for a team, a modal will pop up asking if the bidding team should receive a 180 or 360 point bonus (standard Rook rules for "shooting the moon" or taking all points). You can also choose to keep it as 0.
     *   Click "**Submit**".
-    *   Alternatively, tap **Voice** and say a short command like "Dem bid 125 and made 145", "Us bid 130 and got set", "Misdeal, next dealer", or "Undo that last hand". If a set bid omits the other team's points, the app asks before recording the default set score.
+    *   Alternatively, tap **Voice** and say a short command like "Dem bid 125 and made 145", "Us bid 130 and got set", "Misdeal, next dealer", "Undo that last hand", "Show Alice's stats", or "Show Alice and Bob's team stats". Named statistics commands open the matching saved player or team details. If a set bid omits the other team's points, the app asks before recording the default set score.
 6.  **Scoring Logic:**
     *   If the bidding team makes their bid, they get the points they took. The other team gets (180 - points bidding team took).
     *   If the bidding team *fails* to make their bid, they are set back by the amount of their bid (negative points), and the other team scores the points they took.

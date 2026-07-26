@@ -262,6 +262,7 @@ const {
   getVoiceScoreAppContext,
   getVoiceScoreActionTypes,
   normalizeVoiceScorePlan,
+  resolveVoiceScoreStatisticsSelection,
   getFilteredPlayerSuggestions,
 } = require('../js/app.js');
 
@@ -1079,12 +1080,27 @@ test('voice app context exposes compact library and statistics entities', () => 
   assert.deepEqual(context.library.completed[0].score, { us: 400, dem: 520 });
   assert.equal(context.library.freezer[0].index, 0);
   assert.ok(context.statistics.players.some(player => player.key === 'alice' && player.name === 'Alice'));
-  assert.ok(context.statistics.teams.some(team => team.key === 'alice||bob'));
+  assert.ok(context.statistics.teams.some(team => (
+    team.key === 'alice||bob'
+    && team.name === 'Alice & Bob'
+    && team.players.join('|') === 'Alice|Bob'
+  )));
   assert.ok(Array.isArray(context.ui.openPanels));
   assert.equal(context.settings.experimentalFeatures, false);
 });
 
 test('local voice planner covers history, version, current stats, teams, and visible game positions', () => {
+  const statisticsContext = {
+    statistics: {
+      players: [
+        { key: 'alice', name: 'Alice' },
+        { key: 'bob', name: 'Bob' },
+      ],
+      teams: [
+        { key: 'alice||bob', name: 'Alice & Bob', players: ['Alice', 'Bob'] },
+      ],
+    },
+  };
   assert.deepEqual(
     voiceScoreCommandHandler.buildLocalActionPlan({
       transcript: 'change round 2 us total to 305',
@@ -1105,6 +1121,30 @@ test('local voice planner covers history, version, current stats, teams, and vis
       context: {},
     }).actions,
     [{ type: 'setStatsControls', statsView: 'players', statsMetric: 'misdeals' }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: "show Alice's stats",
+      context: statisticsContext,
+    }).actions,
+    [{
+      type: 'setStatsControls',
+      statsView: 'players',
+      entityMode: 'players',
+      entityKey: 'alice',
+    }],
+  );
+  assert.deepEqual(
+    voiceScoreCommandHandler.buildLocalActionPlan({
+      transcript: "pull up statistics for Alice and Bob's team",
+      context: statisticsContext,
+    }).actions,
+    [{
+      type: 'setStatsControls',
+      statsView: 'teams',
+      entityMode: 'teams',
+      entityKey: 'alice||bob',
+    }],
   );
   assert.deepEqual(
     voiceScoreCommandHandler.buildLocalActionPlan({
@@ -1130,6 +1170,40 @@ test('local voice planner covers history, version, current stats, teams, and vis
       },
     }).actions,
     [{ type: 'gameLibraryAction', gameAction: 'view', gameType: 'completed', index: 7 }],
+  );
+});
+
+test('voice statistics selection accepts grounded keys and display names', () => {
+  resetState();
+  setLocalStorage('savedGames', [{
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Carol', 'Dan'],
+    usTeamName: 'Alice & Bob',
+    demTeamName: 'Carol & Dan',
+    winner: 'us',
+    finalScore: { us: 510, dem: 390 },
+    timestamp: '2026-01-01T12:00:00.000Z',
+    rounds: [{
+      roundIndex: 0,
+      biddingTeam: 'us',
+      bidAmount: 120,
+      usPoints: 120,
+      demPoints: 60,
+      runningTotals: { us: 510, dem: 390 },
+    }],
+  }]);
+
+  assert.deepEqual(
+    resolveVoiceScoreStatisticsSelection({ entityMode: 'players', entityKey: 'Alice' }),
+    { mode: 'players', key: 'alice', name: 'Alice' },
+  );
+  assert.deepEqual(
+    resolveVoiceScoreStatisticsSelection({ entityMode: 'teams', entityKey: 'Alice and Bob' }),
+    { mode: 'teams', key: 'alice||bob', name: 'Alice & Bob' },
+  );
+  assert.equal(
+    resolveVoiceScoreStatisticsSelection({ entityMode: 'players', entityKey: 'Unknown Player' }),
+    null,
   );
 });
 
@@ -1673,6 +1747,60 @@ test('voice command endpoint requests structured OpenRouter action plans', async
       actions: [{ type: 'openModal', target: 'settings' }],
     },
   });
+});
+
+test('voice command endpoint grounds named statistics to saved entity keys', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalFetch = global.fetch;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            status: 'execute',
+            summary: 'Open Alice statistics',
+            message: 'Opening statistics.',
+            requiresConfirmation: false,
+            actions: [{ type: 'openModal', target: 'statistics' }],
+          }),
+        },
+      }],
+    }),
+  });
+
+  const request = createMockRequest({
+    body: JSON.stringify({
+      transcript: "show me Alice's stats",
+      context: {
+        statistics: {
+          players: [{ key: 'alice', name: 'Alice' }],
+          teams: [{ key: 'alice||bob', name: 'Alice & Bob', players: ['Alice', 'Bob'] }],
+        },
+      },
+    }),
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['x-voice-command-revision'], 'json-object-v4');
+  assert.deepEqual(response.body.plan.actions, [{
+    type: 'setStatsControls',
+    statsView: 'players',
+    entityMode: 'players',
+    entityKey: 'alice',
+  }]);
 });
 
 test('voice command endpoint sends clarification history before a follow-up answer', async () => {
@@ -2821,7 +2949,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.29";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.30";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

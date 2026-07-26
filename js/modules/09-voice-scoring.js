@@ -581,13 +581,14 @@ function getVoiceScoreLibraryContext(storageKey) {
 
 function getVoiceScoreStatisticsContext() {
   const statistics = getStatistics();
-  const compactEntity = entity => ({
+  const compactEntity = (entity, mode) => ({
     key: entity.key,
     name: entity.name,
+    ...(mode === "teams" ? { players: ensurePlayersArray(entity.players) } : {}),
   });
   return {
-    teams: statistics.teamsData.slice(0, 30).map(compactEntity),
-    players: statistics.playersData.slice(0, 30).map(compactEntity),
+    teams: statistics.teamsData.slice(0, 100).map(entity => compactEntity(entity, "teams")),
+    players: statistics.playersData.slice(0, 100).map(entity => compactEntity(entity, "players")),
   };
 }
 
@@ -1053,20 +1054,68 @@ function applyVoiceScoreBidPresets(action) {
   return "Bid presets updated.";
 }
 
+function normalizeVoiceScoreStatisticsLookup(value) {
+  return normalizeVoiceScoreBaseText(String(value || "").replace(/\|\|/g, " and "))
+    .replace(/\b(?:and|team|players?)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveVoiceScoreStatisticsSelection(action = {}) {
+  const requestedKey = typeof action.entityKey === "string" ? action.entityKey.trim() : "";
+  if (!requestedKey) return null;
+
+  const statistics = getStatistics();
+  const requestedMode = action.entityMode === "teams" || action.entityMode === "players"
+    ? action.entityMode
+    : action.statsView === "teams" || action.statsView === "players"
+      ? action.statsView
+      : null;
+  const modeOrder = requestedMode
+    ? [requestedMode, requestedMode === "teams" ? "players" : "teams"]
+    : requestedKey.includes("||")
+      ? ["teams", "players"]
+      : ["players", "teams"];
+  const normalizedRequest = normalizeVoiceScoreStatisticsLookup(requestedKey);
+
+  for (const mode of modeOrder) {
+    const collection = mode === "teams" ? statistics.teamsData : statistics.playersData;
+    const entity = collection.find(candidate => (
+      String(candidate.key || "").toLowerCase() === requestedKey.toLowerCase()
+      || normalizeVoiceScoreStatisticsLookup(candidate.name) === normalizedRequest
+      || (mode === "teams"
+        && normalizeVoiceScoreStatisticsLookup(ensurePlayersArray(candidate.players).join(" and ")) === normalizedRequest)
+    ));
+    if (entity) {
+      return {
+        mode,
+        key: entity.key,
+        name: entity.name,
+      };
+    }
+  }
+
+  return null;
+}
+
 function applyVoiceScoreStatsControls(action) {
   const metricAliases = {
     bidSuccessPct: "bidMakePct",
     "360s": "perfect360s",
   };
+  const entitySelection = resolveVoiceScoreStatisticsSelection(action);
+  if (action.entityKey && !entitySelection) {
+    throw new Error(`No saved statistics were found for ${action.entityKey}.`);
+  }
   openStatisticsModal();
   setStatisticsControls({
-    view: action.statsView,
+    view: entitySelection?.mode || action.statsView,
     metric: metricAliases[action.statsMetric] || action.statsMetric,
     sort: action.statsSort,
-    entityMode: action.entityMode,
-    entityKey: action.entityKey,
+    entityMode: entitySelection?.mode,
+    entityKey: entitySelection?.key,
   });
-  return "Statistics updated.";
+  return entitySelection ? `Showing statistics for ${entitySelection.name}.` : "Statistics updated.";
 }
 
 async function executeVoiceScoreAction(action, options = {}) {

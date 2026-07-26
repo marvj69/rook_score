@@ -319,6 +319,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreAppContext,
     getVoiceScoreActionTypes,
     normalizeVoiceScorePlan,
+    resolveVoiceScoreStatisticsSelection,
     getOrderedPlayerSuggestions,
     getFilteredPlayerSuggestions,
   };
