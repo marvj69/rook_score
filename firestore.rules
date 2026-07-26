@@ -6,64 +6,25 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    function isPlayerToken(value) {
-      return value is string && value.matches('Player [1-9][0-9]{0,2}');
-    }
-
-    function isPlayerTokenList(values, maximum) {
-      return values is list
-        && values.size() <= maximum
-        && (values.size() < 1 || isPlayerToken(values[0]))
-        && (values.size() < 2 || isPlayerToken(values[1]))
-        && (values.size() < 3 || isPlayerToken(values[2]))
-        && (values.size() < 4 || isPlayerToken(values[3]));
-    }
-
-    function isNumberList(values, maximum) {
-      return values is list && values.size() <= maximum;
-    }
-
-    function isValidVoiceRound(round) {
-      return round is map
-        && round.keys().hasOnly([
-          'roundIndex',
-          'biddingTeam',
-          'bidAmount',
-          'usPoints',
-          'demPoints',
-          'runningTotals'
+    function isValidVoiceImprovementSample() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'schemaVersion',
+          'prompt',
+          'context',
+          'target',
+          'outcome',
+          'model',
+          'revision',
+          'appVersion',
+          'createdAt'
         ])
-        && round.roundIndex is number
-        && round.biddingTeam in ['', 'us', 'dem']
-        && round.bidAmount is number
-        && round.usPoints is number
-        && round.demPoints is number
-        && round.runningTotals is map
-        && round.runningTotals.keys().hasOnly(['us', 'dem'])
-        && round.runningTotals.us is number
-        && round.runningTotals.dem is number;
-    }
-
-    function isValidVoiceRounds(rounds) {
-      return rounds is list
-        && rounds.size() <= 5
-        && (rounds.size() < 1 || isValidVoiceRound(rounds[0]))
-        && (rounds.size() < 2 || isValidVoiceRound(rounds[1]))
-        && (rounds.size() < 3 || isValidVoiceRound(rounds[2]))
-        && (rounds.size() < 4 || isValidVoiceRound(rounds[3]))
-        && (rounds.size() < 5 || isValidVoiceRound(rounds[4]));
-    }
-
-    function isValidVoiceTeam(team, expectedLabel) {
-      return team is map
-        && team.keys().hasOnly(['label', 'players'])
-        && team.label == expectedLabel
-        && isPlayerTokenList(team.players, 2);
-    }
-
-    function isValidVoiceContext(context) {
-      return context is map
-        && context.keys().hasOnly([
+        && data.schemaVersion == 2
+        && data.prompt is string
+        && data.prompt.size() > 0
+        && data.prompt.size() <= 1000
+        && data.context is map
+        && data.context.keys().hasOnly([
           'teams',
           'knownPlayers',
           'totals',
@@ -85,248 +46,26 @@ service cloud.firestore {
           'ui',
           'settings'
         ])
-        && context.teams is map
-        && context.teams.keys().hasOnly(['us', 'dem'])
-        && isValidVoiceTeam(context.teams.us, 'Us team')
-        && isValidVoiceTeam(context.teams.dem, 'Dem team')
-        && context.knownPlayers is list
-        && context.knownPlayers.size() <= 100
-        && context.totals is map
-        && context.totals.keys().hasOnly(['us', 'dem'])
-        && context.totals.us is number
-        && context.totals.dem is number
-        && context.roundNumber is number
-        && context.roundNumber >= 1
-        && context.gameOver is bool
-        && context.winner in ['', 'us', 'dem']
-        && context.biddingTeam in ['', 'us', 'dem']
-        && context.hasActiveBid is bool
-        && context.bidAmount is number
-        && context.enterBidderPoints is bool
-        && isPlayerTokenList(context.dealers, 4)
-        && (context.currentDealer == '' || isPlayerToken(context.currentDealer))
-        && context.misdealCount is number
-        && context.misdealCount >= 0
-        && context.undoneRoundsCount is number
-        && context.undoneRoundsCount >= 0
-        && isValidVoiceRounds(context.recentRounds)
-        && isNumberList(context.bidPresets, 12)
-        && context.library is map
-        && context.library.keys().hasOnly(['completedIndexes', 'freezerIndexes'])
-        && isNumberList(context.library.completedIndexes, 20)
-        && isNumberList(context.library.freezerIndexes, 20)
-        && context.statistics is map
-        && context.statistics.keys().hasOnly(['playerTokens', 'teams'])
-        && context.statistics.playerTokens is list
-        && context.statistics.playerTokens.size() <= 100
-        && context.statistics.teams is list
-        && context.statistics.teams.size() <= 100
-        && context.ui is map
-        && context.ui.keys().hasOnly(['menuOpen', 'openPanels'])
-        && context.ui.menuOpen is bool
-        && context.ui.openPanels is list
-        && context.ui.openPanels.size() <= 20
-        && context.settings is map
-        && context.settings.keys().hasOnly([
-          'mustWinByBid',
-          'misdealHandling',
-          'proMode',
-          'experimentalFeatures',
-          'tableTalkPenaltyType',
-          'tableTalkPenaltyPoints'
-        ])
-        && context.settings.mustWinByBid is bool
-        && context.settings.misdealHandling is bool
-        && context.settings.proMode is bool
-        && context.settings.experimentalFeatures is bool
-        && context.settings.tableTalkPenaltyType in ['setPoints', 'loseBid']
-        && context.settings.tableTalkPenaltyPoints is number;
-    }
-
-    function isValidVoiceAction(action) {
-      return action is map
-        && action.keys().hasOnly([
-          'type',
-          'biddingTeam',
-          'bidAmount',
-          'points',
-          'enterBidderPoints',
-          'target',
-          'roundNumber',
-          'usTotal',
-          'demTotal',
-          'dealers',
-          'usPlayers',
-          'demPlayers',
-          'usScore',
-          'demScore',
-          'pair',
-          'key',
-          'value',
-          'team',
-          'firstDealer',
-          'open',
-          'authAction',
-          'confirmationChoice',
-          'gameAction',
-          'gameType',
-          'tab',
-          'query',
-          'sort',
-          'index',
-          'usColor',
-          'demColor',
-          'themeAction',
-          'presets',
-          'statsView',
-          'statsMetric',
-          'statsSort',
-          'entityMode',
-          'entityKey'
-        ])
-        && action.type in [
-          'scoreRound',
-          'editRound',
-          'undo',
-          'redo',
-          'misdeal',
-          'newGame',
-          'freezeGame',
-          'saveGame',
-          'openModal',
-          'closeModal',
-          'setDealerOrder',
-          'startPaperGame',
-          'setTeams',
-          'selectDealerPair',
-          'selectBid',
-          'setSetting',
-          'tableTalkPenalty',
-          'rematch',
-          'toggleMenu',
-          'authAction',
-          'confirmationAction',
-          'gameLibraryAction',
-          'setThemeColors',
-          'themeAction',
-          'setBidPresets',
-          'setStatsControls',
-          'noop'
-        ]
-        && (!('biddingTeam' in action) || action.biddingTeam in ['us', 'dem'])
-        && (!('team' in action) || action.team in ['us', 'dem'])
-        && (!('bidAmount' in action) || action.bidAmount is number)
-        && (!('points' in action) || action.points is number)
-        && (!('roundNumber' in action) || action.roundNumber is number)
-        && (!('usTotal' in action) || action.usTotal is number)
-        && (!('demTotal' in action) || action.demTotal is number)
-        && (!('usScore' in action) || action.usScore is number)
-        && (!('demScore' in action) || action.demScore is number)
-        && (!('index' in action) || action.index is number)
-        && (!('enterBidderPoints' in action) || action.enterBidderPoints is bool)
-        && (!('open' in action) || action.open is bool)
-        && (!('dealers' in action) || isPlayerTokenList(action.dealers, 4))
-        && (!('usPlayers' in action) || isPlayerTokenList(action.usPlayers, 2))
-        && (!('demPlayers' in action) || isPlayerTokenList(action.demPlayers, 2))
-        && (!('firstDealer' in action) || isPlayerToken(action.firstDealer))
-        && (!('target' in action) || action.target in [
-          'savedGames',
-          'settings',
-          'about',
-          'statistics',
-          'dealerOrder',
-          'teamSelection',
-          'resumeGame',
-          'theme',
-          'presets',
-          'probability',
-          'version',
-          'confirmation',
-          'all'
-        ])
-        && (!('pair' in action) || action.pair in ['13', '24'])
-        && (!('key' in action) || action.key in [
-          'mustWinByBid',
-          'misdealHandling',
-          'proMode',
-          'experimentalFeatures',
-          'tableTalkPenaltyType',
-          'tableTalkPenaltyPoints'
-        ])
-        && (!('value' in action)
-          || action.value is bool
-          || action.value is number
-          || action.value in ['loseBid', 'setPoints'])
-        && (!('authAction' in action) || action.authAction in ['toggle', 'signIn', 'signOut'])
-        && (!('confirmationChoice' in action)
-          || action.confirmationChoice in ['confirm', 'cancel'])
-        && (!('gameAction' in action)
-          || action.gameAction in ['switchTab', 'search', 'sort', 'view', 'delete', 'resume'])
-        && (!('gameType' in action) || action.gameType in ['completed', 'freezer'])
-        && (!('tab' in action) || action.tab in ['completed', 'freezer'])
-        && (!('sort' in action) || action.sort in ['newest', 'oldest', 'highest', 'lowest'])
-        && (!('themeAction' in action) || action.themeAction in ['randomize', 'reset', 'apply'])
-        && (!('statsView' in action) || action.statsView in ['teams', 'players'])
-        && (!('statsMetric' in action) || action.statsMetric in [
-          'netPerGame',
-          'bidMakePct',
-          'setsForced',
-          'comebacks',
-          'closeWins',
-          'perfect360s',
-          'misdeals',
-          'games'
-        ])
-        && (!('statsSort' in action) || action.statsSort in ['recent', 'most', 'least'])
-        && (!('entityMode' in action) || action.entityMode in ['teams', 'players'])
-        && (!('query' in action) || (action.query is string && action.query.size() <= 100))
-        && (!('presets' in action) || isNumberList(action.presets, 12))
-        && (!('entityKey' in action)
-          || (action.entityKey is string
-            && action.entityKey.matches('(player|team)-[1-9][0-9]{0,2}')))
-        && (!('usColor' in action)
-          || (action.usColor is string && action.usColor.matches('#[0-9a-f]{6}')))
-        && (!('demColor' in action)
-          || (action.demColor is string && action.demColor.matches('#[0-9a-f]{6}')));
-    }
-
-    function isValidVoiceActions(actions) {
-      return actions is list
-        && actions.size() <= 5
-        && (actions.size() < 1 || isValidVoiceAction(actions[0]))
-        && (actions.size() < 2 || isValidVoiceAction(actions[1]))
-        && (actions.size() < 3 || isValidVoiceAction(actions[2]))
-        && (actions.size() < 4 || isValidVoiceAction(actions[3]))
-        && (actions.size() < 5 || isValidVoiceAction(actions[4]));
-    }
-
-    function isValidVoiceTarget(target) {
-      return target is map
-        && target.keys().hasOnly(['status', 'requiresConfirmation', 'actions'])
-        && target.status in ['execute', 'confirm', 'clarify', 'unsupported']
-        && target.requiresConfirmation is bool
-        && isValidVoiceActions(target.actions);
-    }
-
-    function isValidVoiceImprovementSample() {
-      let data = request.resource.data;
-      return data.keys().hasOnly([
-          'schemaVersion',
-          'prompt',
-          'context',
-          'target',
-          'outcome',
-          'model',
-          'revision',
-          'appVersion',
-          'createdAt'
-        ])
-        && data.schemaVersion == 2
-        && data.prompt is string
-        && data.prompt.size() > 0
-        && data.prompt.size() <= 1000
-        && isValidVoiceContext(data.context)
-        && isValidVoiceTarget(data.target)
+        && data.context.teams is map
+        && data.context.knownPlayers is list
+        && data.context.knownPlayers.size() <= 100
+        && data.context.totals is map
+        && data.context.roundNumber is number
+        && data.context.gameOver is bool
+        && data.context.dealers is list
+        && data.context.dealers.size() <= 4
+        && data.context.recentRounds is list
+        && data.context.recentRounds.size() <= 5
+        && data.context.library is map
+        && data.context.statistics is map
+        && data.context.ui is map
+        && data.context.settings is map
+        && data.target is map
+        && data.target.keys().hasOnly(['status', 'requiresConfirmation', 'actions'])
+        && data.target.status in ['execute', 'confirm', 'clarify', 'unsupported']
+        && data.target.requiresConfirmation is bool
+        && data.target.actions is list
+        && data.target.actions.size() <= 5
         && data.outcome in ['success', 'failed', 'cancelled', 'clarify', 'unsupported']
         && data.model is string
         && data.model.size() <= 120
@@ -343,7 +82,9 @@ service cloud.firestore {
     }
 
     match /voiceImprovement/{userId}/samples/{sampleId} {
-      allow create: if isSignedInOwner(userId) && isValidVoiceImprovementSample();
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && isValidVoiceImprovementSample();
       allow read, update, delete: if false;
     }
   }

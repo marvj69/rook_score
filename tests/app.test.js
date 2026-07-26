@@ -3567,12 +3567,13 @@ test('voice improvement Firestore rules are create-only and reject unexpected pa
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
   assert.match(rulesSource, /match \/voiceImprovement\/\{userId\}\/samples\/\{sampleId\}/);
-  assert.match(rulesSource, /allow create: if isSignedInOwner\(userId\) && isValidVoiceImprovementSample\(\)/);
+  assert.match(rulesSource, /allow create: if request\.auth != null[\s\S]*request\.auth\.uid == userId[\s\S]*isValidVoiceImprovementSample\(\)/);
   assert.match(rulesSource, /allow read, update, delete: if false/);
   assert.match(rulesSource, /data\.keys\(\)\.hasOnly\(/);
   assert.match(rulesSource, /data\.schemaVersion == 2/);
-  assert.match(rulesSource, /isValidVoiceContext\(data\.context\)/);
-  assert.match(rulesSource, /isValidVoiceTarget\(data\.target\)/);
+  assert.match(rulesSource, /data\.context\.keys\(\)\.hasOnly\(/);
+  assert.match(rulesSource, /data\.target\.keys\(\)\.hasOnly\(\['status', 'requiresConfirmation', 'actions'\]\)/);
+  assert.match(rulesSource, /data\.target\.actions\.size\(\) <= 5/);
   assert.doesNotMatch(rulesSource, /audio|base64/i);
   assert.match(firebaseSource, /if \(!isVoiceImprovementConsentEnabled\(\)\) return false/);
   assert.match(firebaseSource, /experimentalFeaturesEnabled/);
