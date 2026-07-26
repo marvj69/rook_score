@@ -299,6 +299,18 @@ body.liquid-glass .version-badge:hover {
 .voice-score-button--active:hover {
   background: #b91c1c;
 }
+.voice-score-button--busy,
+.voice-score-button:disabled {
+  cursor: progress;
+  opacity: 0.75;
+  transform: none;
+  box-shadow: var(--shadow-3d-sm);
+}
+.voice-score-button--busy:hover,
+.voice-score-button:disabled:hover {
+  transform: none;
+  box-shadow: var(--shadow-3d-sm);
+}
 .voice-score-button svg {
   width: 1rem;
   height: 1rem;
@@ -313,10 +325,8 @@ body.liquid-glass .version-badge:hover {
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--glass-border-soft);
   border-radius: 0.65rem;
-  background: rgba(18, 24, 58, 0.9);
+  background: rgb(18, 24, 58);
   box-shadow: var(--shadow-3d-sm);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   font-size: 0.7rem;
   font-weight: 700;
   line-height: 1.3;

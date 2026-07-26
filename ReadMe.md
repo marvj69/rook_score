@@ -216,7 +216,7 @@ OPENROUTER_APP_TITLE
 VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 ```
 
-Voice recordings are sent as raw audio to the OpenRouter chat model (no separate transcription step). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
 The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:

@@ -3,6 +3,7 @@
 // --- Voice Score Entry ---
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;
 const VOICE_SCORE_RECORDING_MAX_MS = 6500;
+const VOICE_SCORE_AUDIO_BITS_PER_SECOND = 32000;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
 const SAME_ORIGIN_VOICE_SCORE_COMMAND_URL = "/api/voice-score-command";
 const VERCEL_VOICE_SCORE_COMMAND_URL = "https://rook-score.vercel.app/api/voice-score-command";
@@ -45,6 +46,8 @@ let voiceScoreStatusTone = "info";
 let voiceScoreStatusTimer = null;
 let voiceScoreRecordingTimer = null;
 let voiceScoreConversation = [];
+let voiceScoreOperationId = 0;
+let voiceScoreRequestController = null;
 
 const VOICE_SCORE_UNITS = {
   zero: 0,
@@ -478,6 +481,17 @@ function formatVoiceScoreIntentSummary(intent, context = {}) {
   return `${biddingTeamName} bid ${intent.bidAmount} and made ${intent.points}.`;
 }
 
+function refreshVoiceScoreControls() {
+  const control = typeof document !== "undefined" && typeof document.querySelector === "function"
+    ? document.querySelector(".voice-score-control")
+    : null;
+  if (control) {
+    control.outerHTML = renderVoiceScoreControls();
+    return;
+  }
+  scheduleRender();
+}
+
 function setVoiceScoreStatus(message, tone = "info", autoClear = true) {
   voiceScoreStatus = message || "";
   voiceScoreStatusTone = tone;
@@ -491,11 +505,11 @@ function setVoiceScoreStatus(message, tone = "info", autoClear = true) {
       if (voiceScoreStatus === messageSnapshot) {
         voiceScoreStatus = "";
         voiceScoreStatusTone = "info";
-        scheduleRender();
+        refreshVoiceScoreControls();
       }
     }, VOICE_SCORE_STATUS_TIMEOUT_MS);
   }
-  scheduleRender();
+  refreshVoiceScoreControls();
 }
 
 function getVoiceScoreContext() {
@@ -534,6 +548,31 @@ function getVoiceScoreRecordingMimeType() {
   ];
   if (typeof window.MediaRecorder.isTypeSupported !== "function") return "";
   return candidates.find(type => window.MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function getVoiceScoreAudioConstraints() {
+  return {
+    audio: {
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 16000 },
+    },
+  };
+}
+
+function getVoiceScoreRecorderOptions(mimeType = "") {
+  return {
+    ...(mimeType ? { mimeType } : {}),
+    audioBitsPerSecond: VOICE_SCORE_AUDIO_BITS_PER_SECOND,
+  };
+}
+
+function createVoiceScoreMediaRecorder(stream, mimeType = "") {
+  try {
+    return new window.MediaRecorder(stream, getVoiceScoreRecorderOptions(mimeType));
+  } catch (error) {
+    const compatibilityOptions = mimeType ? { mimeType } : undefined;
+    return new window.MediaRecorder(stream, compatibilityOptions);
+  }
 }
 
 function getVoiceScoreCurrentDealer() {
@@ -684,7 +723,22 @@ function updateVoiceScoreConversation(plan, transcript) {
   return getVoiceScoreConversation();
 }
 
-async function requestVoiceScoreActionPlan(input, localIntent) {
+function getVoiceScoreAudioFilename(mimeType) {
+  const normalizedMimeType = String(mimeType || "").split(";")[0].trim().toLowerCase();
+  const extension = {
+    "audio/mp4": "m4a",
+    "audio/m4a": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/ogg": "ogg",
+    "audio/webm": "webm",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/aac": "aac",
+  }[normalizedMimeType] || "webm";
+  return `rook-voice-score.${extension}`;
+}
+
+async function requestVoiceScoreActionPlan(input, localIntent, options = {}) {
   setVoiceScoreStatus("Thinking...", "info", false);
   const requestBody = {
     context: getVoiceScoreAppContext(),
@@ -704,13 +758,35 @@ async function requestVoiceScoreActionPlan(input, localIntent) {
     requestBody.transcript = input.trim();
   }
 
+  const audioBlob = input && typeof input === "object" && input.audioBlob
+    && typeof input.audioBlob.size === "number"
+    ? input.audioBlob
+    : null;
+  const canUseMultipartAudio = audioBlob && typeof FormData === "function";
+  let body;
+  const headers = { Accept: "application/json" };
+
+  if (canUseMultipartAudio) {
+    body = new FormData();
+    body.append("context", JSON.stringify(requestBody.context));
+    body.append("conversation", JSON.stringify(requestBody.conversation));
+    if (requestBody.localIntent) body.append("localIntent", JSON.stringify(requestBody.localIntent));
+    if (requestBody.transcript) body.append("transcript", requestBody.transcript);
+    body.append(
+      "audio",
+      audioBlob,
+      getVoiceScoreAudioFilename(audioBlob.type || input.mimeType || "audio/webm"),
+    );
+  } else {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(requestBody);
+  }
+
   const response = await fetch(getVoiceScoreCommandUrl(), {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
+    headers,
+    body,
+    ...(options.signal ? { signal: options.signal } : {}),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1271,11 +1347,11 @@ async function executeVoiceScorePlanActions(plan, options = {}) {
   return messages;
 }
 
-function stopVoiceScoreRecorderStream() {
-  if (voiceScoreRecorderStream && typeof voiceScoreRecorderStream.getTracks === "function") {
-    voiceScoreRecorderStream.getTracks().forEach(track => track.stop());
+function stopVoiceScoreRecorderStream(stream = voiceScoreRecorderStream) {
+  if (stream && typeof stream.getTracks === "function") {
+    stream.getTracks().forEach(track => track.stop());
   }
-  voiceScoreRecorderStream = null;
+  if (stream === voiceScoreRecorderStream) voiceScoreRecorderStream = null;
 }
 
 function clearVoiceScoreRecordingTimer() {
@@ -1286,7 +1362,16 @@ function clearVoiceScoreRecordingTimer() {
 }
 
 function cancelVoiceScoreEntry() {
+  voiceScoreOperationId += 1;
   clearVoiceScoreRecordingTimer();
+  if (voiceScoreStatusTimer) {
+    clearTimeout(voiceScoreStatusTimer);
+    voiceScoreStatusTimer = null;
+  }
+  if (voiceScoreRequestController) {
+    voiceScoreRequestController.abort();
+    voiceScoreRequestController = null;
+  }
 
   if (voiceScoreRecorder) {
     const recorder = voiceScoreRecorder;
@@ -1304,38 +1389,35 @@ function cancelVoiceScoreEntry() {
   voiceScoreMode = "";
   voiceScoreStatus = "";
   voiceScoreStatusTone = "info";
-  scheduleRender();
+  refreshVoiceScoreControls();
 }
 
-function blobToVoiceScoreBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      resolve(result.includes(",") ? result.split(",").pop() : result);
-    };
-    reader.onerror = () => reject(reader.error || new Error("Could not read voice recording."));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function processVoiceScoreAudioBlob(audioBlob) {
+async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOperationId) {
   if (!audioBlob || !audioBlob.size) {
-    setVoiceScoreStatus("No voice audio was captured.", "error");
+    if (operationId === voiceScoreOperationId) {
+      setVoiceScoreStatus("No voice audio was captured.", "error");
+    }
     return false;
   }
 
   setVoiceScoreStatus("Processing voice...", "info", false);
+  const requestController = typeof AbortController === "function" ? new AbortController() : null;
+  if (operationId === voiceScoreOperationId) voiceScoreRequestController = requestController;
   try {
-    const audioBase64 = await blobToVoiceScoreBase64(audioBlob);
     const plan = await requestVoiceScoreActionPlan({
-      audioBase64,
+      audioBlob,
       mimeType: audioBlob.type || "audio/webm",
-    }, null);
+    }, null, { signal: requestController?.signal });
+    if (operationId !== voiceScoreOperationId) return false;
     return applyVoiceScorePlan(plan, plan.summary || "voice command", null);
   } catch (error) {
+    if (operationId !== voiceScoreOperationId || error?.name === "AbortError") return false;
     setVoiceScoreStatus(error.message || "Voice command planning is unavailable.", "error");
     return false;
+  } finally {
+    if (voiceScoreRequestController === requestController) {
+      voiceScoreRequestController = null;
+    }
   }
 }
 
@@ -1347,12 +1429,24 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
     return false;
   }
 
+  if (voiceScoreMode) return false;
+  const operationId = voiceScoreOperationId + 1;
+  voiceScoreOperationId = operationId;
+  voiceScoreMode = "starting";
+  voiceScoreListening = true;
+  let requestedStream = null;
+
   try {
     setVoiceScoreStatus("Requesting microphone permission...", "info", false);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia(getVoiceScoreAudioConstraints());
+    requestedStream = stream;
+    if (operationId !== voiceScoreOperationId || !isExperimentalFeaturesEnabled()) {
+      stopVoiceScoreRecorderStream(stream);
+      return false;
+    }
+
     const mimeType = getVoiceScoreRecordingMimeType();
-    const options = mimeType ? { mimeType } : undefined;
-    const recorder = new window.MediaRecorder(stream, options);
+    const recorder = createVoiceScoreMediaRecorder(stream, mimeType);
     const audioChunks = [];
 
     voiceScoreRecorder = recorder;
@@ -1365,22 +1459,34 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
       if (event.data && event.data.size > 0) audioChunks.push(event.data);
     };
     recorder.onerror = () => {
+      if (operationId !== voiceScoreOperationId) {
+        stopVoiceScoreRecorderStream(stream);
+        return;
+      }
       clearVoiceScoreRecordingTimer();
-      stopVoiceScoreRecorderStream();
-      voiceScoreRecorder = null;
+      stopVoiceScoreRecorderStream(stream);
+      if (voiceScoreRecorder === recorder) voiceScoreRecorder = null;
       voiceScoreListening = false;
       voiceScoreMode = "";
       setVoiceScoreStatus("Voice recording failed.", "error");
     };
     recorder.onstop = () => {
+      if (operationId !== voiceScoreOperationId) {
+        stopVoiceScoreRecorderStream(stream);
+        return;
+      }
       clearVoiceScoreRecordingTimer();
-      stopVoiceScoreRecorderStream();
-      voiceScoreRecorder = null;
+      stopVoiceScoreRecorderStream(stream);
+      if (voiceScoreRecorder === recorder) voiceScoreRecorder = null;
       voiceScoreListening = false;
-      voiceScoreMode = "";
+      voiceScoreMode = "processing";
       const audioBlob = new Blob(audioChunks, { type: recorder.mimeType || mimeType || "audio/webm" });
-      scheduleRender();
-      processVoiceScoreAudioBlob(audioBlob);
+      refreshVoiceScoreControls();
+      processVoiceScoreAudioBlob(audioBlob, operationId).finally(() => {
+        if (operationId !== voiceScoreOperationId) return;
+        voiceScoreMode = "";
+        refreshVoiceScoreControls();
+      });
     };
 
     recorder.start();
@@ -1389,10 +1495,14 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
         voiceScoreRecorder.stop();
       }
     }, VOICE_SCORE_RECORDING_MAX_MS);
-    scheduleRender();
+    refreshVoiceScoreControls();
     return true;
   } catch (error) {
-    stopVoiceScoreRecorderStream();
+    if (operationId !== voiceScoreOperationId) {
+      stopVoiceScoreRecorderStream(requestedStream);
+      return false;
+    }
+    stopVoiceScoreRecorderStream(requestedStream);
     voiceScoreRecorder = null;
     voiceScoreListening = false;
     voiceScoreMode = "";
@@ -1412,15 +1522,26 @@ function renderVoiceScoreControls() {
   const activeClass = voiceScoreListening
     ? " voice-score-button--active"
     : "";
-  const buttonLabel = voiceScoreListening ? "Stop voice score entry" : "Start voice score entry";
+  const busyClass = voiceScoreMode === "starting" || voiceScoreMode === "processing"
+    ? " voice-score-button--busy"
+    : "";
+  const isBusy = voiceScoreMode === "starting" || voiceScoreMode === "processing";
+  const buttonLabel = voiceScoreMode === "processing"
+    ? "Processing voice command"
+    : voiceScoreMode === "starting"
+      ? "Starting voice score entry"
+      : voiceScoreListening
+        ? "Stop voice score entry"
+        : "Start voice score entry";
   return `
     <div class="voice-score-control">
       <button type="button"
         data-voice-score-entry="true"
-        class="voice-score-button${activeClass}"
+        class="voice-score-button${activeClass}${busyClass}"
         aria-pressed="${voiceScoreListening}"
+        aria-busy="${isBusy}"
         aria-label="${buttonLabel}"
-        title="${buttonLabel}">
+        title="${buttonLabel}"${isBusy ? " disabled" : ""}>
         ${Icons.Mic}
       </button>
       ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
@@ -1570,9 +1691,11 @@ function applyVoiceScoreIntent(intent) {
 function startVoiceScoreEntry() {
   if (!isExperimentalFeaturesEnabled()) return false;
 
+  if (voiceScoreMode === "starting" || voiceScoreMode === "processing") return false;
+
   if (voiceScoreListening && voiceScoreRecorder) {
     if (voiceScoreRecorder.state === "recording") voiceScoreRecorder.stop();
-    return;
+    return false;
   }
 
   if (state.gameOver) {

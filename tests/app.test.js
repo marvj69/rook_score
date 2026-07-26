@@ -250,8 +250,11 @@ const {
   formatVoiceScoreIntentSummary,
   getVoiceScoreCommandUrl,
   getVoiceScoreRecordingMimeType,
+  getVoiceScoreAudioConstraints,
+  getVoiceScoreRecorderOptions,
   shouldPreferRecordedVoiceScoreEntry,
   requestVoiceScoreActionPlan,
+  cancelVoiceScoreEntry,
   getVoiceScoreConversation,
   clearVoiceScoreConversation,
   updateVoiceScoreConversation,
@@ -268,15 +271,20 @@ const resetState = () => {
   localStorage.clear();
 };
 
-function createMockRequest({ method = 'POST', body = '', origin = 'https://rook-score.vercel.app' } = {}) {
+function createMockRequest({
+  method = 'POST',
+  body = '',
+  origin = 'https://rook-score.vercel.app',
+  contentType = 'application/json',
+} = {}) {
   const request = new EventEmitter();
   request.method = method;
   request.headers = {
     origin,
-    'content-type': 'application/json',
+    'content-type': contentType,
   };
   process.nextTick(() => {
-    if (body) request.emit('data', Buffer.from(body));
+    if (body) request.emit('data', Buffer.isBuffer(body) ? body : Buffer.from(body));
     request.emit('end');
   });
   return request;
@@ -1232,21 +1240,42 @@ test('voice entry prefers MediaRecorder capture when available', () => {
   }), false);
 });
 
-test('repeated voice entries use fresh MediaRecorder sessions', async () => {
+test('voice capture requests mono speech audio at a compact bitrate', () => {
+  assert.deepEqual(getVoiceScoreAudioConstraints(), {
+    audio: {
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 16000 },
+    },
+  });
+  assert.deepEqual(getVoiceScoreRecorderOptions('audio/mp4'), {
+    mimeType: 'audio/mp4',
+    audioBitsPerSecond: 32000,
+  });
+});
+
+test('repeated voice entries use fresh, fully released MediaRecorder sessions', async () => {
   const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const testNavigator = window.navigator;
   const originalUserAgent = testNavigator.userAgent;
   const originalMediaDevices = testNavigator.mediaDevices;
   const originalMediaRecorder = window.MediaRecorder;
   let recorderStarts = 0;
+  let trackStops = 0;
+  const recorderOptions = [];
+  const requestedConstraints = [];
 
   class FakeMediaRecorder {
-    constructor() {
+    static isTypeSupported(type) {
+      return type === 'audio/mp4';
+    }
+
+    constructor(_stream, options) {
       this.mimeType = 'audio/mp4';
       this.state = 'inactive';
       this.ondataavailable = null;
       this.onerror = null;
       this.onstop = null;
+      recorderOptions.push(options);
     }
 
     start() {
@@ -1269,22 +1298,109 @@ test('repeated voice entries use fresh MediaRecorder sessions', async () => {
     });
     navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)';
     navigator.mediaDevices = {
-      getUserMedia: async () => ({
-        getTracks: () => [{ stop() {} }],
-      }),
+      getUserMedia: async constraints => {
+        requestedConstraints.push(constraints);
+        return {
+          getTracks: () => [{ stop() { trackStops += 1; } }],
+        };
+      },
     };
     window.MediaRecorder = FakeMediaRecorder;
     setLocalStorage('experimentalFeaturesEnabled', true);
     updateState({ gameOver: false });
+    cancelVoiceScoreEntry();
 
     assert.equal(await startVoiceScoreEntry(), true);
-    startVoiceScoreEntry();
+    cancelVoiceScoreEntry();
     assert.equal(await startVoiceScoreEntry(), true);
-    startVoiceScoreEntry();
+    cancelVoiceScoreEntry();
 
     assert.equal(recorderStarts, 2);
+    assert.equal(trackStops, 2);
+    assert.deepEqual(requestedConstraints, [
+      getVoiceScoreAudioConstraints(),
+      getVoiceScoreAudioConstraints(),
+    ]);
+    assert.deepEqual(recorderOptions, [
+      getVoiceScoreRecorderOptions('audio/mp4'),
+      getVoiceScoreRecorderOptions('audio/mp4'),
+    ]);
   } finally {
+    cancelVoiceScoreEntry();
     navigator.userAgent = originalUserAgent;
+    if (originalMediaDevices === undefined) {
+      delete navigator.mediaDevices;
+    } else {
+      navigator.mediaDevices = originalMediaDevices;
+    }
+    if (originalMediaRecorder === undefined) {
+      delete window.MediaRecorder;
+    } else {
+      window.MediaRecorder = originalMediaRecorder;
+    }
+    Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
+  }
+});
+
+test('rapid taps cannot open overlapping microphone streams while permission is pending', async () => {
+  const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const testNavigator = window.navigator;
+  const originalMediaDevices = testNavigator.mediaDevices;
+  const originalMediaRecorder = window.MediaRecorder;
+  let resolveStream;
+  let getUserMediaCalls = 0;
+  let trackStops = 0;
+  let recorderConstructions = 0;
+
+  class FakeMediaRecorder {
+    constructor() {
+      recorderConstructions += 1;
+      this.state = 'inactive';
+    }
+    start() {
+      this.state = 'recording';
+    }
+    stop() {
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: testNavigator,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    navigator.mediaDevices = {
+      getUserMedia: () => {
+        getUserMediaCalls += 1;
+        return new Promise(resolve => {
+          resolveStream = resolve;
+        });
+      },
+    };
+    window.MediaRecorder = FakeMediaRecorder;
+    setLocalStorage('experimentalFeaturesEnabled', true);
+    updateState({ gameOver: false });
+    cancelVoiceScoreEntry();
+
+    const firstStart = startVoiceScoreEntry();
+    assert.equal(startVoiceScoreEntry(), false);
+    assert.equal(startVoiceScoreEntry(), false);
+    assert.equal(getUserMediaCalls, 1);
+
+    cancelVoiceScoreEntry();
+    resolveStream({
+      getTracks: () => [{ stop() { trackStops += 1; } }],
+    });
+
+    assert.equal(await firstStart, false);
+    assert.equal(trackStops, 1);
+    assert.equal(recorderConstructions, 0);
+  } finally {
+    cancelVoiceScoreEntry();
     if (originalMediaDevices === undefined) {
       delete navigator.mediaDevices;
     } else {
@@ -1307,16 +1423,20 @@ test('voice score control is wired through delegated initialization', () => {
   assert.match(voiceSource, /data-voice-score-entry="true"/);
   assert.match(voiceSource, /state\.gameOver \|\| !isExperimentalFeaturesEnabled\(\)/);
   assert.match(voiceSource, /if \(!isExperimentalFeaturesEnabled\(\)\) return false;/);
-  assert.match(voiceSource, /class="voice-score-button\$\{activeClass\}"/);
+  assert.match(voiceSource, /class="voice-score-button\$\{activeClass\}\$\{busyClass\}"/);
   assert.doesNotMatch(voiceSource, /<span>\$\{buttonText\}<\/span>/);
   assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
   assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
   assert.match(voiceSource, /return startRecordedVoiceScoreEntry\(\)/);
   assert.match(voiceSource, /processVoiceScoreAudioBlob/);
+  assert.match(voiceSource, /audioBitsPerSecond: VOICE_SCORE_AUDIO_BITS_PER_SECOND/);
+  assert.match(voiceSource, /body = new FormData\(\)/);
   assert.doesNotMatch(voiceSource, /voice-score-transcribe/);
   assert.doesNotMatch(voiceSource, /SpeechRecognition/);
+  assert.doesNotMatch(voiceSource, /readAsDataURL/);
   assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*top: calc\(3\.75rem \+ var\(--safe-area-inset-top-effective\)\);[^}]*right: 1rem;/s);
   assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 2\.25rem;[^}]*height: 2\.25rem;/s);
+  assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
   assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);
   assert.match(initSource, /startVoiceScoreEntry/);
@@ -1333,6 +1453,44 @@ test('experimental features are disabled by default and gate voice controls', ()
 
   assert.equal(isExperimentalFeaturesEnabled(), true);
   assert.match(renderVoiceScoreControls(), /data-voice-score-entry="true"/);
+});
+
+test('browser voice capture uploads binary multipart audio without Base64 conversion', async () => {
+  const originalFetch = global.fetch;
+  let fetchOptions = null;
+  global.fetch = async (_url, options) => {
+    fetchOptions = options;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plan: {
+          status: 'execute',
+          summary: 'No action',
+          message: 'No action taken.',
+          requiresConfirmation: false,
+          actions: [{ type: 'noop' }],
+        },
+      }),
+    };
+  };
+
+  try {
+    const audioBlob = new Blob(['compact-voice-audio'], { type: 'audio/mp4' });
+    const plan = await requestVoiceScoreActionPlan({ audioBlob }, null);
+
+    assert.equal(fetchOptions.method, 'POST');
+    assert.equal(fetchOptions.headers.Accept, 'application/json');
+    assert.equal(fetchOptions.headers['Content-Type'], undefined);
+    assert.equal(fetchOptions.body instanceof FormData, true);
+    assert.equal(fetchOptions.body.get('audio').size, audioBlob.size);
+    assert.equal(fetchOptions.body.get('audio').type, 'audio/mp4');
+    assert.equal(fetchOptions.body.get('audio').name, 'rook-voice-score.m4a');
+    assert.equal(typeof fetchOptions.body.get('context'), 'string');
+    assert.deepEqual(plan.actions, [{ type: 'noop' }]);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('voice command endpoint accepts raw audio for multimodal planning', async () => {
@@ -1398,6 +1556,64 @@ test('voice command endpoint accepts raw audio for multimodal planning', async (
   assert.equal(requestBody.messages[1].content[1].input_audio.data, audioBase64);
   assert.equal(requestBody.messages[1].content[1].input_audio.format, 'webm');
   assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'settings' }]);
+});
+
+test('voice command endpoint accepts multipart audio while preserving planner context', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalFetch = global.fetch;
+  const boundary = 'rook-score-test-boundary';
+  const audioBuffer = Buffer.from('multipart-voice-audio');
+  let requestBody = null;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  global.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'execute',
+              summary: 'Open statistics',
+              message: 'Opening statistics',
+              requiresConfirmation: false,
+              actions: [{ type: 'openModal', target: 'statistics' }],
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="context"\r\n\r\n`),
+    Buffer.from(JSON.stringify({ gameOver: false, roundNumber: 3 })),
+    Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="conversation"\r\n\r\n[]`),
+    Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="rook-voice-score.m4a"\r\nContent-Type: audio/mp4\r\n\r\n`),
+    audioBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const request = createMockRequest({
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  });
+  const response = createMockResponse();
+
+  try {
+    await voiceScoreCommandHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.match(requestBody.messages[1].content[0].text, /"roundNumber":3/);
+  assert.equal(requestBody.messages[1].content[1].input_audio.data, audioBuffer.toString('base64'));
+  assert.equal(requestBody.messages[1].content[1].input_audio.format, 'm4a');
+  assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'statistics' }]);
 });
 
 test('voice command endpoint reports missing OpenRouter configuration', async () => {
@@ -1619,7 +1835,7 @@ test('voice command endpoint grounds named statistics to saved entity keys', asy
   }
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.headers['x-voice-command-revision'], 'json-object-v4');
+  assert.equal(response.headers['x-voice-command-revision'], 'multipart-audio-v5');
   assert.deepEqual(response.body.plan.actions, [{
     type: 'setStatsControls',
     statsView: 'players',
@@ -2774,7 +2990,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.30";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.31";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

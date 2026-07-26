@@ -236,7 +236,7 @@ function readRequestBody(request, maxBytes = MAX_BODY_BYTES) {
       chunks.push(chunk);
     });
 
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -249,26 +249,13 @@ function resolveAudioFormat(mimeType) {
   return MIME_AUDIO_FORMAT_MAP[normalizedMime] || "";
 }
 
-function parseAudioPayload(payload) {
-  const rawAudio = typeof payload.audioBase64 === "string" ? payload.audioBase64 : "";
-  if (!rawAudio) return null;
-
-  const base64Audio = rawAudio.includes(",") ? rawAudio.split(",").pop() : rawAudio;
-  const mimeType = typeof payload.mimeType === "string" && payload.mimeType
-    ? payload.mimeType.split(";")[0].trim().toLowerCase()
+function buildAudioPayload(audioBuffer, mimeTypeInput) {
+  const mimeType = typeof mimeTypeInput === "string" && mimeTypeInput
+    ? mimeTypeInput.split(";")[0].trim().toLowerCase()
     : "audio/webm";
   const format = resolveAudioFormat(mimeType);
   if (!format) {
     const error = new Error("Unsupported audio format.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  let audioBuffer;
-  try {
-    audioBuffer = Buffer.from(base64Audio, "base64");
-  } catch {
-    const error = new Error("Audio payload is invalid.");
     error.statusCode = 400;
     throw error;
   }
@@ -291,35 +278,129 @@ function parseAudioPayload(payload) {
   };
 }
 
-function parsePayload(bodyText) {
-  let payload;
-  try {
-    payload = JSON.parse(bodyText || "{}");
-  } catch {
-    const error = new Error("Request body must be valid JSON.");
-    error.statusCode = 400;
-    throw error;
+function parseAudioPayload(payload) {
+  if (Buffer.isBuffer(payload.audioBuffer)) {
+    return buildAudioPayload(payload.audioBuffer, payload.mimeType);
   }
 
-  const transcript = typeof payload.transcript === "string" ? payload.transcript.trim() : "";
+  const rawAudio = typeof payload.audioBase64 === "string" ? payload.audioBase64 : "";
+  if (!rawAudio) return null;
+
+  const base64Audio = rawAudio.includes(",") ? rawAudio.split(",").pop() : rawAudio;
+  return buildAudioPayload(Buffer.from(base64Audio, "base64"), payload.mimeType);
+}
+
+function parsePayloadObject(payload) {
+  const candidate = payload && typeof payload === "object" ? payload : {};
+
+  const transcript = typeof candidate.transcript === "string" ? candidate.transcript.trim() : "";
   if (transcript.length > 1000) {
     const error = new Error("Transcript is too long.");
     error.statusCode = 413;
     throw error;
   }
 
-  const audio = parseAudioPayload(payload);
+  const audio = parseAudioPayload(candidate);
   if (!transcript && !audio) {
     const error = new Error("Missing voice audio or transcript.");
     error.statusCode = 400;
     throw error;
   }
 
-  const context = payload.context && typeof payload.context === "object" ? payload.context : {};
-  const localIntent = payload.localIntent && typeof payload.localIntent === "object" ? payload.localIntent : null;
-  const conversation = sanitizeConversation(payload.conversation);
+  const context = candidate.context && typeof candidate.context === "object" ? candidate.context : {};
+  const localIntent = candidate.localIntent && typeof candidate.localIntent === "object" ? candidate.localIntent : null;
+  const conversation = sanitizeConversation(candidate.conversation);
 
   return { transcript, audio, context, localIntent, conversation };
+}
+
+function parseJsonPayload(bodyBuffer) {
+  let payload;
+  try {
+    payload = JSON.parse(bodyBuffer.toString("utf8") || "{}");
+  } catch {
+    const error = new Error("Request body must be valid JSON.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return parsePayloadObject(payload);
+}
+
+function parseMultipartJsonField(fields, fieldName, fallback) {
+  const rawValue = fields[fieldName];
+  if (typeof rawValue !== "string" || !rawValue.trim()) return fallback;
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    const error = new Error(`Multipart field ${fieldName} must contain valid JSON.`);
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function parseMultipartPayload(bodyBuffer, contentType) {
+  const boundaryMatch = String(contentType || "").match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  const boundary = (boundaryMatch?.[1] || boundaryMatch?.[2] || "").trim();
+  if (!boundary || boundary.length > 200) {
+    const error = new Error("Multipart boundary is missing or invalid.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const delimiter = Buffer.from(`--${boundary}`);
+  const headerSeparator = Buffer.from("\r\n\r\n");
+  const fields = {};
+  let audioBuffer = null;
+  let audioMimeType = "";
+  let boundaryIndex = bodyBuffer.indexOf(delimiter);
+
+  while (boundaryIndex !== -1) {
+    let partStart = boundaryIndex + delimiter.length;
+    if (bodyBuffer.subarray(partStart, partStart + 2).toString("ascii") === "--") break;
+    if (bodyBuffer.subarray(partStart, partStart + 2).toString("ascii") === "\r\n") partStart += 2;
+
+    const nextBoundaryIndex = bodyBuffer.indexOf(delimiter, partStart);
+    if (nextBoundaryIndex === -1) break;
+
+    let partEnd = nextBoundaryIndex;
+    if (bodyBuffer.subarray(partEnd - 2, partEnd).toString("ascii") === "\r\n") partEnd -= 2;
+    const headerEnd = bodyBuffer.indexOf(headerSeparator, partStart);
+    if (headerEnd === -1 || headerEnd >= partEnd) {
+      const error = new Error("Multipart body contains an invalid part.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const headerText = bodyBuffer.subarray(partStart, headerEnd).toString("utf8");
+    const nameMatch = headerText.match(/content-disposition:[^\r\n]*\bname="([^"]+)"/i);
+    const fieldName = nameMatch?.[1] || "";
+    const partBody = bodyBuffer.subarray(headerEnd + headerSeparator.length, partEnd);
+    if (fieldName === "audio") {
+      const mimeMatch = headerText.match(/content-type:\s*([^\r\n]+)/i);
+      audioBuffer = Buffer.from(partBody);
+      audioMimeType = mimeMatch?.[1]?.trim() || "audio/webm";
+    } else if (fieldName) {
+      fields[fieldName] = partBody.toString("utf8");
+    }
+
+    boundaryIndex = nextBoundaryIndex;
+  }
+
+  return parsePayloadObject({
+    transcript: fields.transcript || "",
+    context: parseMultipartJsonField(fields, "context", {}),
+    localIntent: parseMultipartJsonField(fields, "localIntent", null),
+    conversation: parseMultipartJsonField(fields, "conversation", []),
+    audioBuffer,
+    mimeType: audioMimeType,
+  });
+}
+
+function parseRequestPayload(bodyBuffer, contentType) {
+  if (/^multipart\/form-data\b/i.test(String(contentType || ""))) {
+    return parseMultipartPayload(bodyBuffer, contentType);
+  }
+  return parseJsonPayload(bodyBuffer);
 }
 
 function sanitizeConversation(conversation) {
@@ -1279,7 +1360,7 @@ async function requestOpenRouterPlan(payload) {
 module.exports = async function handler(request, response) {
   setCorsHeaders(request, response);
   response.setHeader("Cache-Control", "no-store, max-age=0");
-  response.setHeader("X-Voice-Command-Revision", "json-object-v4");
+  response.setHeader("X-Voice-Command-Revision", "multipart-audio-v5");
 
   if (request.method === "OPTIONS") {
     return response.status(204).end();
@@ -1292,8 +1373,8 @@ module.exports = async function handler(request, response) {
 
   let payload = null;
   try {
-    const bodyText = await readRequestBody(request);
-    payload = parsePayload(bodyText);
+    const bodyBuffer = await readRequestBody(request);
+    payload = parseRequestPayload(bodyBuffer, request.headers?.["content-type"]);
     const plan = groundStatisticsEntityPlan(await requestOpenRouterPlan(payload), payload);
     if (shouldUseLocalCommandFallback() && shouldReplaceProviderPlanWithLocalFallback(plan)) {
       const fallbackPlan = buildLocalActionPlan(payload);
