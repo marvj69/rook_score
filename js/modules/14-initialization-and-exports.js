@@ -23,6 +23,12 @@ document.addEventListener("DOMContentLoaded", () => {
     experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
     experimentalFeaturesToggle.addEventListener("change", event => toggleExperimentalFeatures(event.target));
   }
+  const voiceImprovementOptInToggle = document.getElementById("voiceImprovementOptInToggle");
+  if (voiceImprovementOptInToggle) {
+    voiceImprovementOptInToggle.checked = isVoiceImprovementOptedIn();
+    voiceImprovementOptInToggle.addEventListener("change", event => toggleVoiceImprovementConsent(event.target));
+  }
+  maybePromptForVoiceExperimentalOnboarding();
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
@@ -67,6 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	    tableTalkModal: closeTableTalkModal,
 	    probabilityModal: closeProbabilityModal,
 	    dealerOrderModal: closeDealerOrderModal,
+	    voiceExperimentalOnboardingModal: cancelVoiceExperimentalOnboarding,
 	  };
 
   document.addEventListener("click", (e) => {
@@ -228,6 +235,7 @@ if (typeof window !== 'undefined') {
     processVoiceScoreTranscript,
     parseVoiceScoreCommand,
     requestVoiceScoreActionPlan,
+    requestVoiceScoreMicrophonePermission,
   });
 }
 
@@ -314,11 +322,23 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreRecorderOptions,
     shouldPreferRecordedVoiceScoreEntry,
     requestVoiceScoreActionPlan,
+    requestVoiceScoreMicrophonePermission,
     cancelVoiceScoreEntry,
     getVoiceScoreConversation,
     clearVoiceScoreConversation,
     updateVoiceScoreConversation,
+    redactVoiceImprovementPrompt,
+    buildVoiceImprovementSample,
+    recordVoiceImprovementSample,
     isExperimentalFeaturesEnabled,
+    isVoiceImprovementOptedIn,
+    isVoiceExperimentalOnboardingComplete,
+    setExperimentalFeaturesEnabled,
+    toggleExperimentalFeatures,
+    toggleVoiceImprovementConsent,
+    continueVoiceExperimentalOnboarding,
+    cancelVoiceExperimentalOnboarding,
+    maybePromptForVoiceExperimentalOnboarding,
     renderVoiceScoreControls,
     getVoiceScoreAppContext,
     getVoiceScoreActionTypes,

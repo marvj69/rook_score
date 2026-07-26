@@ -1,0 +1,78 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedInOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isValidVoiceImprovementSample() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'schemaVersion',
+          'prompt',
+          'planStatus',
+          'actionTypes',
+          'outcome',
+          'model',
+          'revision',
+          'appVersion',
+          'createdAt'
+        ])
+        && data.schemaVersion == 1
+        && data.prompt is string
+        && data.prompt.size() > 0
+        && data.prompt.size() <= 1000
+        && data.planStatus in ['execute', 'confirm', 'clarify', 'unsupported']
+        && data.actionTypes is list
+        && data.actionTypes.size() <= 5
+        && data.actionTypes.hasOnly([
+          'scoreRound',
+          'editRound',
+          'undo',
+          'redo',
+          'misdeal',
+          'newGame',
+          'freezeGame',
+          'saveGame',
+          'openModal',
+          'closeModal',
+          'setDealerOrder',
+          'startPaperGame',
+          'setTeams',
+          'selectDealerPair',
+          'selectBid',
+          'setSetting',
+          'tableTalkPenalty',
+          'rematch',
+          'toggleMenu',
+          'authAction',
+          'confirmationAction',
+          'gameLibraryAction',
+          'setThemeColors',
+          'themeAction',
+          'setBidPresets',
+          'setStatsControls',
+          'noop'
+        ])
+        && data.outcome in ['success', 'failed', 'cancelled', 'clarify', 'unsupported']
+        && data.model is string
+        && data.model.size() <= 120
+        && data.revision is string
+        && data.revision.size() <= 80
+        && data.appVersion is string
+        && data.appVersion.size() <= 40
+        && data.createdAt is string
+        && data.createdAt.size() <= 40;
+    }
+
+    match /rookData/{userId} {
+      allow read, write: if isSignedInOwner(userId);
+    }
+
+    match /voiceImprovement/{userId}/samples/{sampleId} {
+      allow create: if isSignedInOwner(userId) && isValidVoiceImprovementSample();
+      allow read, update, delete: if false;
+    }
+  }
+}

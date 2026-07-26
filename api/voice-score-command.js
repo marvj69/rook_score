@@ -13,6 +13,8 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 const MAX_CONVERSATION_MESSAGES = 6;
 const MAX_CONVERSATION_CONTENT_LENGTH = 1000;
+const MAX_HEARD_TEXT_LENGTH = 1000;
+const VOICE_COMMAND_REVISION = "multipart-audio-v6";
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MIME_AUDIO_FORMAT_MAP = {
   "audio/wav": "wav",
@@ -51,6 +53,10 @@ const ACTION_SCHEMA = {
     requiresConfirmation: {
       type: "boolean",
       description: "True when the app should ask before executing.",
+    },
+    heardText: {
+      type: "string",
+      description: "Transcription of only the current spoken request. Do not include prior conversation or app context.",
     },
     actions: {
       type: "array",
@@ -195,7 +201,7 @@ const ACTION_SCHEMA = {
       },
     },
   },
-  required: ["status", "summary", "message", "requiresConfirmation", "actions"],
+  required: ["status", "summary", "message", "requiresConfirmation", "heardText", "actions"],
 };
 
 const ACTION_TYPES = new Set(ACTION_SCHEMA.properties.actions.items.properties.type.enum);
@@ -424,6 +430,7 @@ function buildSystemPrompt() {
     "Return only JSON matching the provided schema. Do not include commentary.",
     "Always choose the most likely app action for short spoken voice commands.",
     "When voice audio is attached, listen to it and treat the spoken words as the user request. Do not ask the user to type a transcript.",
+    "Set heardText to a concise transcription of only the current spoken request. Never copy prior conversation, app context, or deterministic parser JSON into heardText.",
     "Prefer concrete app actions over explanation when the user's intent is clear.",
     "Use status=clarify when required values are missing or ambiguous.",
     "Recent conversation messages, when present, contain earlier voice commands and your clarification questions. Use them to interpret a short follow-up answer and complete the original request.",
@@ -464,7 +471,7 @@ function buildSystemPrompt() {
     "Voice 'show Alice and Bob's team stats', when statistics.teams contains {key:'alice||bob',players:['Alice','Bob']}, => status execute, action {type:'setStatsControls', statsView:'teams', entityMode:'teams', entityKey:'alice||bob'}.",
     "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, version, confirmation, all.",
     "Settings keys: mustWinByBid, misdealHandling, proMode, experimentalFeatures, tableTalkPenaltyType, tableTalkPenaltyPoints.",
-    "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
+    "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"heardText\":\"current spoken request\",\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
   ].join("\n");
 }
 
@@ -540,7 +547,7 @@ function extractJsonObject(text) {
   return null;
 }
 
-function normalizePlan(plan) {
+function normalizePlan(plan, fallbackHeardText = "") {
   const normalized = plan && typeof plan === "object" ? plan : {};
   const actions = Array.isArray(normalized.actions)
     ? normalized.actions
@@ -558,7 +565,14 @@ function normalizePlan(plan) {
     summary: typeof normalized.summary === "string" ? normalized.summary.slice(0, 200) : "",
     message: typeof normalized.message === "string" ? normalized.message.slice(0, 240) : "",
     requiresConfirmation: Boolean(normalized.requiresConfirmation || status === "confirm"),
+    heardText: String(normalized.heardText || fallbackHeardText || "").trim().slice(0, MAX_HEARD_TEXT_LENGTH),
     actions,
+    ...(typeof normalized.plannerModel === "string"
+      ? { plannerModel: normalized.plannerModel.slice(0, 120) }
+      : {}),
+    ...(typeof normalized.plannerRevision === "string"
+      ? { plannerRevision: normalized.plannerRevision.slice(0, 80) }
+      : {}),
   };
 }
 
@@ -1241,12 +1255,17 @@ function groundStatisticsEntityPlan(plan, payload) {
   } else if (statisticsModalIndex >= 0) {
     actions[statisticsModalIndex] = groundedAction;
   } else {
-    return createLocalPlan(
-      "execute",
-      `Show statistics for ${statisticsControl.entity.name}`,
-      `Showing statistics for ${statisticsControl.entity.name}.`,
-      [groundedAction],
-    );
+    return {
+      ...createLocalPlan(
+        "execute",
+        `Show statistics for ${statisticsControl.entity.name}`,
+        `Showing statistics for ${statisticsControl.entity.name}.`,
+        [groundedAction],
+      ),
+      heardText: normalizedPlan.heardText,
+      ...(normalizedPlan.plannerModel ? { plannerModel: normalizedPlan.plannerModel } : {}),
+      ...(normalizedPlan.plannerRevision ? { plannerRevision: normalizedPlan.plannerRevision } : {}),
+    };
   }
 
   return {
@@ -1332,7 +1351,11 @@ async function fetchOpenRouterPlan(payload, apiKey) {
     throw error;
   }
 
-  return normalizePlan(parsedPlan);
+  return {
+    ...normalizePlan(parsedPlan, payload.transcript),
+    plannerModel: primaryModel.slice(0, 120),
+    plannerRevision: VOICE_COMMAND_REVISION,
+  };
 }
 
 async function requestOpenRouterPlan(payload) {
@@ -1360,7 +1383,7 @@ async function requestOpenRouterPlan(payload) {
 module.exports = async function handler(request, response) {
   setCorsHeaders(request, response);
   response.setHeader("Cache-Control", "no-store, max-age=0");
-  response.setHeader("X-Voice-Command-Revision", "multipart-audio-v5");
+  response.setHeader("X-Voice-Command-Revision", VOICE_COMMAND_REVISION);
 
   if (request.method === "OPTIONS") {
     return response.status(204).end();
@@ -1379,7 +1402,13 @@ module.exports = async function handler(request, response) {
     if (shouldUseLocalCommandFallback() && shouldReplaceProviderPlanWithLocalFallback(plan)) {
       const fallbackPlan = buildLocalActionPlan(payload);
       if (fallbackPlan) {
-        return response.status(200).json({ plan: fallbackPlan });
+        return response.status(200).json({
+          plan: {
+            ...normalizePlan(fallbackPlan, payload.transcript),
+            plannerModel: "local-fallback",
+            plannerRevision: VOICE_COMMAND_REVISION,
+          },
+        });
       }
     }
     return response.status(200).json({ plan });
@@ -1387,7 +1416,13 @@ module.exports = async function handler(request, response) {
     if (payload && shouldUseLocalCommandFallback()) {
       const fallbackPlan = buildLocalActionPlan(payload);
       if (fallbackPlan) {
-        return response.status(200).json({ plan: fallbackPlan });
+        return response.status(200).json({
+          plan: {
+            ...normalizePlan(fallbackPlan, payload.transcript),
+            plannerModel: "local-fallback",
+            plannerRevision: VOICE_COMMAND_REVISION,
+          },
+        });
       }
     }
 

@@ -13,6 +13,9 @@ const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
 const ACTIVE_GAME_KEY = "activeGameState";
 const PRO_MODE_KEY = "proModeEnabled";
 const EXPERIMENTAL_FEATURES_KEY = "experimentalFeaturesEnabled";
+const VOICE_IMPROVEMENT_OPT_IN_KEY = "voiceImprovementOptIn";
+const LOCAL_ONLY_STORAGE_PREFIX = "localOnly:";
+const VOICE_EXPERIMENTAL_ONBOARDING_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}voiceExperimentalOnboardingCompleted`;
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
 const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";
@@ -1251,7 +1254,8 @@ function setLocalStorage(key, value) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames(value);
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+        && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
       setTimeout(() => {
         window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
@@ -1270,7 +1274,8 @@ function removeLocalStorageKey(key) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames();
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+        && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       setTimeout(() => {
         window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
       }, 0);
@@ -4343,6 +4348,16 @@ function getVoiceScoreAudioConstraints() {
   };
 }
 
+async function requestVoiceScoreMicrophonePermission() {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    throw new Error("Microphone access is not supported in this browser.");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia(getVoiceScoreAudioConstraints());
+  stopVoiceScoreRecorderStream(stream);
+  return true;
+}
+
 function getVoiceScoreRecorderOptions(mimeType = "") {
   return {
     ...(mimeType ? { mimeType } : {}),
@@ -4474,8 +4489,92 @@ function normalizeVoiceScorePlan(plan) {
     summary: typeof candidate.summary === "string" ? candidate.summary : "",
     message: typeof candidate.message === "string" ? candidate.message : "",
     requiresConfirmation: Boolean(candidate.requiresConfirmation || status === "confirm"),
+    heardText: String(candidate.heardText || "").trim().slice(0, 1000),
     actions,
+    ...(typeof candidate.plannerModel === "string"
+      ? { plannerModel: candidate.plannerModel.slice(0, 120) }
+      : {}),
+    ...(typeof candidate.plannerRevision === "string"
+      ? { plannerRevision: candidate.plannerRevision.slice(0, 80) }
+      : {}),
   };
+}
+
+function getVoiceImprovementIdentityReplacements() {
+  const replacements = [];
+  const teamNames = [
+    { value: state.usTeamName, replacement: "Us team" },
+    { value: state.demTeamName, replacement: "Dem team" },
+  ];
+  teamNames.forEach(({ value, replacement }) => {
+    const cleanValue = sanitizePlayerName(value);
+    if (cleanValue && !/^(us|dem)$/i.test(cleanValue)) {
+      replacements.push({ value: cleanValue, replacement });
+    }
+  });
+
+  const playerNames = new Set([
+    ...(Array.isArray(state.usPlayers) ? state.usPlayers : []),
+    ...(Array.isArray(state.demPlayers) ? state.demPlayers : []),
+  ].map(sanitizePlayerName).filter(Boolean));
+  const statistics = getVoiceScoreStatisticsContext();
+  (statistics.players || []).forEach(player => {
+    const name = sanitizePlayerName(player?.name);
+    if (name) playerNames.add(name);
+  });
+  (statistics.teams || []).forEach(team => {
+    (Array.isArray(team?.players) ? team.players : []).forEach(player => {
+      const name = sanitizePlayerName(player);
+      if (name) playerNames.add(name);
+    });
+  });
+
+  Array.from(playerNames).forEach((value, index) => {
+    replacements.push({ value, replacement: `Player ${index + 1}` });
+  });
+
+  return replacements.sort((left, right) => right.value.length - left.value.length);
+}
+
+function redactVoiceImprovementPrompt(prompt) {
+  let redacted = String(prompt || "")
+    .trim()
+    .slice(0, 1000)
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
+    .replace(/\b(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g, "[phone]");
+
+  getVoiceImprovementIdentityReplacements().forEach(({ value, replacement }) => {
+    redacted = redacted.replace(new RegExp(escapeVoiceScoreRegExp(value), "gi"), replacement);
+  });
+  return redacted.trim().slice(0, 1000);
+}
+
+function buildVoiceImprovementSample(plan, outcome) {
+  const normalizedPlan = normalizeVoiceScorePlan(plan);
+  const prompt = redactVoiceImprovementPrompt(normalizedPlan.heardText);
+  if (!prompt) return null;
+
+  return {
+    prompt,
+    planStatus: normalizedPlan.status,
+    actionTypes: Array.from(new Set(normalizedPlan.actions.map(action => action.type))).slice(0, 5),
+    outcome: String(outcome || "failed").slice(0, 40),
+    model: String(normalizedPlan.plannerModel || "unknown").slice(0, 120),
+    revision: String(normalizedPlan.plannerRevision || "unknown").slice(0, 80),
+    appVersion: String(APP_VERSION || "").slice(0, 40),
+  };
+}
+
+function recordVoiceImprovementSample(plan, outcome) {
+  if (!isVoiceImprovementOptedIn() || typeof window.logVoiceImprovementSample !== "function") {
+    return false;
+  }
+  const sample = buildVoiceImprovementSample(plan, outcome);
+  if (!sample) return false;
+
+  Promise.resolve(window.logVoiceImprovementSample(sample))
+    .catch(error => console.warn("Voice improvement sample was not saved.", error));
+  return true;
 }
 
 function getVoiceScoreConversation() {
@@ -5265,7 +5364,7 @@ async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOpe
       mimeType: audioBlob.type || "audio/webm",
     }, null, { signal: requestController?.signal });
     if (operationId !== voiceScoreOperationId) return false;
-    return applyVoiceScorePlan(plan, plan.summary || "voice command", null);
+    return applyVoiceScorePlan(plan, plan.heardText || plan.summary || "voice command", null);
   } catch (error) {
     if (operationId !== voiceScoreOperationId || error?.name === "AbortError") return false;
     setVoiceScoreStatus(error.message || "Voice command planning is unavailable.", "error");
@@ -5537,13 +5636,17 @@ function processLocalVoiceScoreIntent(intent) {
 
 async function applyVoiceScorePlan(plan, transcript, localIntent) {
   const normalizedPlan = normalizeVoiceScorePlan(plan);
-  updateVoiceScoreConversation(normalizedPlan, transcript);
+  const heardText = normalizedPlan.heardText || String(transcript || "").trim();
+  if (!normalizedPlan.heardText && heardText) normalizedPlan.heardText = heardText.slice(0, 1000);
+  updateVoiceScoreConversation(normalizedPlan, heardText);
   if (normalizedPlan.status === "clarify" || normalizedPlan.status === "unsupported") {
     setVoiceScoreStatus(normalizedPlan.message || normalizedPlan.summary || "Say that another way.", "error");
+    recordVoiceImprovementSample(normalizedPlan, normalizedPlan.status);
     return false;
   }
 
   if (!normalizedPlan.actions.length) {
+    recordVoiceImprovementSample(normalizedPlan, "failed");
     return processLocalVoiceScoreIntent(localIntent);
   }
 
@@ -5553,9 +5656,11 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
       const successMessage = normalizedPlan.summary || messages.find(Boolean) || `Heard: ${transcript}`;
       setVoiceScoreStatus(successMessage, "success");
       emitRookEvent("voice_score_command", getRookGameEventParams(state, { source: "voice_llm" }));
+      recordVoiceImprovementSample(normalizedPlan, "success");
       return true;
     } catch (error) {
       setVoiceScoreStatus(error.message || "Voice action failed.", "error");
+      recordVoiceImprovementSample(normalizedPlan, "failed");
       return false;
     }
   };
@@ -5568,7 +5673,10 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
         closeConfirmationModal();
         executeConfirmedPlan(true);
       },
-      closeConfirmationModal
+      () => {
+        closeConfirmationModal();
+        recordVoiceImprovementSample(normalizedPlan, "cancelled");
+      }
     );
     return true;
   }
@@ -5583,7 +5691,7 @@ async function processVoiceScoreTranscript(transcript) {
 
   try {
     const plan = await requestVoiceScoreActionPlan({ transcript: cleanTranscript }, localIntent);
-    return applyVoiceScorePlan(plan, cleanTranscript, localIntent);
+    return applyVoiceScorePlan(plan, plan.heardText || cleanTranscript, localIntent);
   } catch (error) {
     if (localIntent.type !== "clarification") {
       return processLocalVoiceScoreIntent(localIntent);
@@ -5664,9 +5772,9 @@ function saveSettings() {
   const misdealToggle = document.getElementById("misdealHandlingToggle");
   if (misdealToggle) setLocalStorage(MISDEAL_HANDLING_KEY, misdealToggle.checked);
 
-  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
-  if (experimentalFeaturesToggle) {
-    setLocalStorage(EXPERIMENTAL_FEATURES_KEY, experimentalFeaturesToggle.checked);
+  const voiceImprovementOptInToggle = document.getElementById("voiceImprovementOptInToggle");
+  if (voiceImprovementOptInToggle) {
+    setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, voiceImprovementOptInToggle.checked);
   }
 
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
@@ -5708,13 +5816,25 @@ function isExperimentalFeaturesEnabled() {
   return Boolean(getLocalStorage(EXPERIMENTAL_FEATURES_KEY, false));
 }
 
+function isVoiceImprovementOptedIn() {
+  return Boolean(getLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, false));
+}
+
+function isVoiceExperimentalOnboardingComplete() {
+  return Boolean(getLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, false));
+}
+
 function updateExperimentalFeaturesUI(isEnabled) {
   const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
   if (experimentalFeaturesToggle) experimentalFeaturesToggle.checked = Boolean(isEnabled);
 }
 
-function toggleExperimentalFeatures(checkbox) {
-  const isEnabled = Boolean(checkbox?.checked);
+function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()) {
+  const settingsToggle = document.getElementById("voiceImprovementOptInToggle");
+  if (settingsToggle) settingsToggle.checked = Boolean(isEnabled);
+}
+
+function setExperimentalFeaturesEnabled(isEnabled, { notify = true } = {}) {
   setLocalStorage(EXPERIMENTAL_FEATURES_KEY, isEnabled);
   updateExperimentalFeaturesUI(isEnabled);
   if (!isEnabled && typeof cancelVoiceScoreEntry === "function") {
@@ -5722,7 +5842,107 @@ function toggleExperimentalFeatures(checkbox) {
   } else {
     scheduleRender();
   }
-  showSaveIndicator(isEnabled ? "Experimental Features On" : "Experimental Features Off");
+  if (notify) {
+    showSaveIndicator(isEnabled ? "Experimental Features On" : "Experimental Features Off");
+  }
+  return isEnabled;
+}
+
+function setVoiceExperimentalOnboardingError(message = "") {
+  const errorElement = document.getElementById("voiceExperimentalOnboardingError");
+  if (!errorElement) return;
+  errorElement.textContent = message;
+  errorElement.classList.toggle("hidden", !message);
+}
+
+function openVoiceExperimentalOnboarding() {
+  const consentCheckbox = document.getElementById("voiceImprovementConsentCheckbox");
+  if (consentCheckbox) consentCheckbox.checked = isVoiceImprovementOptedIn();
+  setVoiceExperimentalOnboardingError("");
+  openModal("voiceExperimentalOnboardingModal");
+}
+
+function cancelVoiceExperimentalOnboarding() {
+  closeModal("voiceExperimentalOnboardingModal");
+  setExperimentalFeaturesEnabled(false);
+}
+
+async function continueVoiceExperimentalOnboarding() {
+  const continueButton = document.getElementById("voiceExperimentalOnboardingContinue");
+  const consentCheckbox = document.getElementById("voiceImprovementConsentCheckbox");
+  if (continueButton) continueButton.disabled = true;
+  setVoiceExperimentalOnboardingError("");
+
+  try {
+    await requestVoiceScoreMicrophonePermission();
+    const optedIn = Boolean(consentCheckbox?.checked);
+    setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, optedIn);
+    setLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, true);
+    updateVoiceImprovementConsentUI(optedIn);
+    closeModal("voiceExperimentalOnboardingModal");
+    setExperimentalFeaturesEnabled(true);
+    return true;
+  } catch (error) {
+    setExperimentalFeaturesEnabled(false, { notify: false });
+    const permissionDenied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+    setVoiceExperimentalOnboardingError(
+      permissionDenied
+        ? "Microphone permission was not granted. Allow it in your browser settings, then try again."
+        : (error?.message || "Microphone access could not be started."),
+    );
+    return false;
+  } finally {
+    if (continueButton) continueButton.disabled = false;
+  }
+}
+
+async function enableExperimentalFeaturesWithMicrophone(checkbox) {
+  if (checkbox) checkbox.disabled = true;
+  try {
+    await requestVoiceScoreMicrophonePermission();
+    setExperimentalFeaturesEnabled(true);
+    return true;
+  } catch (error) {
+    setExperimentalFeaturesEnabled(false, { notify: false });
+    const message = error?.name === "NotAllowedError" || error?.name === "SecurityError"
+      ? "Microphone permission is required for Experimental Features"
+      : (error?.message || "Microphone access is unavailable");
+    showSaveIndicator(message);
+    return false;
+  } finally {
+    if (checkbox) checkbox.disabled = false;
+  }
+}
+
+function toggleExperimentalFeatures(checkbox) {
+  const isEnabled = Boolean(checkbox?.checked);
+  if (!isEnabled) {
+    return setExperimentalFeaturesEnabled(false);
+  }
+
+  if (!isVoiceExperimentalOnboardingComplete()) {
+    openVoiceExperimentalOnboarding();
+    return false;
+  }
+
+  enableExperimentalFeaturesWithMicrophone(checkbox);
+  return true;
+}
+
+function toggleVoiceImprovementConsent(checkbox) {
+  const optedIn = Boolean(checkbox?.checked);
+  setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, optedIn);
+  updateVoiceImprovementConsentUI(optedIn);
+  showSaveIndicator(optedIn ? "Voice improvement sharing on" : "Voice improvement sharing off");
+  return optedIn;
+}
+
+function maybePromptForVoiceExperimentalOnboarding() {
+  if (isExperimentalFeaturesEnabled() && !isVoiceExperimentalOnboardingComplete()) {
+    openVoiceExperimentalOnboarding();
+    return true;
+  }
+  return false;
 }
 
 function handleTableTalkPenaltyChange() {
@@ -8353,6 +8573,7 @@ function loadSettings() {
   }
 
   updateExperimentalFeaturesUI(isExperimentalFeaturesEnabled());
+  updateVoiceImprovementConsentUI(isVoiceImprovementOptedIn());
 
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
@@ -8519,6 +8740,12 @@ document.addEventListener("DOMContentLoaded", () => {
     experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
     experimentalFeaturesToggle.addEventListener("change", event => toggleExperimentalFeatures(event.target));
   }
+  const voiceImprovementOptInToggle = document.getElementById("voiceImprovementOptInToggle");
+  if (voiceImprovementOptInToggle) {
+    voiceImprovementOptInToggle.checked = isVoiceImprovementOptedIn();
+    voiceImprovementOptInToggle.addEventListener("change", event => toggleVoiceImprovementConsent(event.target));
+  }
+  maybePromptForVoiceExperimentalOnboarding();
 
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
@@ -8563,6 +8790,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	    tableTalkModal: closeTableTalkModal,
 	    probabilityModal: closeProbabilityModal,
 	    dealerOrderModal: closeDealerOrderModal,
+	    voiceExperimentalOnboardingModal: cancelVoiceExperimentalOnboarding,
 	  };
 
   document.addEventListener("click", (e) => {
@@ -8724,6 +8952,7 @@ if (typeof window !== 'undefined') {
     processVoiceScoreTranscript,
     parseVoiceScoreCommand,
     requestVoiceScoreActionPlan,
+    requestVoiceScoreMicrophonePermission,
   });
 }
 
@@ -8810,11 +9039,23 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreRecorderOptions,
     shouldPreferRecordedVoiceScoreEntry,
     requestVoiceScoreActionPlan,
+    requestVoiceScoreMicrophonePermission,
     cancelVoiceScoreEntry,
     getVoiceScoreConversation,
     clearVoiceScoreConversation,
     updateVoiceScoreConversation,
+    redactVoiceImprovementPrompt,
+    buildVoiceImprovementSample,
+    recordVoiceImprovementSample,
     isExperimentalFeaturesEnabled,
+    isVoiceImprovementOptedIn,
+    isVoiceExperimentalOnboardingComplete,
+    setExperimentalFeaturesEnabled,
+    toggleExperimentalFeatures,
+    toggleVoiceImprovementConsent,
+    continueVoiceExperimentalOnboarding,
+    cancelVoiceExperimentalOnboarding,
+    maybePromptForVoiceExperimentalOnboarding,
     renderVoiceScoreControls,
     getVoiceScoreAppContext,
     getVoiceScoreActionTypes,

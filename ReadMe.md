@@ -7,7 +7,7 @@
 ## ✨ Features
 
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
-*   **Voice Score Entry:** Enable Experimental Features to show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action.
+*   **Voice Score Entry:** Enable Experimental Features to complete the microphone-permission onboarding and show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
 *   **Undo/Redo Functionality:** Easily correct mistakes in score entry.
@@ -35,6 +35,7 @@
     *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
     *   **Voice Scoring:** Transcribes short score phrases, infers team, bid, points, made/set status, misdeal, and undo actions, and asks for confirmation when the phrase is incomplete.
     *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question so short answers can complete the same request.
+    *   **Optional Improvement Sharing:** Users can separately opt in to share redacted command text, action types, and outcomes for future model improvement. Raw audio and full game context are never stored by Rook Score.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.
@@ -168,6 +169,7 @@ Access these via **Menu -> Settings**:
 *   **Appearance & Features:**
     *   **Pro Mode:** Toggle to enable/disable the win probability display during active games.
     *   **Experimental Features:** Show preview controls such as the microphone-powered voice actions. This is off by default.
+    *   **Help improve voice actions:** Separately opt in or out of sharing redacted command text and action outcomes. This is off by default and can be disabled at any time without turning off voice actions.
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
     *   **Table-Talk Penalties:** Choose whether penalties subtract the bid amount or a custom point value (multiples of 5).
@@ -219,6 +221,10 @@ VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
+Enabling Experimental Features opens a one-time, device-local onboarding dialog. Continuing requests microphone permission and immediately stops the permission-check stream without recording. Optional model-improvement consent is stored separately from the Experimental Features setting and defaults to off.
+
+When improvement sharing is enabled, the existing planner response supplies a text transcription without a second model call. Before one small Firestore document is created, Rook Score replaces known player/team names and common email/phone patterns. The document contains only the redacted command text, plan status, action types, execution outcome, planner model/revision, app version, and timestamp. It does not contain raw audio, Base64 audio, the full action payload, account profile fields, or full game context.
+
 The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
 
 - Scoring and game state: score or edit a round, undo, redo, record a misdeal, start/reset, freeze, save, or rematch a game.
@@ -240,6 +246,14 @@ Opening `index.html` directly still works for local scoring. LLM voice actions, 
 ### Google Analytics
 Google Analytics is loaded from `js/analytics.js` on the GitHub Pages host for `https://marvj69.github.io/rook_score/` using the GA4 web stream Measurement ID `G-MCY1GMM4L5`.
 
+### Firestore Rules
+
+The checked-in `firestore.rules` keeps existing `rookData/{userId}` documents owner-only and permits authenticated users to create strictly validated samples under `voiceImprovement/{userId}/samples/{sampleId}`. Client reads, updates, and deletes of improvement samples are denied. Deploy the rules with:
+
+```bash
+npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
+```
+
 ### GitHub Pages
 The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` and LLM voice actions from `https://rook-score.vercel.app/api/voice-score-command` using the endpoints' CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoints' allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` / `VOICE_SCORE_ALLOWED_ORIGINS` in Vercel.
 
@@ -252,19 +266,7 @@ If you want to use your own Firebase backend:
 5.  **Enable Firebase Services:**
     *   **Authentication:** Enable "Google" and "Anonymous" sign-in methods in the Firebase Authentication section.
     *   **Firestore:** Create a Firestore database in "Production mode".
-        *   **Security Rules:** For basic functionality, you can start with rules that allow authenticated users to read/write their own data. A common pattern is:
-            ```json
-            rules_version = '2';
-            service cloud.firestore {
-              match /databases/{database}/documents {
-                // Allow users to read and write only their own data in the 'rookData' collection
-                match /rookData/{userId} {
-                  allow read, write: if request.auth != null && request.auth.uid == userId;
-                }
-              }
-            }
-            ```
-            Apply these rules in the "Rules" tab of your Firestore database.
+        *   **Security Rules:** Deploy the checked-in `firestore.rules`, which covers both owner-only cloud sync and create-only voice-improvement samples. You can use the Firebase CLI command in the Firestore Rules section above or paste the file into the Firebase Console Rules tab.
     *   **API key restriction:** Firebase web app API keys are visible to browsers at runtime. In Google Cloud Console, restrict the key to the required Firebase APIs and your approved HTTP referrers, then rotate any key that was previously committed or deployed publicly.
 
 ## Contributing

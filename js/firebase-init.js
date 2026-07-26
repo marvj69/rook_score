@@ -4,6 +4,7 @@ const FIREBASE_APP_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/fireb
 const FIREBASE_AUTH_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 const FIREBASE_FIRESTORE_MODULE_URL = "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 const FIREBASE_CONFIG_TIMEOUT_MS = 3500;
+const LOCAL_ONLY_STORAGE_PREFIX = "localOnly:";
 const GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
 const REQUIRED_FIREBASE_CONFIG_KEYS = [
   "apiKey",
@@ -13,6 +14,37 @@ const REQUIRED_FIREBASE_CONFIG_KEYS = [
   "messagingSenderId",
   "appId",
 ];
+const VOICE_IMPROVEMENT_ACTION_TYPES = new Set([
+  "scoreRound",
+  "editRound",
+  "undo",
+  "redo",
+  "misdeal",
+  "newGame",
+  "freezeGame",
+  "saveGame",
+  "openModal",
+  "closeModal",
+  "setDealerOrder",
+  "startPaperGame",
+  "setTeams",
+  "selectDealerPair",
+  "selectBid",
+  "setSetting",
+  "tableTalkPenalty",
+  "rematch",
+  "toggleMenu",
+  "authAction",
+  "confirmationAction",
+  "gameLibraryAction",
+  "setThemeColors",
+  "themeAction",
+  "setBidPresets",
+  "setStatsControls",
+  "noop",
+]);
+const VOICE_IMPROVEMENT_PLAN_STATUSES = new Set(["execute", "confirm", "clarify", "unsupported"]);
+const VOICE_IMPROVEMENT_OUTCOMES = new Set(["success", "failed", "cancelled", "clarify", "unsupported"]);
 
 let app = null;
 let auth = null;
@@ -42,6 +74,7 @@ window.firestoreDoc = null;
 window.firestoreSetDoc = null;
 window.firestoreGetDoc = null;
 window.googleProvider = null;
+window.logVoiceImprovementSample = null;
 
 function getAnalyticsSyncKeyLabel(key) {
   switch (key) {
@@ -239,7 +272,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (!key.startsWith('firebase')) {
+    if (!key.startsWith('firebase') && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) {
       const rawValue = localStorage.getItem(key);
       localData[key] = deserializeLocalStorageValue(key, rawValue);
     }
@@ -249,7 +282,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
 
   allKeys.forEach(key => {
-    if (key === "timestamp") return;
+    if (key === "timestamp" || key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) return;
 
     const localValue = localData[key];
     const firestoreValue = firestoreData[key];
@@ -291,7 +324,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
 
   // Update localStorage with merged data
   Object.entries(mergedData).forEach(([key, value]) => {
-    if (key !== "timestamp") {
+    if (key !== "timestamp" && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) {
       const serialized = serializeForLocalStorage(value);
       if (serialized === null) {
         localStorage.removeItem(key);
@@ -401,6 +434,86 @@ window.syncToFirestore = async function(key, value) {
   } catch (error) {
     console.error("Firestore sync error:", error);
     trackSyncFailure(key, "write_failed");
+    return false;
+  }
+};
+
+function isVoiceImprovementConsentEnabled() {
+  if (typeof window.getLocalStorage === "function") {
+    return window.getLocalStorage("voiceImprovementOptIn", false) === true;
+  }
+  try {
+    return JSON.parse(localStorage.getItem("voiceImprovementOptIn") || "false") === true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeVoiceImprovementSample(sample) {
+  if (!sample || typeof sample !== "object") return null;
+  const prompt = String(sample.prompt || "").trim().slice(0, 1000);
+  const planStatus = String(sample.planStatus || "");
+  const outcome = String(sample.outcome || "");
+  if (!prompt
+      || !VOICE_IMPROVEMENT_PLAN_STATUSES.has(planStatus)
+      || !VOICE_IMPROVEMENT_OUTCOMES.has(outcome)) {
+    return null;
+  }
+
+  const actionTypes = Array.isArray(sample.actionTypes)
+    ? Array.from(new Set(sample.actionTypes
+        .map(value => String(value || ""))
+        .filter(value => VOICE_IMPROVEMENT_ACTION_TYPES.has(value))))
+        .slice(0, 5)
+    : [];
+
+  return {
+    schemaVersion: 1,
+    prompt,
+    planStatus,
+    actionTypes,
+    outcome,
+    model: String(sample.model || "unknown").slice(0, 120),
+    revision: String(sample.revision || "unknown").slice(0, 80),
+    appVersion: String(sample.appVersion || "").slice(0, 40),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function createVoiceImprovementSampleId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues !== "function") {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 18)}`;
+  }
+  const randomValues = new Uint32Array(4);
+  cryptoApi.getRandomValues(randomValues);
+  return `${Date.now().toString(36)}-${Array.from(randomValues, value => value.toString(36)).join("")}`;
+}
+
+window.logVoiceImprovementSample = async function(sample) {
+  if (!isVoiceImprovementConsentEnabled()) return false;
+  const sanitizedSample = sanitizeVoiceImprovementSample(sample);
+  if (!sanitizedSample) return false;
+
+  if ((!auth || !db) && typeof window.startFirebaseInitialization === "function") {
+    await window.startFirebaseInitialization({ retry: Boolean(window.firebaseInitError) });
+  }
+  if (!auth || !db) return false;
+
+  const user = await ensureUserSession();
+  if (!user || !isVoiceImprovementConsentEnabled()) return false;
+
+  try {
+    await setDoc(
+      doc(db, "voiceImprovement", user.uid, "samples", createVoiceImprovementSampleId()),
+      sanitizedSample,
+    );
+    return true;
+  } catch (error) {
+    console.warn("Voice improvement sample could not be saved.", {
+      code: error?.code || "VOICE_IMPROVEMENT_WRITE_FAILED",
+    });
     return false;
   }
 };

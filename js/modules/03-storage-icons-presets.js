@@ -10,7 +10,8 @@ function setLocalStorage(key, value) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames(value);
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+        && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
       setTimeout(() => {
         window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
@@ -29,7 +30,8 @@ function removeLocalStorageKey(key) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames();
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+        && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       setTimeout(() => {
         window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
       }, 0);

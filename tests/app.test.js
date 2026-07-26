@@ -254,12 +254,20 @@ const {
   getVoiceScoreRecorderOptions,
   shouldPreferRecordedVoiceScoreEntry,
   requestVoiceScoreActionPlan,
+  requestVoiceScoreMicrophonePermission,
   cancelVoiceScoreEntry,
   stopVoiceScoreEntry,
   getVoiceScoreConversation,
   clearVoiceScoreConversation,
   updateVoiceScoreConversation,
+  redactVoiceImprovementPrompt,
+  buildVoiceImprovementSample,
+  recordVoiceImprovementSample,
   isExperimentalFeaturesEnabled,
+  isVoiceImprovementOptedIn,
+  isVoiceExperimentalOnboardingComplete,
+  toggleVoiceImprovementConsent,
+  continueVoiceExperimentalOnboarding,
   renderVoiceScoreControls,
   getVoiceScoreAppContext,
   getVoiceScoreActionTypes,
@@ -946,6 +954,7 @@ test('voice score plan normalization keeps only supported actions', () => {
     summary: 'Open settings',
     message: 'Opening settings',
     requiresConfirmation: false,
+    heardText: '',
     actions: [
       { type: 'openModal', target: 'settings' },
       { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
@@ -959,6 +968,7 @@ test('voice score plan normalization keeps only supported actions', () => {
     summary: 'Open settings',
     message: 'Opening settings',
     requiresConfirmation: false,
+    heardText: '',
     actions: [
       { type: 'openModal', target: 'settings' },
       { type: 'gameLibraryAction', gameAction: 'search', query: 'Alice' },
@@ -1692,6 +1702,160 @@ test('experimental features are disabled by default and gate voice controls', ()
   assert.match(renderVoiceScoreControls(), /data-voice-score-entry="true"/);
 });
 
+test('voice improvement sharing is a separate opt-in that defaults off', () => {
+  resetState();
+  assert.equal(isVoiceImprovementOptedIn(), false);
+
+  toggleVoiceImprovementConsent({ checked: true });
+  assert.equal(isVoiceImprovementOptedIn(), true);
+  assert.equal(isExperimentalFeaturesEnabled(), false);
+
+  toggleVoiceImprovementConsent({ checked: false });
+  assert.equal(isVoiceImprovementOptedIn(), false);
+});
+
+test('microphone onboarding permission check immediately releases every track', async () => {
+  const originalMediaDevices = navigator.mediaDevices;
+  let stoppedTracks = 0;
+  navigator.mediaDevices = {
+    getUserMedia: async constraints => {
+      assert.equal(constraints.audio.channelCount.ideal, 1);
+      return {
+        getTracks: () => [
+          { stop: () => { stoppedTracks += 1; } },
+          { stop: () => { stoppedTracks += 1; } },
+        ],
+      };
+    },
+  };
+
+  try {
+    assert.equal(await requestVoiceScoreMicrophonePermission(), true);
+    assert.equal(stoppedTracks, 2);
+  } finally {
+    if (originalMediaDevices === undefined) delete navigator.mediaDevices;
+    else navigator.mediaDevices = originalMediaDevices;
+  }
+});
+
+test('experimental onboarding persists consent only after microphone permission succeeds', async () => {
+  resetState();
+  const originalMediaDevices = navigator.mediaDevices;
+  const originalGetElementById = document.getElementById;
+  const continueButton = { disabled: false };
+  const consentCheckbox = { checked: true };
+  const errorElement = {
+    textContent: '',
+    classList: { toggle: () => {} },
+  };
+  const experimentalToggle = { checked: false };
+  const modal = {
+    classList: { add: () => {}, remove: () => {} },
+  };
+  document.getElementById = id => ({
+    voiceExperimentalOnboardingContinue: continueButton,
+    voiceImprovementConsentCheckbox: consentCheckbox,
+    voiceExperimentalOnboardingError: errorElement,
+    experimentalFeaturesToggle: experimentalToggle,
+    voiceExperimentalOnboardingModal: modal,
+  }[id] || originalGetElementById(id));
+
+  try {
+    const denial = new Error('denied');
+    denial.name = 'NotAllowedError';
+    navigator.mediaDevices = { getUserMedia: async () => { throw denial; } };
+    assert.equal(await continueVoiceExperimentalOnboarding(), false);
+    assert.equal(isExperimentalFeaturesEnabled(), false);
+    assert.equal(isVoiceImprovementOptedIn(), false);
+    assert.equal(isVoiceExperimentalOnboardingComplete(), false);
+    assert.match(errorElement.textContent, /Microphone permission was not granted/);
+
+    let trackStops = 0;
+    navigator.mediaDevices = {
+      getUserMedia: async () => ({
+        getTracks: () => [{ stop: () => { trackStops += 1; } }],
+      }),
+    };
+    assert.equal(await continueVoiceExperimentalOnboarding(), true);
+    assert.equal(trackStops, 1);
+    assert.equal(isExperimentalFeaturesEnabled(), true);
+    assert.equal(isVoiceImprovementOptedIn(), true);
+    assert.equal(isVoiceExperimentalOnboardingComplete(), true);
+    assert.equal(localStorage.getItem('localOnly:voiceExperimentalOnboardingCompleted'), 'true');
+  } finally {
+    document.getElementById = originalGetElementById;
+    if (originalMediaDevices === undefined) delete navigator.mediaDevices;
+    else navigator.mediaDevices = originalMediaDevices;
+  }
+});
+
+test('voice improvement samples redact known identities and omit action arguments', () => {
+  resetState();
+  updateState({
+    usTeamName: 'Kitchen Crew',
+    demTeamName: 'Barn Birds',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Carol', 'Dan'],
+  });
+
+  const redacted = redactVoiceImprovementPrompt(
+    "Show Alice's Kitchen Crew stats and email alice@example.com or call 313-555-1212",
+  );
+  assert.equal(
+    redacted,
+    "Show Player 1's Us team stats and email [email] or call [phone]",
+  );
+
+  const sample = buildVoiceImprovementSample({
+    status: 'execute',
+    summary: 'Open Alice statistics',
+    message: 'Opening statistics',
+    requiresConfirmation: false,
+    heardText: "Show Alice's stats",
+    plannerModel: 'google/gemini-3.1-flash-lite',
+    plannerRevision: 'multipart-audio-v6',
+    actions: [{ type: 'setStatsControls', entityKey: 'alice', query: 'private value' }],
+  }, 'success');
+
+  assert.deepEqual(sample.actionTypes, ['setStatsControls']);
+  assert.equal(sample.prompt, "Show Player 1's stats");
+  assert.equal(Object.hasOwn(sample, 'actions'), false);
+  assert.equal(JSON.stringify(sample).includes('private value'), false);
+});
+
+test('voice improvement logging never calls Firestore integration without consent', () => {
+  resetState();
+  const originalLogger = window.logVoiceImprovementSample;
+  let writeCount = 0;
+  window.logVoiceImprovementSample = () => {
+    writeCount += 1;
+    return Promise.resolve(true);
+  };
+  const plan = {
+    status: 'execute',
+    summary: 'Open settings',
+    message: 'Opening settings',
+    requiresConfirmation: false,
+    heardText: 'Open settings',
+    actions: [{ type: 'openModal', target: 'settings' }],
+  };
+
+  try {
+    assert.equal(recordVoiceImprovementSample(plan, 'success'), false);
+    assert.equal(writeCount, 0);
+
+    setLocalStorage('voiceImprovementOptIn', true);
+    assert.equal(recordVoiceImprovementSample(plan, 'success'), true);
+    assert.equal(writeCount, 1);
+
+    setLocalStorage('voiceImprovementOptIn', false);
+    assert.equal(recordVoiceImprovementSample(plan, 'success'), false);
+    assert.equal(writeCount, 1);
+  } finally {
+    window.logVoiceImprovementSample = originalLogger;
+  }
+});
+
 test('browser voice capture uploads binary multipart audio without Base64 conversion', async () => {
   const originalFetch = global.fetch;
   let fetchOptions = null;
@@ -2022,7 +2186,10 @@ test('voice command endpoint requests structured OpenRouter action plans', async
       summary: 'Open settings',
       message: 'Opening settings',
       requiresConfirmation: false,
+      heardText: 'open settings',
       actions: [{ type: 'openModal', target: 'settings' }],
+      plannerModel: 'google/gemini-3.1-flash-lite',
+      plannerRevision: 'multipart-audio-v6',
     },
   });
 });
@@ -2072,7 +2239,7 @@ test('voice command endpoint grounds named statistics to saved entity keys', asy
   }
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.headers['x-voice-command-revision'], 'multipart-audio-v5');
+  assert.equal(response.headers['x-voice-command-revision'], 'multipart-audio-v6');
   assert.deepEqual(response.body.plan.actions, [{
     type: 'setStatsControls',
     statsView: 'players',
@@ -2317,7 +2484,10 @@ test('voice command endpoint uses local fallback for local OpenRouter failures',
       summary: 'Open settings',
       message: 'Opening settings.',
       requiresConfirmation: false,
+      heardText: 'open settings',
       actions: [{ type: 'openModal', target: 'settings' }],
+      plannerModel: 'local-fallback',
+      plannerRevision: 'multipart-audio-v6',
     },
   });
 });
@@ -2379,7 +2549,10 @@ test('voice command endpoint falls back when provider repeats score-parser clari
       summary: 'Start a new game',
       message: 'Starting a new game will clear the current game. Confirm to proceed.',
       requiresConfirmation: true,
+      heardText: 'start a new game',
       actions: [{ type: 'newGame' }],
+      plannerModel: 'local-fallback',
+      plannerRevision: 'multipart-audio-v6',
     },
   });
 });
@@ -3227,7 +3400,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.35";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.36";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3332,14 +3505,31 @@ test('settings toggles use shared polished switch styling', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
 
-  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 4);
+  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 5);
   assert.match(htmlSource, /id="experimentalFeaturesToggle"/);
   assert.match(htmlSource, />Experimental Features<\/label>/);
+  assert.match(htmlSource, /id="voiceImprovementOptInToggle"/);
   assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
   assert.match(css, /\.settings-switch\s*\{/);
   assert.match(css, /width:\s*3rem;/);
   assert.match(css, /height:\s*1\.625rem;/);
   assert.match(css, /transform:\s*translateY\(-50%\)\s+translateX\(1\.375rem\)/);
+});
+
+test('voice improvement Firestore rules are create-only and reject unexpected payload fields', () => {
+  const rulesSource = readFileSync(path.join(repoRoot, 'firestore.rules'), 'utf8');
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+
+  assert.match(rulesSource, /match \/voiceImprovement\/\{userId\}\/samples\/\{sampleId\}/);
+  assert.match(rulesSource, /allow create: if isSignedInOwner\(userId\) && isValidVoiceImprovementSample\(\)/);
+  assert.match(rulesSource, /allow read, update, delete: if false/);
+  assert.match(rulesSource, /data\.keys\(\)\.hasOnly\(/);
+  assert.doesNotMatch(rulesSource, /audio|base64/i);
+  assert.match(firebaseSource, /if \(!isVoiceImprovementConsentEnabled\(\)\) return false/);
+  assert.doesNotMatch(firebaseSource, /sample\.audio|audioBase64/);
+  assert.match(htmlSource, /Optional and off by default/);
+  assert.match(htmlSource, /Raw audio and full game context are never stored/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {
