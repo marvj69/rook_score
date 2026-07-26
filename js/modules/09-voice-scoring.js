@@ -4,8 +4,6 @@
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;
 const VOICE_SCORE_RECORDING_MAX_MS = 6500;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
-const SAME_ORIGIN_VOICE_SCORE_TRANSCRIBE_URL = "/api/voice-score-transcribe";
-const VERCEL_VOICE_SCORE_TRANSCRIBE_URL = "https://rook-score.vercel.app/api/voice-score-transcribe";
 const SAME_ORIGIN_VOICE_SCORE_COMMAND_URL = "/api/voice-score-command";
 const VERCEL_VOICE_SCORE_COMMAND_URL = "https://rook-score.vercel.app/api/voice-score-command";
 const VOICE_SCORE_GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
@@ -38,7 +36,6 @@ const VOICE_SCORE_ACTION_TYPES = new Set([
   "setStatsControls",
   "noop",
 ]);
-let voiceScoreRecognition = null;
 let voiceScoreRecorder = null;
 let voiceScoreRecorderStream = null;
 let voiceScoreListening = false;
@@ -510,26 +507,13 @@ function getVoiceScoreContext() {
   };
 }
 
-function getVoiceScoreRecognitionConstructor() {
-  if (typeof window === "undefined") return null;
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
-}
-
 function shouldPreferRecordedVoiceScoreEntry({
-  isIOS = isProbablyIOSDevice(),
   hasGetUserMedia = typeof navigator !== "undefined"
     && Boolean(navigator.mediaDevices)
     && typeof navigator.mediaDevices.getUserMedia === "function",
   hasMediaRecorder = typeof window !== "undefined" && typeof window.MediaRecorder === "function",
 } = {}) {
-  return Boolean(isIOS && hasGetUserMedia && hasMediaRecorder);
-}
-
-function getVoiceScoreTranscriptionUrl() {
-  if (typeof window === "undefined" || !window.location) return SAME_ORIGIN_VOICE_SCORE_TRANSCRIBE_URL;
-  return VOICE_SCORE_GITHUB_PAGES_HOSTNAMES.has(window.location.hostname)
-    ? VERCEL_VOICE_SCORE_TRANSCRIBE_URL
-    : SAME_ORIGIN_VOICE_SCORE_TRANSCRIBE_URL;
+  return Boolean(hasGetUserMedia && hasMediaRecorder);
 }
 
 function getVoiceScoreCommandUrl() {
@@ -542,10 +526,11 @@ function getVoiceScoreCommandUrl() {
 function getVoiceScoreRecordingMimeType() {
   if (typeof window === "undefined" || typeof window.MediaRecorder !== "function") return "";
   const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
     "audio/mp4",
     "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/webm;codecs=opus",
+    "audio/webm",
   ];
   if (typeof window.MediaRecorder.isTypeSupported !== "function") return "";
   return candidates.find(type => window.MediaRecorder.isTypeSupported(type)) || "";
@@ -699,20 +684,33 @@ function updateVoiceScoreConversation(plan, transcript) {
   return getVoiceScoreConversation();
 }
 
-async function requestVoiceScoreActionPlan(transcript, localIntent) {
+async function requestVoiceScoreActionPlan(input, localIntent) {
   setVoiceScoreStatus("Thinking...", "info", false);
+  const requestBody = {
+    context: getVoiceScoreAppContext(),
+    localIntent: localIntent || null,
+    conversation: getVoiceScoreConversation(),
+  };
+
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    if (typeof input.transcript === "string" && input.transcript.trim()) {
+      requestBody.transcript = input.transcript.trim();
+    }
+    if (typeof input.audioBase64 === "string" && input.audioBase64) {
+      requestBody.audioBase64 = input.audioBase64;
+      requestBody.mimeType = input.mimeType || "audio/webm";
+    }
+  } else if (typeof input === "string" && input.trim()) {
+    requestBody.transcript = input.trim();
+  }
+
   const response = await fetch(getVoiceScoreCommandUrl(), {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      transcript,
-      context: getVoiceScoreAppContext(),
-      localIntent,
-      conversation: getVoiceScoreConversation(),
-    }),
+    body: JSON.stringify(requestBody),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1290,13 +1288,6 @@ function clearVoiceScoreRecordingTimer() {
 function cancelVoiceScoreEntry() {
   clearVoiceScoreRecordingTimer();
 
-  if (voiceScoreRecognition) {
-    try {
-      voiceScoreRecognition.abort();
-    } catch (_) {}
-    voiceScoreRecognition = null;
-  }
-
   if (voiceScoreRecorder) {
     const recorder = voiceScoreRecorder;
     recorder.ondataavailable = null;
@@ -1328,38 +1319,22 @@ function blobToVoiceScoreBase64(blob) {
   });
 }
 
-async function transcribeVoiceScoreBlob(audioBlob) {
+async function processVoiceScoreAudioBlob(audioBlob) {
   if (!audioBlob || !audioBlob.size) {
     setVoiceScoreStatus("No voice audio was captured.", "error");
     return false;
   }
 
-  setVoiceScoreStatus("Transcribing...", "info", false);
+  setVoiceScoreStatus("Processing voice...", "info", false);
   try {
     const audioBase64 = await blobToVoiceScoreBase64(audioBlob);
-    const response = await fetch(getVoiceScoreTranscriptionUrl(), {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        audioBase64,
-        mimeType: audioBlob.type || "audio/webm",
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || `Voice transcription failed with HTTP ${response.status}.`);
-    }
-    const transcript = String(payload.text || "").trim();
-    if (!transcript) {
-      setVoiceScoreStatus("I could not hear a score command.", "error");
-      return false;
-    }
-    return processVoiceScoreTranscript(transcript);
+    const plan = await requestVoiceScoreActionPlan({
+      audioBase64,
+      mimeType: audioBlob.type || "audio/webm",
+    }, null);
+    return applyVoiceScorePlan(plan, plan.summary || "voice command", null);
   } catch (error) {
-    setVoiceScoreStatus(error.message || "Voice transcription failed.", "error");
+    setVoiceScoreStatus(error.message || "Voice command planning is unavailable.", "error");
     return false;
   }
 }
@@ -1405,7 +1380,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
       voiceScoreMode = "";
       const audioBlob = new Blob(audioChunks, { type: recorder.mimeType || mimeType || "audio/webm" });
       scheduleRender();
-      transcribeVoiceScoreBlob(audioBlob);
+      processVoiceScoreAudioBlob(audioBlob);
     };
 
     recorder.start();
@@ -1534,7 +1509,7 @@ async function processVoiceScoreTranscript(transcript) {
   if (!cleanTranscript) return processLocalVoiceScoreIntent(localIntent);
 
   try {
-    const plan = await requestVoiceScoreActionPlan(cleanTranscript, localIntent);
+    const plan = await requestVoiceScoreActionPlan({ transcript: cleanTranscript }, localIntent);
     return applyVoiceScorePlan(plan, cleanTranscript, localIntent);
   } catch (error) {
     if (localIntent.type !== "clarification") {
@@ -1595,12 +1570,6 @@ function applyVoiceScoreIntent(intent) {
 function startVoiceScoreEntry() {
   if (!isExperimentalFeaturesEnabled()) return false;
 
-  if (voiceScoreListening && voiceScoreRecognition) {
-    try {
-      voiceScoreRecognition.stop();
-    } catch (_) {}
-    return;
-  }
   if (voiceScoreListening && voiceScoreRecorder) {
     if (voiceScoreRecorder.state === "recording") voiceScoreRecorder.stop();
     return;
@@ -1611,70 +1580,5 @@ function startVoiceScoreEntry() {
     return;
   }
 
-  if (shouldPreferRecordedVoiceScoreEntry()) {
-    return startRecordedVoiceScoreEntry();
-  }
-
-  const Recognition = getVoiceScoreRecognitionConstructor();
-  if (!Recognition) {
-    return startRecordedVoiceScoreEntry();
-  }
-
-  const recognition = new Recognition();
-  voiceScoreRecognition = recognition;
-  recognition.lang = "en-US";
-  recognition.interimResults = false;
-  recognition.continuous = false;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = () => {
-    voiceScoreListening = true;
-    voiceScoreMode = "speech-recognition";
-    setVoiceScoreStatus("Listening...", "info", false);
-    clearVoiceScoreRecordingTimer();
-    voiceScoreRecordingTimer = setTimeout(() => {
-      if (voiceScoreRecognition) {
-        try {
-          voiceScoreRecognition.stop();
-        } catch (_) {}
-      }
-    }, VOICE_SCORE_RECORDING_MAX_MS);
-  };
-  recognition.onresult = (event) => {
-    const result = event.results?.[event.results.length - 1]?.[0]?.transcript || "";
-    if (result) processVoiceScoreTranscript(result);
-  };
-  recognition.onerror = (event) => {
-    const errorName = event?.error || "speech error";
-    if (errorName === "not-allowed" || errorName === "service-not-allowed") {
-      startRecordedVoiceScoreEntry("Voice entry needs microphone permission.");
-      return;
-    }
-    if (errorName === "aborted") {
-      setVoiceScoreStatus("", "info");
-      return;
-    }
-    setVoiceScoreStatus(`Voice entry stopped: ${errorName}.`, "error");
-  };
-  recognition.onend = () => {
-    clearVoiceScoreRecordingTimer();
-    if (voiceScoreRecorder || voiceScoreMode === "recording") {
-      voiceScoreRecognition = null;
-      scheduleRender();
-      return;
-    }
-    voiceScoreListening = false;
-    voiceScoreRecognition = null;
-    voiceScoreMode = "";
-    scheduleRender();
-  };
-
-  try {
-    setVoiceScoreStatus("Requesting microphone permission...", "info", false);
-    recognition.start();
-  } catch (error) {
-    voiceScoreListening = false;
-    voiceScoreRecognition = null;
-    setVoiceScoreStatus("Voice entry could not start.", "error");
-  }
+  return startRecordedVoiceScoreEntry();
 }

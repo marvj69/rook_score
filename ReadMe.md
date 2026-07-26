@@ -208,11 +208,7 @@ FIREBASE_PROJECT_ID
 FIREBASE_STORAGE_BUCKET
 FIREBASE_MESSAGING_SENDER_ID
 FIREBASE_APP_ID
-OPENAI_API_KEY
-OPENAI_TRANSCRIPTION_MODEL
 OPENROUTER_API_KEY
-OPENROUTER_TRANSCRIPTION_MODEL
-OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS
 OPENROUTER_MODEL
 OPENROUTER_FALLBACK_MODELS
 OPENROUTER_SITE_URL
@@ -220,8 +216,7 @@ OPENROUTER_APP_TITLE
 VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 ```
 
-Voice transcription prefers `OPENAI_API_KEY` when configured and otherwise automatically uses `OPENROUTER_API_KEY`. `OPENAI_TRANSCRIPTION_MODEL` defaults to `gpt-4o-mini-transcribe`, while `OPENROUTER_TRANSCRIPTION_MODEL` defaults to `openai/gpt-4o-mini-transcribe`. `OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS` is an optional comma-separated list and defaults to `openai/whisper-large-v3`.
-`OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3-flash-preview` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+Voice recordings are sent as raw audio to the OpenRouter chat model (no separate transcription step). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
 The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
@@ -240,13 +235,13 @@ For local Vercel development, copy `.env.example` to `.env.local`, fill in the v
 npx vercel dev
 ```
 
-Opening `index.html` directly still works for local scoring. Browser speech recognition can transcribe locally when supported, but LLM voice actions, Google sign-in, Firestore sync, and cross-browser audio transcription require the Vercel `/api` endpoints.
+Opening `index.html` directly still works for local scoring. LLM voice actions, Google sign-in, and Firestore sync require the Vercel `/api` endpoints.
 
 ### Google Analytics
 Google Analytics is loaded from `js/analytics.js` on the GitHub Pages host for `https://marvj69.github.io/rook_score/` using the GA4 web stream Measurement ID `G-MCY1GMM4L5`.
 
 ### GitHub Pages
-The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config`, voice transcriptions from `https://rook-score.vercel.app/api/voice-score-transcribe`, and LLM voice actions from `https://rook-score.vercel.app/api/voice-score-command` using the endpoints' CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoints' allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` / `VOICE_SCORE_ALLOWED_ORIGINS` in Vercel.
+The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` and LLM voice actions from `https://rook-score.vercel.app/api/voice-score-command` using the endpoints' CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoints' allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` / `VOICE_SCORE_ALLOWED_ORIGINS` in Vercel.
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:

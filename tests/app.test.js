@@ -5,7 +5,6 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
-const voiceScoreTranscribeHandler = require('../api/voice-score-transcribe.js');
 const voiceScoreCommandHandler = require('../api/voice-score-command.js');
 
 function setupDomStubs() {
@@ -249,7 +248,6 @@ const {
   normalizeVoiceScoreTranscript,
   parseVoiceScoreCommand,
   formatVoiceScoreIntentSummary,
-  getVoiceScoreTranscriptionUrl,
   getVoiceScoreCommandUrl,
   getVoiceScoreRecordingMimeType,
   shouldPreferRecordedVoiceScoreEntry,
@@ -920,15 +918,13 @@ test('voice score parser supports misdeal undo and custom team names', () => {
   assert.equal(intent.requiresConfirmation, false);
 });
 
-test('voice score transcription URL routes GitHub Pages to the Vercel API', () => {
+test('voice score command URL routes GitHub Pages to the Vercel API', () => {
   const originalHostname = window.location.hostname;
   try {
     window.location.hostname = 'marvj69.github.io';
-    assert.equal(getVoiceScoreTranscriptionUrl(), 'https://rook-score.vercel.app/api/voice-score-transcribe');
     assert.equal(getVoiceScoreCommandUrl(), 'https://rook-score.vercel.app/api/voice-score-command');
 
     window.location.hostname = 'rook-score.vercel.app';
-    assert.equal(getVoiceScoreTranscriptionUrl(), '/api/voice-score-transcribe');
     assert.equal(getVoiceScoreCommandUrl(), '/api/voice-score-command');
   } finally {
     window.location.hostname = originalHostname;
@@ -1221,38 +1217,28 @@ test('voice score recording mime type safely falls back without MediaRecorder', 
   }
 });
 
-test('iOS voice entry prefers repeatable MediaRecorder capture when available', () => {
+test('voice entry prefers MediaRecorder capture when available', () => {
   assert.equal(shouldPreferRecordedVoiceScoreEntry({
-    isIOS: true,
     hasGetUserMedia: true,
     hasMediaRecorder: true,
   }), true);
   assert.equal(shouldPreferRecordedVoiceScoreEntry({
-    isIOS: false,
-    hasGetUserMedia: true,
-    hasMediaRecorder: true,
-  }), false);
-  assert.equal(shouldPreferRecordedVoiceScoreEntry({
-    isIOS: true,
     hasGetUserMedia: false,
     hasMediaRecorder: true,
   }), false);
   assert.equal(shouldPreferRecordedVoiceScoreEntry({
-    isIOS: true,
     hasGetUserMedia: true,
     hasMediaRecorder: false,
   }), false);
 });
 
-test('repeated iPhone voice entries use fresh MediaRecorder sessions instead of WebKit recognition', async () => {
+test('repeated voice entries use fresh MediaRecorder sessions', async () => {
   const originalGlobalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const testNavigator = window.navigator;
   const originalUserAgent = testNavigator.userAgent;
   const originalMediaDevices = testNavigator.mediaDevices;
   const originalMediaRecorder = window.MediaRecorder;
-  const originalWebkitSpeechRecognition = window.webkitSpeechRecognition;
   let recorderStarts = 0;
-  let recognitionConstructions = 0;
 
   class FakeMediaRecorder {
     constructor() {
@@ -1288,11 +1274,6 @@ test('repeated iPhone voice entries use fresh MediaRecorder sessions instead of 
       }),
     };
     window.MediaRecorder = FakeMediaRecorder;
-    window.webkitSpeechRecognition = class {
-      constructor() {
-        recognitionConstructions += 1;
-      }
-    };
     setLocalStorage('experimentalFeaturesEnabled', true);
     updateState({ gameOver: false });
 
@@ -1302,7 +1283,6 @@ test('repeated iPhone voice entries use fresh MediaRecorder sessions instead of 
     startVoiceScoreEntry();
 
     assert.equal(recorderStarts, 2);
-    assert.equal(recognitionConstructions, 0);
   } finally {
     navigator.userAgent = originalUserAgent;
     if (originalMediaDevices === undefined) {
@@ -1314,11 +1294,6 @@ test('repeated iPhone voice entries use fresh MediaRecorder sessions instead of 
       delete window.MediaRecorder;
     } else {
       window.MediaRecorder = originalMediaRecorder;
-    }
-    if (originalWebkitSpeechRecognition === undefined) {
-      delete window.webkitSpeechRecognition;
-    } else {
-      window.webkitSpeechRecognition = originalWebkitSpeechRecognition;
     }
     Object.defineProperty(globalThis, 'navigator', originalGlobalNavigatorDescriptor);
   }
@@ -1336,9 +1311,10 @@ test('voice score control is wired through delegated initialization', () => {
   assert.doesNotMatch(voiceSource, /<span>\$\{buttonText\}<\/span>/);
   assert.doesNotMatch(voiceSource, /onclick="startVoiceScoreEntry\(\)"/);
   assert.match(voiceSource, /function initializeVoiceScoreControls\(\)/);
-  assert.match(voiceSource, /if \(shouldPreferRecordedVoiceScoreEntry\(\)\)/);
-  assert.match(voiceSource, /voiceScoreRecognition\.stop\(\)/);
-  assert.match(voiceSource, /errorName === "aborted"/);
+  assert.match(voiceSource, /return startRecordedVoiceScoreEntry\(\)/);
+  assert.match(voiceSource, /processVoiceScoreAudioBlob/);
+  assert.doesNotMatch(voiceSource, /voice-score-transcribe/);
+  assert.doesNotMatch(voiceSource, /SpeechRecognition/);
   assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*top: calc\(3\.75rem \+ var\(--safe-area-inset-top-effective\)\);[^}]*right: 1rem;/s);
   assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 2\.25rem;[^}]*height: 2\.25rem;/s);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
@@ -1359,220 +1335,69 @@ test('experimental features are disabled by default and gate voice controls', ()
   assert.match(renderVoiceScoreControls(), /data-voice-score-entry="true"/);
 });
 
-test('voice transcription endpoint reports missing provider configuration', async () => {
-  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.OPENROUTER_API_KEY;
-
-  const request = createMockRequest({
-    body: JSON.stringify({
-      audioBase64: Buffer.from('fake-audio').toString('base64'),
-      mimeType: 'audio/webm',
-    }),
-  });
-  const response = createMockResponse();
-
-  try {
-    await voiceScoreTranscribeHandler(request, response);
-  } finally {
-    if (originalOpenAiApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    }
-    if (originalOpenRouterApiKey === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
-    } else {
-      process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
-    }
-  }
-
-  assert.equal(response.statusCode, 500);
-  assert.deepEqual(response.body, { error: 'Voice transcription is temporarily unavailable. Please try again.' });
-  assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
-});
-
-test('voice transcription endpoint sends recorded audio to OpenAI', async () => {
-  const originalApiKey = process.env.OPENAI_API_KEY;
-  const originalModel = process.env.OPENAI_TRANSCRIPTION_MODEL;
+test('voice command endpoint accepts raw audio for multimodal planning', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalModel = process.env.OPENROUTER_MODEL;
+  const originalFallbackModels = process.env.OPENROUTER_FALLBACK_MODELS;
   const originalFetch = global.fetch;
-  let fetchCalled = false;
+  let requestBody = null;
 
-  process.env.OPENAI_API_KEY = 'test-openai-key';
-  process.env.OPENAI_TRANSCRIPTION_MODEL = 'test-transcribe-model';
-  global.fetch = async (url, options) => {
-    fetchCalled = true;
-    assert.equal(url, 'https://api.openai.com/v1/audio/transcriptions');
-    assert.equal(options.method, 'POST');
-    assert.equal(options.headers.Authorization, 'Bearer test-openai-key');
-    assert.equal(options.body.get('model'), 'test-transcribe-model');
-    assert.equal(options.body.get('response_format'), 'json');
-    assert.equal(options.body.get('file').name, 'rook-voice-score.webm');
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ text: 'Dem bid 125 and made 145' }),
-    };
-  };
-
-  const request = createMockRequest({
-    body: JSON.stringify({
-      audioBase64: Buffer.from('fake-audio').toString('base64'),
-      mimeType: 'audio/webm',
-    }),
-  });
-  const response = createMockResponse();
-
-  try {
-    await voiceScoreTranscribeHandler(request, response);
-  } finally {
-    if (originalApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalApiKey;
-    }
-    if (originalModel === undefined) {
-      delete process.env.OPENAI_TRANSCRIPTION_MODEL;
-    } else {
-      process.env.OPENAI_TRANSCRIPTION_MODEL = originalModel;
-    }
-    global.fetch = originalFetch;
-  }
-
-  assert.equal(fetchCalled, true);
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { text: 'Dem bid 125 and made 145' });
-});
-
-test('voice transcription endpoint falls back to OpenRouter', async () => {
-  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-  const originalModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-  const originalFetch = global.fetch;
-  let fetchCalled = false;
-
-  delete process.env.OPENAI_API_KEY;
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_TRANSCRIPTION_MODEL = 'test-openrouter-transcribe-model';
-  global.fetch = async (url, options) => {
-    fetchCalled = true;
-    assert.equal(url, 'https://openrouter.ai/api/v1/audio/transcriptions');
-    assert.equal(options.method, 'POST');
-    assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
-    assert.equal(options.headers['X-OpenRouter-Title'], 'Rook Score');
-    assert.equal(options.body.get('model'), 'test-openrouter-transcribe-model');
-    assert.equal(options.body.get('response_format'), 'json');
-    assert.equal(options.body.get('file').name, 'rook-voice-score.webm');
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ text: 'Open settings' }),
-    };
-  };
-
-  const request = createMockRequest({
-    body: JSON.stringify({
-      audioBase64: Buffer.from('fake-audio').toString('base64'),
-      mimeType: 'audio/webm',
-    }),
-  });
-  const response = createMockResponse();
-
-  try {
-    await voiceScoreTranscribeHandler(request, response);
-  } finally {
-    if (originalOpenAiApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    }
-    if (originalOpenRouterApiKey === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
-    } else {
-      process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
-    }
-    if (originalModel === undefined) {
-      delete process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-    } else {
-      process.env.OPENROUTER_TRANSCRIPTION_MODEL = originalModel;
-    }
-    global.fetch = originalFetch;
-  }
-
-  assert.equal(fetchCalled, true);
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { text: 'Open settings' });
-});
-
-test('voice transcription endpoint retries a provider error with a fallback model', async () => {
-  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-  const originalModel = process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-  const originalFallbackModels = process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS;
-  const originalFetch = global.fetch;
-  const requestedModels = [];
-
-  delete process.env.OPENAI_API_KEY;
-  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_TRANSCRIPTION_MODEL = 'primary-transcribe-model';
-  process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS = 'backup-transcribe-model';
+  process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
+  process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
   global.fetch = async (_url, options) => {
-    requestedModels.push(options.body.get('model'));
-    if (requestedModels.length === 1) {
-      return {
-        ok: false,
-        status: 400,
-        text: async () => JSON.stringify({ error: { message: 'Provider returned error' } }),
-      };
-    }
+    requestBody = JSON.parse(options.body);
     return {
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({ text: 'Open statistics' }),
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'execute',
+              summary: 'Open settings',
+              message: 'Opening settings',
+              requiresConfirmation: false,
+              actions: [{ type: 'openModal', target: 'settings' }],
+            }),
+          },
+        }],
+      }),
     };
   };
 
+  const audioBase64 = Buffer.from('fake-audio').toString('base64');
   const request = createMockRequest({
     body: JSON.stringify({
-      audioBase64: Buffer.from('fake-audio').toString('base64'),
+      audioBase64,
       mimeType: 'audio/webm',
+      context: { gameOver: false },
     }),
   });
   const response = createMockResponse();
 
   try {
-    await voiceScoreTranscribeHandler(request, response);
+    await voiceScoreCommandHandler(request, response);
   } finally {
-    if (originalOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    if (originalOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
-    if (originalModel === undefined) delete process.env.OPENROUTER_TRANSCRIPTION_MODEL;
-    else process.env.OPENROUTER_TRANSCRIPTION_MODEL = originalModel;
-    if (originalFallbackModels === undefined) delete process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS;
-    else process.env.OPENROUTER_TRANSCRIPTION_FALLBACK_MODELS = originalFallbackModels;
+    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
+    else process.env.OPENROUTER_MODEL = originalModel;
+    if (originalFallbackModels === undefined) delete process.env.OPENROUTER_FALLBACK_MODELS;
+    else process.env.OPENROUTER_FALLBACK_MODELS = originalFallbackModels;
     global.fetch = originalFetch;
   }
 
-  assert.deepEqual(requestedModels, ['primary-transcribe-model', 'backup-transcribe-model']);
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { text: 'Open statistics' });
-});
-
-test('voice transcription endpoint handles preflight requests', async () => {
-  const request = createMockRequest({
-    method: 'OPTIONS',
-    origin: 'https://marvj69.github.io',
-  });
-  const response = createMockResponse();
-
-  await voiceScoreTranscribeHandler(request, response);
-
-  assert.equal(response.statusCode, 204);
-  assert.equal(response.ended, true);
-  assert.equal(response.headers['access-control-allow-origin'], 'https://marvj69.github.io');
-  assert.equal(response.headers['access-control-allow-methods'], 'POST, OPTIONS');
+  assert.equal(requestBody.model, 'google/gemini-3.1-flash-lite');
+  assert.deepEqual(requestBody.reasoning, { effort: 'low' });
+  assert.equal(requestBody.messages[1].role, 'user');
+  assert.equal(Array.isArray(requestBody.messages[1].content), true);
+  assert.equal(requestBody.messages[1].content[0].type, 'text');
+  assert.equal(requestBody.messages[1].content[1].type, 'input_audio');
+  assert.equal(requestBody.messages[1].content[1].input_audio.data, audioBase64);
+  assert.equal(requestBody.messages[1].content[1].input_audio.format, 'webm');
+  assert.deepEqual(response.body.plan.actions, [{ type: 'openModal', target: 'settings' }]);
 });
 
 test('voice command endpoint reports missing OpenRouter configuration', async () => {
@@ -1670,7 +1495,7 @@ test('voice command endpoint requests structured OpenRouter action plans', async
   let fetchCalled = false;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_MODEL = 'google/gemini-3-flash-preview';
+  process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
   process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
   global.fetch = async (url, options) => {
     fetchCalled = true;
@@ -1678,7 +1503,7 @@ test('voice command endpoint requests structured OpenRouter action plans', async
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'google/gemini-3-flash-preview');
+    assert.equal(body.model, 'google/gemini-3.1-flash-lite');
     assert.deepEqual(body.models, ['google/gemini-2.5-flash']);
     assert.deepEqual(body.reasoning, { effort: 'low' });
     assert.deepEqual(body.response_format, { type: 'json_object' });
@@ -1857,7 +1682,7 @@ test('voice command endpoint sends clarification history before a follow-up answ
   assert.equal(messages[0].role, 'system');
   assert.match(messages[0].content, /Use them to interpret a short follow-up answer/);
   assert.deepEqual(messages.slice(1), [
-    { role: 'user', content: 'Earlier voice transcript: Start a rematch with the same players' },
+    { role: 'user', content: 'Earlier voice command: Start a rematch with the same players' },
     { role: 'assistant', content: 'Clarification question: Who should deal first?' },
     {
       role: 'user',
@@ -1865,7 +1690,7 @@ test('voice command endpoint sends clarification history before a follow-up answ
         'Current voice transcript: Carol',
         'App context JSON: {"dealers":["Alice","Bob","Carol","Dan"]}',
         'Deterministic score-parser JSON: {"type":"clarification","message":"Say the bid amount."}',
-        'The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification, still plan clear non-scoring app actions from the transcript.',
+        'The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification or null, still plan clear non-scoring app actions from the spoken request.',
         'Return the action plan JSON now.',
       ].join('\n'),
     },

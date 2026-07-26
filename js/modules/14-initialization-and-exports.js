@@ -306,7 +306,6 @@ if (typeof module !== 'undefined' && module.exports) {
     initializeVoiceScoreControls,
     startVoiceScoreEntry,
     processVoiceScoreTranscript,
-    getVoiceScoreTranscriptionUrl,
     getVoiceScoreCommandUrl,
     getVoiceScoreRecordingMimeType,
     shouldPreferRecordedVoiceScoreEntry,

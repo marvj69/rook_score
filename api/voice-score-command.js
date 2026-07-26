@@ -5,14 +5,31 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://rook-score-marvj69-marvj69s-projects.vercel.app",
 ];
 
-const DEFAULT_OPENROUTER_MODEL = "google/gemini-3-flash-preview";
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.1-flash-lite";
 const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
-const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 const MAX_CONVERSATION_MESSAGES = 6;
 const MAX_CONVERSATION_CONTENT_LENGTH = 1000;
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MIME_AUDIO_FORMAT_MAP = {
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/wave": "wav",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
+  "audio/m4a": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/aac": "aac",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+  "audio/flac": "flac",
+  "audio/aiff": "aiff",
+  "audio/x-aiff": "aiff",
+};
 
 const ACTION_SCHEMA = {
   type: "object",
@@ -224,6 +241,56 @@ function readRequestBody(request, maxBytes = MAX_BODY_BYTES) {
   });
 }
 
+function resolveAudioFormat(mimeType) {
+  const normalizedMime = String(mimeType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  return MIME_AUDIO_FORMAT_MAP[normalizedMime] || "";
+}
+
+function parseAudioPayload(payload) {
+  const rawAudio = typeof payload.audioBase64 === "string" ? payload.audioBase64 : "";
+  if (!rawAudio) return null;
+
+  const base64Audio = rawAudio.includes(",") ? rawAudio.split(",").pop() : rawAudio;
+  const mimeType = typeof payload.mimeType === "string" && payload.mimeType
+    ? payload.mimeType.split(";")[0].trim().toLowerCase()
+    : "audio/webm";
+  const format = resolveAudioFormat(mimeType);
+  if (!format) {
+    const error = new Error("Unsupported audio format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let audioBuffer;
+  try {
+    audioBuffer = Buffer.from(base64Audio, "base64");
+  } catch {
+    const error = new Error("Audio payload is invalid.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!audioBuffer.length) {
+    const error = new Error("Audio payload is empty.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (audioBuffer.length > MAX_AUDIO_BYTES) {
+    const error = new Error("Audio payload is too large.");
+    error.statusCode = 413;
+    throw error;
+  }
+
+  return {
+    data: audioBuffer.toString("base64"),
+    format,
+    mimeType,
+  };
+}
+
 function parsePayload(bodyText) {
   let payload;
   try {
@@ -235,14 +302,16 @@ function parsePayload(bodyText) {
   }
 
   const transcript = typeof payload.transcript === "string" ? payload.transcript.trim() : "";
-  if (!transcript) {
-    const error = new Error("Missing transcript.");
-    error.statusCode = 400;
-    throw error;
-  }
   if (transcript.length > 1000) {
     const error = new Error("Transcript is too long.");
     error.statusCode = 413;
+    throw error;
+  }
+
+  const audio = parseAudioPayload(payload);
+  if (!transcript && !audio) {
+    const error = new Error("Missing voice audio or transcript.");
+    error.statusCode = 400;
     throw error;
   }
 
@@ -250,7 +319,7 @@ function parsePayload(bodyText) {
   const localIntent = payload.localIntent && typeof payload.localIntent === "object" ? payload.localIntent : null;
   const conversation = sanitizeConversation(payload.conversation);
 
-  return { transcript, context, localIntent, conversation };
+  return { transcript, audio, context, localIntent, conversation };
 }
 
 function sanitizeConversation(conversation) {
@@ -272,15 +341,16 @@ function buildSystemPrompt() {
   return [
     "You are an action planner for a Rook scorekeeping web app.",
     "Return only JSON matching the provided schema. Do not include commentary.",
-    "Always choose the most likely app action for short voice transcripts.",
+    "Always choose the most likely app action for short spoken voice commands.",
+    "When voice audio is attached, listen to it and treat the spoken words as the user request. Do not ask the user to type a transcript.",
     "Prefer concrete app actions over explanation when the user's intent is clear.",
     "Use status=clarify when required values are missing or ambiguous.",
-    "Recent conversation messages, when present, contain earlier voice transcripts and your clarification questions. Use them to interpret a short follow-up answer and complete the original request.",
-    "If the latest transcript is clearly a new standalone command instead of an answer, handle it as a new request.",
+    "Recent conversation messages, when present, contain earlier voice commands and your clarification questions. Use them to interpret a short follow-up answer and complete the original request.",
+    "If the latest command is clearly a new standalone request instead of an answer, handle it as a new request.",
     "Use requiresConfirmation/status=confirm for destructive actions such as new game, freeze game, save completed game, rematch without a dealer, or ambiguous score assumptions. Game-library delete/resume actions already open the app's own confirmation, so do not add a second planner confirmation for them.",
     "Never invent card play, strategy, or hidden game state. Use only the provided context.",
-    "If deterministicParserIntent.type is scoreRound, undo, or misdeal, convert it directly to the matching action unless the transcript contradicts it.",
-    "If deterministicParserIntent.type is clarification, treat it only as a failed score-parser result. Do not repeat that clarification when the transcript clearly asks for a non-scoring app action.",
+    "If deterministicParserIntent.type is scoreRound, undo, or misdeal, convert it directly to the matching action unless the spoken command contradicts it.",
+    "If deterministicParserIntent.type is clarification, treat it only as a failed score-parser result. Do not repeat that clarification when the command clearly asks for a non-scoring app action.",
     "Scoring rules: scoreRound requires biddingTeam, bidAmount, points, enterBidderPoints. enterBidderPoints=true means points belong to the bidder; false means points belong to the non-bidding team.",
     "Use editRound to correct saved round history. roundNumber is one-based; usTotal and demTotal are the cumulative scores shown after that round. Include only fields the user asked to change.",
     "For 'got set' without a score, plan scoreRound with points=180, enterBidderPoints=false, requiresConfirmation=true.",
@@ -297,48 +367,71 @@ function buildSystemPrompt() {
     "For statistics about a specific player or team, find the matching entry in App context statistics.players or statistics.teams. Set statsView and entityMode to that collection and copy its exact key into entityKey. Never use a display name as entityKey and never invent a key.",
     "If a request names two players who appear together in one statistics.teams entry, treat it as that team. If one player is named without asking for their team, use that player's statistics.players entry.",
     "Examples:",
-    "Transcript 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
-    "Transcript 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
-    "Transcript 'Dem bid 125 and made 145' => status execute, action {type:'scoreRound', biddingTeam:'dem', bidAmount:125, points:145, enterBidderPoints:true}.",
-    "Transcript 'Us bid 130 and got set' => status confirm, requiresConfirmation true, action {type:'scoreRound', biddingTeam:'us', bidAmount:130, points:180, enterBidderPoints:false}.",
-    "Transcript 'change round 2 Us total to 305' => status execute, action {type:'editRound', roundNumber:2, usTotal:305}.",
-    "Transcript 'set dealers Alice Bob Carol Dan' => status execute, action {type:'setDealerOrder', dealers:['Alice','Bob','Carol','Dan']}.",
-    "Transcript 'turn on pro mode' => status execute, action {type:'setSetting', key:'proMode', value:true}.",
-    "Transcript 'search saved games for Alice' => status execute, action {type:'gameLibraryAction', gameAction:'search', gameType:'completed', query:'Alice'}.",
-    "Transcript 'show frozen games' => status execute, action {type:'gameLibraryAction', gameAction:'switchTab', tab:'freezer'}.",
-    "Transcript 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
-    "Transcript 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
-    "Transcript 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidMakePct'}.",
-    "Transcript 'show Alice's stats', when statistics.players contains {key:'alice',name:'Alice'}, => status execute, action {type:'setStatsControls', statsView:'players', entityMode:'players', entityKey:'alice'}.",
-    "Transcript 'show Alice and Bob's team stats', when statistics.teams contains {key:'alice||bob',players:['Alice','Bob']}, => status execute, action {type:'setStatsControls', statsView:'teams', entityMode:'teams', entityKey:'alice||bob'}.",
+    "Voice 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
+    "Voice 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
+    "Voice 'Dem bid 125 and made 145' => status execute, action {type:'scoreRound', biddingTeam:'dem', bidAmount:125, points:145, enterBidderPoints:true}.",
+    "Voice 'Us bid 130 and got set' => status confirm, requiresConfirmation true, action {type:'scoreRound', biddingTeam:'us', bidAmount:130, points:180, enterBidderPoints:false}.",
+    "Voice 'change round 2 Us total to 305' => status execute, action {type:'editRound', roundNumber:2, usTotal:305}.",
+    "Voice 'set dealers Alice Bob Carol Dan' => status execute, action {type:'setDealerOrder', dealers:['Alice','Bob','Carol','Dan']}.",
+    "Voice 'turn on pro mode' => status execute, action {type:'setSetting', key:'proMode', value:true}.",
+    "Voice 'search saved games for Alice' => status execute, action {type:'gameLibraryAction', gameAction:'search', gameType:'completed', query:'Alice'}.",
+    "Voice 'show frozen games' => status execute, action {type:'gameLibraryAction', gameAction:'switchTab', tab:'freezer'}.",
+    "Voice 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
+    "Voice 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
+    "Voice 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidMakePct'}.",
+    "Voice 'show Alice's stats', when statistics.players contains {key:'alice',name:'Alice'}, => status execute, action {type:'setStatsControls', statsView:'players', entityMode:'players', entityKey:'alice'}.",
+    "Voice 'show Alice and Bob's team stats', when statistics.teams contains {key:'alice||bob',players:['Alice','Bob']}, => status execute, action {type:'setStatsControls', statsView:'teams', entityMode:'teams', entityKey:'alice||bob'}.",
     "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, version, confirmation, all.",
     "Settings keys: mustWinByBid, misdealHandling, proMode, experimentalFeatures, tableTalkPenaltyType, tableTalkPenaltyPoints.",
     "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
   ].join("\n");
 }
 
-function buildUserContent({ transcript, context, localIntent }) {
+function buildUserTextContent({ transcript, context, localIntent, hasAudio }) {
   return [
-    `Current voice transcript: ${transcript}`,
+    hasAudio
+      ? "Current voice audio is attached. Interpret the spoken command from the audio."
+      : `Current voice transcript: ${transcript}`,
+    transcript && hasAudio ? `Optional text transcript hint: ${transcript}` : "",
     `App context JSON: ${JSON.stringify(context)}`,
     `Deterministic score-parser JSON: ${JSON.stringify(localIntent)}`,
-    "The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification, still plan clear non-scoring app actions from the transcript.",
+    "The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification or null, still plan clear non-scoring app actions from the spoken request.",
     "Return the action plan JSON now.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function buildOpenRouterMessages(payload) {
   const conversation = sanitizeConversation(payload.conversation).map(message => ({
     role: message.role,
     content: message.role === "user"
-      ? `Earlier voice transcript: ${message.content}`
+      ? `Earlier voice command: ${message.content}`
       : `Clarification question: ${message.content}`,
   }));
+
+  const textContent = buildUserTextContent({
+    transcript: payload.transcript,
+    context: payload.context,
+    localIntent: payload.localIntent,
+    hasAudio: Boolean(payload.audio),
+  });
+
+  const userContent = payload.audio
+    ? [
+        { type: "text", text: textContent },
+        {
+          type: "input_audio",
+          input_audio: {
+            data: payload.audio.data,
+            format: payload.audio.format,
+          },
+        },
+      ]
+    : textContent;
 
   return [
     { role: "system", content: buildSystemPrompt() },
     ...conversation,
-    { role: "user", content: buildUserContent(payload) },
+    { role: "user", content: userContent },
   ];
 }
 
