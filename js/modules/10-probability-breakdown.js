@@ -9,7 +9,7 @@ function openProbabilityModal() {
         <div class="p-6 overflow-y-auto" style="max-height: calc(80vh - 0px);">
           <header class="flex justify-between items-center mb-6">
             <h2 id="probabilityModalTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Win Probability</h2>
-            <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg">
+            <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>

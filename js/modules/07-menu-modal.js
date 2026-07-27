@@ -102,7 +102,7 @@ function renderDealerSuggestionItems(container, suggestions, onSelect) {
   }
 
   container.innerHTML = suggestions
-    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:text-white dark:hover:bg-gray-600 dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
+    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors focus:bg-blue-50 focus:outline-none dark:text-white dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
     .join("");
   setDealerSuggestionsVisibility(container, true);
 

@@ -5,6 +5,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
+const appModuleFiles = require('../scripts/app-module-files.cjs');
 const voiceScoreCommandHandler = require('../api/voice-score-command.js');
 
 function setupDomStubs() {
@@ -1681,7 +1682,7 @@ test('voice score control is wired as a delegated hold-to-record button', () => 
   assert.match(cssSource, /\.voice-score-control\s*{[^}]*position: fixed;[^}]*right: calc\(1rem \+ env\(safe-area-inset-right, 0px\)\);[^}]*bottom: calc\(1rem \+ var\(--safe-area-inset-bottom-effective\)\);/s);
   assert.match(cssSource, /\.voice-score-button\s*{[^}]*width: 4rem;[^}]*height: 4rem;[^}]*touch-action: none;/s);
   assert.match(cssSource, /\.voice-score-button--active\s*{[^}]*transition-duration: 60ms;[^}]*transition-timing-function: ease-out;/s);
-  assert.match(cssSource, /\.voice-score-button--active:hover\s*{[^}]*transform: scale\(0\.94\);/s);
+  assert.match(cssSource, /\.voice-score-button--active\s*{[^}]*transform: scale\(0\.94\);/s);
   assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(initSource, /initializeVoiceScoreControls\(\);/);
@@ -3442,10 +3443,26 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.37";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.38";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
+});
+
+test('mobile-only UI ships without mouse hover effects or hover tooltips', () => {
+  const uiRuntimeFiles = [
+    'index.html',
+    'css/app.css',
+    'css/tailwind.css',
+    'js/app.bundle.js',
+    ...appModuleFiles,
+  ];
+
+  for (const file of uiRuntimeFiles) {
+    const source = readFileSync(path.join(repoRoot, file), 'utf8');
+    assert.doesNotMatch(source, /hover/i, `${file} should not contain hover behavior`);
+    assert.doesNotMatch(source, /\stitle\s*=\s*["']/i, `${file} should not contain mouse-only title tooltips`);
+  }
 });
 
 test('score entry uses the in-app keypad and previews totals in the team cards', () => {

@@ -103,7 +103,7 @@ function openPresetEditorModal() {
           <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all">
               <div class="flex items-center justify-between mb-4">
                   <h2 id="presetEditorTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Edit Bid Presets</h2>
-                  <button type="button" onclick="closePresetEditorModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
+                  <button type="button" onclick="closePresetEditorModal()" class="text-gray-500 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
               </div>
@@ -115,16 +115,16 @@ function openPresetEditorModal() {
                               <input type="number" value="${bid}" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${index}" onchange="validatePresetInput(this)">
                               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
                           </div>
-                          <button type="button" onclick="removePreset(${index})" class="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-red-600 hover:text-red-700 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+                          <button type="button" onclick="removePreset(${index})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
                       </div>`).join('')}
               </div>
               <div class="flex gap-2 flex-wrap mb-6">
-                  <button type="button" onclick="addPreset()" class="flex items-center bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add Preset</button>
+                  <button type="button" onclick="addPreset()" class="flex items-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add Preset</button>
               </div>
               <div id="presetErrorMsg" class="text-red-500 text-sm mb-4 hidden"></div>
               <div class="flex justify-end gap-3">
-                  <button type="button" onclick="closePresetEditorModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors threed">Cancel</button>
-                  <button type="button" onclick="savePresets()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed">Save Changes</button>
+                  <button type="button" onclick="closePresetEditorModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:border-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors threed">Cancel</button>
+                  <button type="button" onclick="savePresets()" class="px-4 py-2 bg-blue-600 text-white rounded-lg dark:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed">Save Changes</button>
               </div>
           </div>
       </div>`;
@@ -171,7 +171,7 @@ function addPreset() {
               <input type="number" value="120" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${newIdx}" onchange="validatePresetInput(this)">
               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
           </div>
-          <button type="button" onclick="removePreset(${newIdx})" class="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-red-600 hover:text-red-700 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+          <button type="button" onclick="removePreset(${newIdx})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
       </div>`);
   container.scrollTop = container.scrollHeight;
 }

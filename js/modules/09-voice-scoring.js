@@ -2061,8 +2061,7 @@ function renderVoiceScoreControls() {
         class="voice-score-button${activeClass}${busyClass}"
         aria-pressed="${voiceScoreListening}"
         aria-busy="${isBusy}"
-        aria-label="${buttonLabel}"
-        title="${buttonLabel}"${isProcessing ? " disabled" : ""}>
+        aria-label="${buttonLabel}"${isProcessing ? " disabled" : ""}>
         ${Icons.Mic}
       </button>
       ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}

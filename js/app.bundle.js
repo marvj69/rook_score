@@ -1347,7 +1347,7 @@ function openPresetEditorModal() {
           <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all">
               <div class="flex items-center justify-between mb-4">
                   <h2 id="presetEditorTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Edit Bid Presets</h2>
-                  <button type="button" onclick="closePresetEditorModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
+                  <button type="button" onclick="closePresetEditorModal()" class="text-gray-500 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
               </div>
@@ -1359,16 +1359,16 @@ function openPresetEditorModal() {
                               <input type="number" value="${bid}" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${index}" onchange="validatePresetInput(this)">
                               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
                           </div>
-                          <button type="button" onclick="removePreset(${index})" class="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-red-600 hover:text-red-700 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+                          <button type="button" onclick="removePreset(${index})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
                       </div>`).join('')}
               </div>
               <div class="flex gap-2 flex-wrap mb-6">
-                  <button type="button" onclick="addPreset()" class="flex items-center bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-800/40 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add Preset</button>
+                  <button type="button" onclick="addPreset()" class="flex items-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add Preset</button>
               </div>
               <div id="presetErrorMsg" class="text-red-500 text-sm mb-4 hidden"></div>
               <div class="flex justify-end gap-3">
-                  <button type="button" onclick="closePresetEditorModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors threed">Cancel</button>
-                  <button type="button" onclick="savePresets()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed">Save Changes</button>
+                  <button type="button" onclick="closePresetEditorModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:border-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors threed">Cancel</button>
+                  <button type="button" onclick="savePresets()" class="px-4 py-2 bg-blue-600 text-white rounded-lg dark:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors threed">Save Changes</button>
               </div>
           </div>
       </div>`;
@@ -1415,7 +1415,7 @@ function addPreset() {
               <input type="number" value="120" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${newIdx}" onchange="validatePresetInput(this)">
               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
           </div>
-          <button type="button" onclick="removePreset(${newIdx})" class="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-red-600 hover:text-red-700 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+          <button type="button" onclick="removePreset(${newIdx})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
       </div>`);
   container.scrollTop = container.scrollHeight;
 }
@@ -2247,7 +2247,7 @@ function renderDealerSuggestionItems(container, suggestions, onSelect) {
   }
 
   container.innerHTML = suggestions
-    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:text-white dark:hover:bg-gray-600 dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
+    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors focus:bg-blue-50 focus:outline-none dark:text-white dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
     .join("");
   setDealerSuggestionsVisibility(container, true);
 
@@ -2726,13 +2726,13 @@ function openTableTalkModal() {
           <div class="space-y-3">
             <button 
               onclick="applyTableTalkPenalty('us')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
               style="background-color: var(--primary-color);">
               ${usTeamDisplay}
             </button>
             <button 
               onclick="applyTableTalkPenalty('dem')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
               style="background-color: var(--accent-color);">
               ${demTeamDisplay}
             </button>
@@ -2740,7 +2740,7 @@ function openTableTalkModal() {
           <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
             <button 
               onclick="closeTableTalkModal()" 
-              class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">
+              class="w-full bg-gray-100 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">
               Cancel
             </button>
           </div>
@@ -3461,7 +3461,7 @@ function openRematchDealerModal() {
 
   const buttonsHtml = dealerCandidates.map((dealer, index) => `
     <button type="button"
-      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600 threed font-bold"
+      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 threed font-bold"
       data-rematch-dealer-index="${index}">
       ${escapeHtml(dealer)}
     </button>
@@ -3474,7 +3474,7 @@ function openRematchDealerModal() {
           <h2 id="rematchDealerTitle" class="text-2xl font-black mb-2 text-gray-800 dark:text-white text-center">Choose First Dealer</h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 text-center">Same players, fresh score.</p>
           <div class="grid grid-cols-1 gap-3">${buttonsHtml}</div>
-          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">Cancel</button>
+          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">Cancel</button>
         </div>
       </div>
     </div>`;
@@ -5844,8 +5844,7 @@ function renderVoiceScoreControls() {
         class="voice-score-button${activeClass}${busyClass}"
         aria-pressed="${voiceScoreListening}"
         aria-busy="${isBusy}"
-        aria-label="${buttonLabel}"
-        title="${buttonLabel}"${isProcessing ? " disabled" : ""}>
+        aria-label="${buttonLabel}"${isProcessing ? " disabled" : ""}>
         ${Icons.Mic}
       </button>
       ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
@@ -6383,7 +6382,7 @@ function openProbabilityModal() {
         <div class="p-6 overflow-y-auto" style="max-height: calc(80vh - 0px);">
           <header class="flex justify-between items-center mb-6">
             <h2 id="probabilityModalTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Win Probability</h2>
-            <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg">
+            <button type="button" onclick="closeProbabilityModal()" class="text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-lg">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -6992,13 +6991,13 @@ function renderApp() {
   let dealerEntryButton = "";
   const hasDealers = state.dealers && state.dealers.length > 0;
   if (rounds.length === 0 && !hasDealers) {
-    dealerEntryButton = `<div class="mt-2"><button onclick="openDealerOrderModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">Enter dealing order</button></div>`;
+    dealerEntryButton = `<div class="mt-2"><button onclick="openDealerOrderModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">Enter dealing order</button></div>`;
   }
 
   // Show "Misdeal" button if dealers exist, setting is enabled, and game hasn't started bidding yet
   const misdealHandlingEnabled = !!getLocalStorage(MISDEAL_HANDLING_KEY, false);
   const misdealButton = (hasDealers && misdealHandlingEnabled && !biddingTeam && !gameOver)
-    ? `<button onclick="handleMisdeal()" class="px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-white rounded-md hover:bg-yellow-600 dark:hover:bg-yellow-700 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm whitespace-nowrap">Misdeal</button>`
+    ? `<button onclick="handleMisdeal()" class="px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-white rounded-md text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm whitespace-nowrap">Misdeal</button>`
     : "";
   if (dealerRow && misdealButton) {
     dealerRow = dealerRow.replace("</div>", `${misdealButton}</div>`);
@@ -7160,21 +7159,21 @@ function renderScoreInputCard() {
   const focusRingColor = biddingTeam === "us" ? "focus:ring-blue-500 dark:focus:ring-blue-400" : "focus:ring-red-500 dark:focus:ring-red-400";
   const penaltyActive = pendingPenalty && pendingPenalty.team === biddingTeam && pendingPenalty.type === "cheat";
   const penaltyBtnClass = penaltyActive
-    ? "flex items-center border border-orange-400 rounded px-2 py-1 text-sm text-orange-700 bg-orange-100 hover:bg-orange-200 transition focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-orange-900/60 dark:text-orange-300 threed disabled:opacity-50 disabled:cursor-not-allowed"
-    : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed disabled:opacity-50 disabled:cursor-not-allowed";
+    ? "flex items-center border border-orange-400 rounded px-2 py-1 text-sm text-orange-700 bg-orange-100 transition focus:outline-none focus:ring-2 focus:ring-orange-500 dark:bg-orange-900/60 dark:text-orange-300 threed disabled:opacity-50 disabled:cursor-not-allowed"
+    : "flex items-center border border-gray-400 rounded px-2 py-1 text-sm text-gray-600 bg-gray-50 transition focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800/50 dark:text-gray-300 threed disabled:opacity-50 disabled:cursor-not-allowed";
   const penaltyBtnOnClick = penaltyActive ? 'undoPenaltyFlag()' : 'handleCheatFlag()';
   return `
     <div class="${fadeClass}bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex justify-between items-center">
         <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
         <div class="flex space-x-2">
-          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""} title="Undo">${Icons.Undo}Undo</button>
-          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white dark:hover:bg-gray-700 threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""} title="Redo">${Icons.Redo}Redo</button>
+          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
+          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>
           <button type="button"
     class="${penaltyBtnClass}"
     onclick="${penaltyBtnOnClick}"
     ${!hasBid ? "disabled" : ""}
-    title="Flag Table Talk - Choose Team">
+    aria-label="Flag Table Talk - Choose Team">
 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6.75c2.5.15 4.25 1.15 5.25 3L13 13l-1.75 3.25C10.25 18.1 8.5 19.1 6 19.25"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 11.25c2.1-.45 4.05-.25 5.85.6M6 14.75c2.1.45 4.05.25 5.85-.6"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.25c1 .6 1.5 1.5 1.5 2.75s-.5 2.15-1.5 2.75M19.75 8.25C21.25 9.45 22 11.05 22 13s-.75 3.55-2.25 4.75"/></svg>
   </button>
         </div>
@@ -7187,8 +7186,8 @@ function renderScoreInputCard() {
               ${presetBids.map(b => {
                 const isActive = b === "other" ? showCustomBid : (state.bidAmount === String(b) && !showCustomBid);
                 const btnBase = `px-3 py-1.5 text-sm font-medium threed rounded-lg transition focus:outline-none focus:ring-2 ${focusRingColor}`;
-                const btnActive = `${biddingTeam === "us" ? "bg-primary" : "bg-accent"} text-white shadow hover:brightness-95`;
-                const btnInactive = `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`;
+                const btnActive = `${biddingTeam === "us" ? "bg-primary" : "bg-accent"} text-white shadow`;
+                const btnInactive = `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`;
                 return `<button type="button" class="${btnBase} ${isActive ? btnActive : btnInactive}" onclick="handleBidSelect('${escapeAttribute(b)}')" aria-pressed="${isActive}">${b === "other" ? "Other" : escapeHtmlValue(b)}</button>`;
               }).join("")}
             </div>
@@ -7226,14 +7225,14 @@ function renderPointsInput() {
       <div>
         <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">Enter Points For</label>
         <div class="flex gap-3">
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow hover:brightness-95` : `bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-500 dark:text-white dark:hover:bg-gray-600`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
+          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
+          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
         </div>
       </div>
       <div>
         <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
         <input id="pointsInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "points"}" value="${ephemeralPointsAttr}" placeholder="Tap to enter points" onclick="openScoreKeypad('points')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('points'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
-        <button type="submit" class="mt-3 w-full bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed">Submit Round</button>
+        <button type="submit" class="mt-3 w-full bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:focus:ring-blue-400 threed">Submit Round</button>
       </div>
     </div>`;
 }
@@ -7456,18 +7455,18 @@ function renderHistoryCard() {
             const demValue = Number.isFinite(Number(round.runningTotals?.dem)) ? round.runningTotals.dem : 0;
             const bidInput = isHistoryCellEditing(idx, "bid")
               ? `<input id="history-edit-${idx}-bid" type="number" inputmode="numeric" class="w-16 bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${bidValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'bid')" onblur="commitHistoryEdit(${idx}, 'bid', this.value)" />`
-              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabelAttr} bid for round ${idx + 1}">${bidValue}</button>`;
+              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabelAttr} bid for round ${idx + 1}">${bidValue}</button>`;
             const bidContent = round.biddingTeam === "us"
               ? `<div class="flex items-center justify-center gap-1"><span class="text-gray-800 dark:text-white">←</span>${bidInput}</div>`
               : `<div class="flex items-center justify-center gap-1">${bidInput}<span class="text-gray-800 dark:text-white">→</span></div>`;
             const usScoreContent = isHistoryCellEditing(idx, "us")
               ? `<input id="history-edit-${idx}-us" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${usValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'us')" onblur="commitHistoryEdit(${idx}, 'us', this.value)" />`
-              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUsAttr} score for round ${idx + 1}">${usValue}</button>`;
+              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUsAttr} score for round ${idx + 1}">${usValue}</button>`;
             const demScoreContent = isHistoryCellEditing(idx, "dem")
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
-              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
+              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
-              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow">
+              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
                 <div class="text-left">${usScoreContent}</div>
                 <div class="text-center text-gray-600 dark:text-gray-400">${bidContent}</div>
                 <div class="text-right">${demScoreContent}</div>
@@ -7478,7 +7477,7 @@ function renderHistoryCard() {
       ${showProbabilityButton ? `
         <div class="border-t-2 border-gray-200 dark:border-gray-700">
           <button onclick="openProbabilityModal()" 
-                  class="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-b-xl">
+                  class="w-full p-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-b-xl">
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">How was this probability reached?</span>
               <svg class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7509,10 +7508,10 @@ function renderGameOverOverlay() {
           <p class="text-2xl font-extrabold mb-1 animate-fadeIn text-gray-700 dark:text-white" style="text-shadow: 0 2px 0 rgba(0,0,0,0.1);">${winnerDisplay} Wins!</p>
           <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400 font-semibold">(${victoryMethodDisplay})</p>
           <div class="flex space-x-3 justify-center flex-wrap gap-2">
-            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
-            <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
-            <button onclick="handleGameOverRematchClick(event)" class="bg-purple-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:hover:bg-purple-600 dark:focus:ring-purple-400 threed font-bold text-sm" type="button">Rematch</button>
-            <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
+            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
+            <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
+            <button onclick="handleGameOverRematchClick(event)" class="bg-purple-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:focus:ring-purple-400 threed font-bold text-sm" type="button">Rematch</button>
+            <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
           </div>
         </div>
       </div>
@@ -7605,7 +7604,7 @@ function renderReadOnlyGameDetails(game) {
         </div>
         <div class="space-y-2 max-h-60 overflow-y-auto rounded-xl pr-1 no-scrollbar">${roundHtml || '<p class="text-gray-500">No rounds.</p>'}</div>
       </div>
-      <div class="flex justify-center"><button type="button" onclick="closeViewSavedGameModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition-colors threed">Close</button></div>
+      <div class="flex justify-center"><button type="button" onclick="closeViewSavedGameModal()" class="px-4 py-2 bg-gray-100 text-gray-800 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition-colors threed">Close</button></div>
     </div>`;
 }
 
@@ -7628,7 +7627,7 @@ function switchGamesTab(tabType) {
   const freezerSection = document.getElementById('freezerGamesSection');
 
   const activeClasses = ['border-blue-600', 'text-blue-600', 'dark:text-blue-400', 'dark:border-blue-400'];
-  const inactiveClasses = ['border-transparent', 'text-gray-500', 'hover:text-gray-700', 'dark:text-gray-400', 'dark:hover:text-gray-300'];
+  const inactiveClasses = ['border-transparent', 'text-gray-500', 'dark:text-gray-400'];
 
   if (tabType === 'completed') {
       completedTab.classList.add(...activeClasses); completedTab.classList.remove(...inactiveClasses);
@@ -7732,7 +7731,7 @@ function buildSavedGameCard(game, originalIndex) {
   const victoryMethodText = escapeHtmlValue(game.victoryMethod);
 
   return `
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
       ${usWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplayText}</div>` : ''}
       ${demWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplayText}</div>` : ''}
       <div class="p-5">
@@ -7742,8 +7741,8 @@ function buildSavedGameCard(game, originalIndex) {
             <div class="text-sm text-gray-500 dark:text-gray-400">${timestampText}</div>
           </div>
           <div class="flex space-x-1">
-            <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
-            <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
+            <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 dark:text-blue-400 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
+            <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 dark:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
           </div>
         </div>
         <div class="text-sm">
@@ -7777,7 +7776,7 @@ function buildFreezerGameCard(game, originalIndex) {
   const lastBidText = escapeHtmlValue(game.lastBid);
 
   return `
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
       <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfoText}</div>
       <div class="p-5">
         <div class="flex justify-between items-start mb-2">
@@ -7786,8 +7785,8 @@ function buildFreezerGameCard(game, originalIndex) {
             <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestampText}</div>
           </div>
           <div class="flex space-x-1">
-            <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
-            <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
+            <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 dark:text-blue-400 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
+            <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 dark:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
           </div>
         </div>
         <div class="text-sm text-gray-700 dark:text-gray-300">
@@ -8122,7 +8121,7 @@ function renderStatisticsContent() {
         </span>
         <h3 class="stats-empty__title">No stats yet</h3>
         <p class="stats-empty__body">Play a few games and your team and player performance will appear here.</p>
-        <button type="button" onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-lg shadow-sm transition-colors">
+        <button type="button" onclick="handleNewGame(); closeMenuOverlay(); closeStatisticsModal();" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 active:bg-blue-800 text-white font-semibold rounded-lg shadow-sm transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
           Start a Game
         </button>

@@ -23,13 +23,13 @@ function openTableTalkModal() {
           <div class="space-y-3">
             <button 
               onclick="applyTableTalkPenalty('us')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
               style="background-color: var(--primary-color);">
               ${usTeamDisplay}
             </button>
             <button 
               onclick="applyTableTalkPenalty('dem')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none hover:opacity-90 transition threed" 
+              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
               style="background-color: var(--accent-color);">
               ${demTeamDisplay}
             </button>
@@ -37,7 +37,7 @@ function openTableTalkModal() {
           <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
             <button 
               onclick="closeTableTalkModal()" 
-              class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">
+              class="w-full bg-gray-100 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">
               Cancel
             </button>
           </div>
@@ -758,7 +758,7 @@ function openRematchDealerModal() {
 
   const buttonsHtml = dealerCandidates.map((dealer, index) => `
     <button type="button"
-      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600 threed font-bold"
+      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 threed font-bold"
       data-rematch-dealer-index="${index}">
       ${escapeHtml(dealer)}
     </button>
@@ -771,7 +771,7 @@ function openRematchDealerModal() {
           <h2 id="rematchDealerTitle" class="text-2xl font-black mb-2 text-gray-800 dark:text-white text-center">Choose First Dealer</h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 text-center">Same players, fresh score.</p>
           <div class="grid grid-cols-1 gap-3">${buttonsHtml}</div>
-          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white transition threed">Cancel</button>
+          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">Cancel</button>
         </div>
       </div>
     </div>`;
