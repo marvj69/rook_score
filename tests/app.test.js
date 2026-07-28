@@ -7,6 +7,7 @@ const path = require('node:path');
 const repoRoot = path.join(__dirname, '..');
 const appModuleFiles = require('../scripts/app-module-files.cjs');
 const voiceScoreCommandHandler = require('../api/voice-score-command.js');
+const bugReportHandler = require('../api/bug-report.js');
 
 function setupDomStubs() {
   const noop = () => {};
@@ -279,6 +280,8 @@ const {
   normalizeVoiceScorePlan,
   resolveVoiceScoreStatisticsSelection,
   getFilteredPlayerSuggestions,
+  getBugReportUrl,
+  getBugReportDiagnostics,
 } = require('../js/app.js');
 
 const resetState = () => {
@@ -290,12 +293,15 @@ function createMockRequest({
   body = '',
   origin = 'https://rook-score.vercel.app',
   contentType = 'application/json',
+  headers = {},
 } = {}) {
   const request = new EventEmitter();
   request.method = method;
   request.headers = {
     origin,
     'content-type': contentType,
+    'x-forwarded-for': '127.0.0.1',
+    ...headers,
   };
   process.nextTick(() => {
     if (body) request.emit('data', Buffer.isBuffer(body) ? body : Buffer.from(body));
@@ -361,6 +367,41 @@ const makeTrainingGames = (numGames = 10, roundsPerGame = 6) => {
   }
   return games;
 };
+
+const makeBugReportPayload = (overrides = {}) => ({
+  reportId: 'test-report-12345',
+  category: 'bug',
+  summary: 'Undo changed the wrong score',
+  description: 'I tapped Undo once and the score changed by two rounds.',
+  steps: '1. Score two rounds\n2. Tap Undo',
+  contactEmail: 'player@example.com',
+  website: '',
+  diagnostics: {
+    capturedAt: '2026-07-28T12:00:00.000Z',
+    appVersion: '2.1',
+    page: 'https://rook-score.vercel.app/',
+    userAgent: 'Test Browser',
+    viewport: '390x844',
+    devicePixelRatio: 3,
+    displayMode: 'standalone',
+    online: true,
+    theme: 'dark',
+    proMode: false,
+    firebase: {
+      status: 'ready',
+      signedIn: true,
+      anonymous: true,
+    },
+    game: {
+      roundsPlayed: 2,
+      scores: { us: 220, dem: 140 },
+      gameOver: false,
+      winner: null,
+      victoryMethod: null,
+    },
+  },
+  ...overrides,
+});
 
 test('sanitizePlayerName trims and normalizes whitespace', () => {
   assert.equal(sanitizePlayerName('  Alice   Bob '), 'Alice Bob');
@@ -1038,6 +1079,232 @@ test('voice score command URL routes GitHub Pages to the Vercel API', () => {
   } finally {
     window.location.hostname = originalHostname;
   }
+});
+
+test('bug report URL routes GitHub Pages to the Vercel backend', () => {
+  const originalHostname = window.location.hostname;
+  try {
+    window.location.hostname = 'marvj69.github.io';
+    assert.equal(getBugReportUrl(), 'https://rook-score.vercel.app/api/bug-report');
+
+    window.location.hostname = 'rook-score.vercel.app';
+    assert.equal(getBugReportUrl(), '/api/bug-report');
+  } finally {
+    window.location.hostname = originalHostname;
+  }
+});
+
+test('bug report diagnostics exclude names, saved games, and account IDs', () => {
+  const originalFirebaseAuth = window.firebaseAuth;
+  const originalFirebaseReady = window.firebaseReady;
+  updateState({
+    usTeamName: 'Kitchen Crew',
+    demTeamName: 'Barn Birds',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Carol', 'Dan'],
+    rounds: [{
+      runningTotals: { us: 245, dem: 180 },
+    }],
+    gameOver: false,
+    winner: null,
+    victoryMethod: null,
+  });
+  window.firebaseReady = true;
+  window.firebaseAuth = {
+    currentUser: {
+      uid: 'private-firebase-user-id',
+      isAnonymous: true,
+    },
+  };
+  localStorage.setItem('savedGames', JSON.stringify([{ usTeamName: 'Private Saved Team' }]));
+
+  try {
+    const diagnostics = getBugReportDiagnostics();
+    const serialized = JSON.stringify(diagnostics);
+
+    assert.equal(diagnostics.firebase.status, 'ready');
+    assert.equal(diagnostics.firebase.signedIn, true);
+    assert.equal(diagnostics.firebase.anonymous, true);
+    assert.deepEqual(diagnostics.game.scores, { us: 245, dem: 180 });
+    assert.equal(diagnostics.game.roundsPlayed, 1);
+    assert.doesNotMatch(serialized, /Alice|Bob|Carol|Dan|Kitchen Crew|Barn Birds/);
+    assert.doesNotMatch(serialized, /private-firebase-user-id|Private Saved Team/);
+  } finally {
+    window.firebaseAuth = originalFirebaseAuth;
+    window.firebaseReady = originalFirebaseReady;
+    localStorage.removeItem('savedGames');
+  }
+});
+
+test('bug report backend validates content before delivery', () => {
+  assert.throws(
+    () => bugReportHandler.validateBugReportPayload(makeBugReportPayload({
+      description: 'Too short',
+    })),
+    /at least 10 characters/,
+  );
+  assert.throws(
+    () => bugReportHandler.validateBugReportPayload(makeBugReportPayload({
+      contactEmail: 'not-an-email',
+    })),
+    /not valid/,
+  );
+  assert.throws(
+    () => bugReportHandler.validateBugReportPayload(makeBugReportPayload({
+      category: 'arbitrary',
+    })),
+    /Category is not valid/,
+  );
+});
+
+test('bug report backend emails the configured owner with an idempotency key', async () => {
+  const originalApiKey = process.env.RESEND_API_KEY;
+  const originalRecipient = process.env.BUG_REPORT_TO_EMAIL;
+  const originalSender = process.env.BUG_REPORT_FROM_EMAIL;
+  const originalFetch = global.fetch;
+  let providerRequest = null;
+
+  process.env.RESEND_API_KEY = 'test-resend-key';
+  process.env.BUG_REPORT_TO_EMAIL = 'owner@example.com';
+  process.env.BUG_REPORT_FROM_EMAIL = 'Rook Score <bugs@example.com>';
+  bugReportHandler.resetRateLimitsForTests();
+  global.fetch = async (url, options) => {
+    providerRequest = { url, options };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ id: 'email_123' }),
+    };
+  };
+
+  const request = createMockRequest({
+    body: JSON.stringify(makeBugReportPayload()),
+    headers: { 'x-forwarded-for': '192.0.2.15' },
+  });
+  const response = createMockResponse();
+
+  try {
+    await bugReportHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = originalApiKey;
+    if (originalRecipient === undefined) delete process.env.BUG_REPORT_TO_EMAIL;
+    else process.env.BUG_REPORT_TO_EMAIL = originalRecipient;
+    if (originalSender === undefined) delete process.env.BUG_REPORT_FROM_EMAIL;
+    else process.env.BUG_REPORT_FROM_EMAIL = originalSender;
+    global.fetch = originalFetch;
+    bugReportHandler.resetRateLimitsForTests();
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { ok: true, reportId: 'test-report-12345' });
+  assert.equal(response.headers['access-control-allow-origin'], 'https://rook-score.vercel.app');
+  assert.equal(providerRequest.url, 'https://api.resend.com/emails');
+  assert.equal(providerRequest.options.headers.Authorization, 'Bearer test-resend-key');
+  assert.equal(providerRequest.options.headers['Idempotency-Key'], 'bug-report/test-report-12345');
+
+  const email = JSON.parse(providerRequest.options.body);
+  assert.equal(email.from, 'Rook Score <bugs@example.com>');
+  assert.deepEqual(email.to, ['owner@example.com']);
+  assert.equal(email.reply_to, 'player@example.com');
+  assert.match(email.subject, /^\[Rook Score Bug\] Undo changed the wrong score$/);
+  assert.match(email.text, /WHAT HAPPENED/);
+  assert.match(email.text, /Us 220 - Dem 140/);
+});
+
+test('bug report backend rejects unapproved browser origins without sending', async () => {
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('should not be called');
+  };
+  bugReportHandler.resetRateLimitsForTests();
+
+  const request = createMockRequest({
+    origin: 'https://malicious.example',
+    body: JSON.stringify(makeBugReportPayload()),
+  });
+  const response = createMockResponse();
+
+  try {
+    await bugReportHandler(request, response);
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.headers['access-control-allow-origin'], undefined);
+  assert.equal(fetchCalled, false);
+});
+
+test('bug report backend allows localhost only outside production', async () => {
+  const originalVercelEnv = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'development';
+  const developmentRequest = createMockRequest({
+    method: 'OPTIONS',
+    origin: 'http://127.0.0.1:5127',
+  });
+  const developmentResponse = createMockResponse();
+
+  try {
+    await bugReportHandler(developmentRequest, developmentResponse);
+    assert.equal(developmentResponse.statusCode, 204);
+    assert.equal(
+      developmentResponse.headers['access-control-allow-origin'],
+      'http://127.0.0.1:5127',
+    );
+
+    process.env.VERCEL_ENV = 'production';
+    const productionRequest = createMockRequest({
+      method: 'OPTIONS',
+      origin: 'http://127.0.0.1:5127',
+    });
+    const productionResponse = createMockResponse();
+    await bugReportHandler(productionRequest, productionResponse);
+    assert.equal(productionResponse.statusCode, 403);
+    assert.equal(productionResponse.headers['access-control-allow-origin'], undefined);
+  } finally {
+    if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnv;
+  }
+});
+
+test('bug report backend reports missing email configuration safely', async () => {
+  const originalApiKey = process.env.RESEND_API_KEY;
+  const originalConsoleError = console.error;
+  const loggedErrors = [];
+  delete process.env.RESEND_API_KEY;
+  console.error = (...args) => loggedErrors.push(args);
+  bugReportHandler.resetRateLimitsForTests();
+
+  const request = createMockRequest({
+    body: JSON.stringify(makeBugReportPayload()),
+    headers: { 'x-forwarded-for': '192.0.2.16' },
+  });
+  const response = createMockResponse();
+
+  try {
+    await bugReportHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = originalApiKey;
+    console.error = originalConsoleError;
+    bugReportHandler.resetRateLimitsForTests();
+  }
+
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(response.body, {
+    error: 'Bug reports are temporarily unavailable. Please try again.',
+  });
+  assert.deepEqual(loggedErrors, [[
+    'bug-report failed',
+    {
+      code: 'RESEND_MISSING_KEY',
+      statusCode: 503,
+      message: 'Bug reports are temporarily unavailable.',
+    },
+  ]]);
 });
 
 test('voice score plan normalization keeps only supported actions', () => {
@@ -3534,7 +3801,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.40";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.41";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3616,6 +3883,23 @@ test('about modal links to other developer apps with self-contained app icons', 
   assert.match(htmlSource, /id="fourteenHighCardBg"/);
   assert.doesNotMatch(htmlSource, /src="[^"]*14-high[^"]*"/);
   assert.match(htmlSource, /target="_blank" rel="noopener noreferrer"/);
+});
+
+test('bug reports stay in the app and submit through the backend', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const appSource = readFileSync(path.join(repoRoot, 'js/modules/10-probability-breakdown.js'), 'utf8');
+  const apiSource = readFileSync(path.join(repoRoot, 'api/bug-report.js'), 'utf8');
+
+  assert.match(htmlSource, /id="bugReportModal"/);
+  assert.match(htmlSource, /id="bugReportForm"[^>]*onsubmit="handleBugReportSubmit\(event\)"/);
+  assert.match(htmlSource, /id="bugReportIncludeDiagnostics"[^>]*checked/);
+  assert.match(htmlSource, /Player names, team names, saved games, and account IDs are never included/);
+  assert.doesNotMatch(htmlSource, /Create Bug Report Email/);
+  assert.doesNotMatch(appSource, /mailto:/);
+  assert.match(appSource, /fetch\(getBugReportUrl\(\)/);
+  assert.match(appSource, /VERCEL_BUG_REPORT_URL = "https:\/\/rook-score\.vercel\.app\/api\/bug-report"/);
+  assert.match(apiSource, /RESEND_EMAILS_URL = "https:\/\/api\.resend\.com\/emails"/);
+  assert.match(apiSource, /"Idempotency-Key": `bug-report\/\$\{report\.reportId\}`/);
 });
 
 test('firebase cloud sync does not block the initial app shell render', () => {

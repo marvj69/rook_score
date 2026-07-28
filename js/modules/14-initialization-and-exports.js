@@ -61,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
     savedGamesModal: closeSavedGamesModal,
     viewSavedGameModal: closeViewSavedGameModal,
     aboutModal: closeAboutModal,
+    bugReportModal: closeBugReportModal,
     versionInfoModal: closeVersionInfoModal,
     statisticsModal: closeStatisticsModal,
     entityStatisticsModal: closeEntityStatisticsModal,
@@ -238,6 +239,9 @@ if (typeof window !== 'undefined') {
     parseVoiceScoreCommand,
     requestVoiceScoreActionPlan,
     requestVoiceScoreMicrophonePermission,
+    openBugReportModal,
+    closeBugReportModal,
+    handleBugReportSubmit,
   });
 }
 
@@ -313,6 +317,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatDuration,
     shouldApplyStandaloneSafeAreaFallback,
     shouldEnableAppViewportScroll,
+    getBugReportUrl,
+    getBugReportDiagnostics,
     recalcRunningTotals,
     computeGameOutcomeFromRounds,
     normalizeVoiceScoreTranscript,

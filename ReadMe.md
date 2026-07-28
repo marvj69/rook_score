@@ -49,7 +49,7 @@
 *   **Progressive Web App (PWA):**
     *   Installable on your device for an app-like experience.
     *   Offline capabilities (once cached by the service worker).
-*   **Bug Reporting:** Easy "Create Bug Report Email" option with pre-filled device and app state info.
+*   **Bug Reporting:** In-app issue form with optional privacy-conscious diagnostics and backend email delivery.
 *   **Version Tracking:** Displays current app version.
 
 ## 🚀 What's New in 2.1
@@ -70,6 +70,8 @@
     *   Firebase
         *   Firebase Authentication (Google Sign-In, Anonymous Sign-In)
         *   Firestore (Cloud database for game data synchronization)
+    *   Resend
+        *   Backend delivery for in-app bug reports
 *   **Libraries:**
     *   Canvas Confetti (for win celebrations)
 *   **PWA Features:**
@@ -216,7 +218,13 @@ OPENROUTER_FALLBACK_MODELS
 OPENROUTER_SITE_URL
 OPENROUTER_APP_TITLE
 VOICE_SCORE_COMMAND_LOCAL_FALLBACK
+RESEND_API_KEY
+BUG_REPORT_TO_EMAIL
+BUG_REPORT_FROM_EMAIL
+BUG_REPORT_ALLOWED_ORIGINS
 ```
+
+The in-app bug report endpoint sends through Resend. `BUG_REPORT_TO_EMAIL` defaults to `heinonenmh@gmail.com`, and `BUG_REPORT_FROM_EMAIL` defaults to `Rook Score <onboarding@resend.dev>`. The Resend onboarding sender is suitable while testing with the email address associated with the Resend account. For general production delivery, verify a sending domain in Resend and set `BUG_REPORT_FROM_EMAIL` to an address on that domain.
 
 Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
@@ -233,7 +241,7 @@ The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
 - Personalization and statistics: set theme colors, randomize/reset/apply the theme, edit bid presets, and change statistics view, metric, sort, or selected entity.
 - `noop` safely records that no action should be taken.
 
-The planner can return up to five ordered actions for one compound request. It cannot execute arbitrary JavaScript, access unrelated device data, grant microphone permission, or send the prefilled bug-report email; those remain explicit user actions.
+The planner can return up to five ordered actions for one compound request. It cannot execute arbitrary JavaScript, access unrelated device data, grant microphone permission, or submit the bug-report form; those remain explicit user actions.
 
 For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
 
@@ -255,7 +263,7 @@ npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT
 ```
 
 ### GitHub Pages
-The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it loads Firebase config from `https://rook-score.vercel.app/api/firebase-config` and LLM voice actions from `https://rook-score.vercel.app/api/voice-score-command` using the endpoints' CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoints' allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS` / `VOICE_SCORE_ALLOWED_ORIGINS` in Vercel.
+The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it uses `https://rook-score.vercel.app` for Firebase config, LLM voice actions, and in-app bug-report delivery. Those endpoints use separate CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS`, `VOICE_SCORE_ALLOWED_ORIGINS`, and `BUG_REPORT_ALLOWED_ORIGINS` in Vercel.
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:
@@ -282,7 +290,9 @@ Contributions are welcome! If you have ideas for improvements or find bugs:
 ## Bug Reports & Feedback
 
 Found a bug or have a suggestion?
-*   Use the "**Create Bug Report Email**" button in the "About" modal in the app.
+*   Use the "**Report an Issue**" button in the "About" modal.
+*   Complete the in-app form and optionally include diagnostics. Diagnostics exclude player names, team names, saved games, and account IDs.
+*   The Vercel backend validates the report and sends it to the configured owner email through Resend; the user's email app never opens.
 *   Alternatively, open an issue on this GitHub repository. Please include steps to reproduce the bug and any relevant console errors.
 
 ## 📝 License

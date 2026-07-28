@@ -483,46 +483,212 @@ function handleTeamSelectionSubmit(e) {
   else if (pendingGameAction === "save") { handleManualSaveGame(); }
   pendingGameAction = null;
 }
-function getDeviceDetails() {
+const SAME_ORIGIN_BUG_REPORT_URL = "/api/bug-report";
+const VERCEL_BUG_REPORT_URL = "https://rook-score.vercel.app/api/bug-report";
+const BUG_REPORT_GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
+const BUG_REPORT_TIMEOUT_MS = 15000;
+let activeBugReportAbortController = null;
+
+function getBugReportUrl() {
+  if (typeof window === "undefined" || !window.location) return SAME_ORIGIN_BUG_REPORT_URL;
+  return BUG_REPORT_GITHUB_PAGES_HOSTNAMES.has(window.location.hostname)
+    ? VERCEL_BUG_REPORT_URL
+    : SAME_ORIGIN_BUG_REPORT_URL;
+}
+
+function getBugReportAppVersion() {
   let appVersion = typeof APP_VERSION !== "undefined" ? APP_VERSION : "N/A";
   try {
-      const verEl = document.querySelector("#versionBadge p");
-      if (verEl && verEl.textContent.trim()) appVersion = verEl.textContent.trim();
-  } catch (e) { console.warn("Could not get app version:", e); }
-
-  let fbStatus = "N/A", fbUserId = "N/A", fbIsAnon = "N/A";
-  if (window.firebaseAuth) {
-      fbStatus = window.firebaseReady ? "Ready" : "Not Ready/Offline";
-      if (window.firebaseAuth.currentUser) {
-          fbUserId = window.firebaseAuth.currentUser.uid;
-          fbIsAnon = String(window.firebaseAuth.currentUser.isAnonymous);
-      }
+    const versionElement = document.querySelector("#versionBadge p");
+    if (versionElement?.textContent?.trim()) appVersion = versionElement.textContent.trim();
+  } catch (error) {
+    console.warn("Could not read the app version for diagnostics:", error);
   }
-  return `User Agent: ${navigator.userAgent}\nScreen: ${window.innerWidth}x${window.innerHeight} (DPR: ${window.devicePixelRatio})\nApp Version: ${appVersion}\nDark Mode: ${document.documentElement.classList.contains('dark')}\nPro Mode: ${localStorage.getItem(PRO_MODE_KEY) === 'true'}\nFirebase: ${fbStatus} (User: ${fbUserId}, Anon: ${fbIsAnon})\nTimestamp: ${new Date().toISOString()}`;
+  return appVersion;
 }
+
+function getBugReportDiagnostics() {
+  const rounds = Array.isArray(state?.rounds) ? state.rounds : [];
+  const latestTotals = rounds.at(-1)?.runningTotals || state?.startingTotals || {};
+  const firebaseUser = window.firebaseAuth?.currentUser || null;
+  const locationOrigin = typeof window.location?.origin === "string" ? window.location.origin : "";
+  const locationPath = typeof window.location?.pathname === "string" ? window.location.pathname : "";
+  const displayMode = window.matchMedia?.("(display-mode: standalone)")?.matches
+    || window.navigator?.standalone === true
+    ? "standalone"
+    : "browser";
+
+  return {
+    capturedAt: new Date().toISOString(),
+    appVersion: getBugReportAppVersion(),
+    page: `${locationOrigin}${locationPath}` || "N/A",
+    userAgent: String(navigator.userAgent || "N/A").slice(0, 500),
+    viewport: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
+    devicePixelRatio: Number(window.devicePixelRatio) || 1,
+    displayMode,
+    online: navigator.onLine !== false,
+    theme: document.documentElement.classList.contains("dark") ? "dark" : "light",
+    proMode: localStorage.getItem(PRO_MODE_KEY) === "true",
+    firebase: {
+      status: window.firebaseReady ? "ready" : "not-ready-or-offline",
+      signedIn: Boolean(firebaseUser),
+      anonymous: firebaseUser ? Boolean(firebaseUser.isAnonymous) : null,
+    },
+    game: {
+      roundsPlayed: rounds.length,
+      scores: {
+        us: Number(latestTotals.us) || 0,
+        dem: Number(latestTotals.dem) || 0,
+      },
+      gameOver: Boolean(state?.gameOver),
+      winner: state?.winner === "us" || state?.winner === "dem" ? state.winner : null,
+      victoryMethod: typeof state?.victoryMethod === "string"
+        ? state.victoryMethod.slice(0, 80)
+        : null,
+    },
+  };
+}
+
+function createBugReportId() {
+  if (typeof window.crypto?.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  const randomPart = Math.random().toString(36).slice(2, 12);
+  return `${Date.now().toString(36)}-${randomPart}`;
+}
+
+function setBugReportStatus(message, tone = "error") {
+  const statusElement = document.getElementById("bugReportStatus");
+  if (!statusElement) return;
+  const toneClasses = tone === "info"
+    ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+    : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+  statusElement.className = `rounded-xl px-3 py-2.5 text-sm ${toneClasses}`;
+  statusElement.textContent = message;
+}
+
+function resetBugReportForm() {
+  const form = document.getElementById("bugReportForm");
+  form?.reset();
+  form?.classList.remove("hidden");
+  document.getElementById("bugReportSuccess")?.classList.add("hidden");
+  document.getElementById("bugReportStatus")?.classList.add("hidden");
+  const diagnosticsCheckbox = document.getElementById("bugReportIncludeDiagnostics");
+  if (diagnosticsCheckbox) diagnosticsCheckbox.checked = true;
+  const submitButton = document.getElementById("bugReportSubmitButton");
+  if (submitButton) {
+    submitButton.disabled = false;
+    const label = submitButton.querySelector("span");
+    if (label) label.textContent = "Send Report";
+  }
+}
+
+function openBugReportModal() {
+  closeModal("aboutModal");
+  resetBugReportForm();
+  openModal("bugReportModal");
+}
+
+function closeBugReportModal() {
+  activeBugReportAbortController?.abort();
+  activeBugReportAbortController = null;
+  closeModal("bugReportModal");
+}
+
 function handleBugReportClick() {
-    const recipient = "heinonenmh@gmail.com";
-    const subject = "Rook Score App - Bug Report";
-    const deviceDetails = getDeviceDetails();
-    let appStateString = "Could not retrieve app state.";
-    try {
-      appStateString = [
-        `Teams: ${state.usTeamName || "Us"} vs ${state.demTeamName || "Dem"}`,
-        `Scores: Us ${state.rounds?.[state.rounds.length-1]?.runningTotals?.us ?? 0} - Dem ${state.rounds?.[state.rounds.length-1]?.runningTotals?.dem ?? 0}`,
-        `Rounds played: ${state.rounds?.length ?? 0}`,
-        `Game Over: ${state.gameOver ? "Yes" : "No"}`,
-        `Winner: ${state.winner || "N/A"}`,
-        `Victory Method: ${state.victoryMethod || "N/A"}`
-      ].join('\n');
-    } catch (e) {
-      appStateString = `Error summarizing state: ${e.message}`;
+  openBugReportModal();
+}
+
+function validateBugReportForm(form) {
+  const summaryInput = form.elements.namedItem("summary");
+  const descriptionInput = form.elements.namedItem("description");
+  const contactEmailInput = form.elements.namedItem("contactEmail");
+  const summary = String(summaryInput?.value || "").trim();
+  const description = String(descriptionInput?.value || "").trim();
+  const contactEmail = String(contactEmailInput?.value || "").trim();
+
+  summaryInput?.setCustomValidity(summary ? "" : "Please add a short summary.");
+  descriptionInput?.setCustomValidity(
+    description.length >= 10 ? "" : "Please add at least 10 characters describing what happened.",
+  );
+  contactEmailInput?.setCustomValidity(
+    !contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)
+      ? ""
+      : "Enter a valid email address or leave this blank.",
+  );
+
+  return typeof form.reportValidity !== "function" || form.reportValidity();
+}
+
+async function handleBugReportSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget || document.getElementById("bugReportForm");
+  if (!form || !validateBugReportForm(form)) return false;
+
+  const submitButton = document.getElementById("bugReportSubmitButton");
+  const submitLabel = submitButton?.querySelector("span");
+  if (submitButton?.disabled) return false;
+  if (navigator.onLine === false) {
+    setBugReportStatus("You appear to be offline. Your report is still here—reconnect and try again.");
+    return false;
+  }
+
+  const formData = new FormData(form);
+  const payload = {
+    reportId: createBugReportId(),
+    category: String(formData.get("category") || ""),
+    summary: String(formData.get("summary") || "").trim(),
+    description: String(formData.get("description") || "").trim(),
+    steps: String(formData.get("steps") || "").trim(),
+    contactEmail: String(formData.get("contactEmail") || "").trim(),
+    website: String(formData.get("website") || ""),
+    diagnostics: formData.get("includeDiagnostics") ? getBugReportDiagnostics() : null,
+  };
+
+  if (submitButton) submitButton.disabled = true;
+  if (submitLabel) submitLabel.textContent = "Sending…";
+  setBugReportStatus("Sending your report securely…", "info");
+
+  const abortController = new AbortController();
+  activeBugReportAbortController = abortController;
+  const timeoutId = setTimeout(() => abortController.abort(), BUG_REPORT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(getBugReportUrl(), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: abortController.signal,
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = response.status === 429
+        ? "Too many reports were sent recently. Please wait a few minutes and try again."
+        : result.error || "Your report could not be sent right now. Please try again.";
+      throw Object.assign(new Error(message), { isExpected: true });
     }
-    const body = `Please describe the bug:\n[ ** Enter Description Here ** ]\n\n--- Device & App Info ---\n${deviceDetails}\n\n--- App State ---\n${appStateString}\n\n(Review before sending)`;
-    const mailtoLink = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    if (mailtoLink.length > 2000) {
-        alert("Bug report details are very long. Please copy the following details manually into your email client if the body is incomplete.");
-        console.log("--- COPY BUG REPORT DETAILS BELOW ---");
-        console.log(body); // Log to console as fallback
+
+    form.classList.add("hidden");
+    document.getElementById("bugReportSuccess")?.classList.remove("hidden");
+    return true;
+  } catch (error) {
+    if (activeBugReportAbortController !== abortController) return false;
+    const message = error.isExpected
+      ? error.message
+      : error.name === "AbortError"
+        ? "Sending took too long. Your report is still here—please try again."
+        : "Your report could not be sent right now. Your details are still here so you can try again.";
+    setBugReportStatus(message);
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+    if (activeBugReportAbortController === abortController) {
+      activeBugReportAbortController = null;
     }
-    window.location.href = mailtoLink;
+    if (submitButton) submitButton.disabled = false;
+    if (submitLabel) submitLabel.textContent = "Send Report";
+  }
 }
