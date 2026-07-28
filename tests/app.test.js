@@ -3534,7 +3534,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.39";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.40";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3604,13 +3604,17 @@ test('submitting a blank points field opens the 180 or 360 decision flow', () =>
   assert.match(htmlSource, /Did the Bidding team score <strong>180 or 360<\/strong>/);
 });
 
-test('about modal links to Fridge Tracker with its self-contained app icon', () => {
+test('about modal links to other developer apps with self-contained app icons', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
   assert.match(htmlSource, /id="moreByDeveloperTitle"[^>]*>[\s\S]*More by this Developer/);
   assert.match(htmlSource, /href="https:\/\/fridgetracker\.app\/"/);
   assert.match(htmlSource, /<svg data-app-icon="fridge-tracker"/);
   assert.doesNotMatch(htmlSource, /src="icons\/fridge-tracker\.svg"/);
+  assert.match(htmlSource, /href="https:\/\/14-high\.vercel\.app\/"/);
+  assert.match(htmlSource, /<svg data-app-icon="14-high"/);
+  assert.match(htmlSource, /id="fourteenHighCardBg"/);
+  assert.doesNotMatch(htmlSource, /src="[^"]*14-high[^"]*"/);
   assert.match(htmlSource, /target="_blank" rel="noopener noreferrer"/);
 });
 
