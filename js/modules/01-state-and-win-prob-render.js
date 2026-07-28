@@ -58,7 +58,7 @@ function getLastRunningTotals() {
   return getBaseTotals();
 }
 
-let presetBids;
+function getStoredPresetBids() {
   try {
     const raw = localStorage.getItem(PRESET_BIDS_KEY);
     const parsed = JSON.parse(raw);
@@ -68,12 +68,20 @@ let presetBids;
         .filter(value => value > 0 && value % 5 === 0)
         .filter(value => (value <= 180 || value === 360) && value <= 360);
       const uniqueSorted = Array.from(new Set(numericPresets)).sort((a, b) => a - b);
-      presetBids = uniqueSorted.length ? [...uniqueSorted, "other"] : null;
-    } else {
-      presetBids = null;
+      if (uniqueSorted.length) return [...uniqueSorted, "other"];
     }
-   } catch (_) { presetBids = null; }
-  if (!presetBids) presetBids = [120,125,130,135,140,145,"other"];
+  } catch (_) {
+    // Fall through to the defaults when the saved value is missing or invalid.
+  }
+  return [120,125,130,135,140,145,"other"];
+}
+
+function refreshPresetBidsFromStorage() {
+  presetBids = getStoredPresetBids();
+  return presetBids;
+}
+
+let presetBids = getStoredPresetBids();
 
 let scoreCardAnimationIdentity = "";
 let historyCardAnimationRoundCount = 0;

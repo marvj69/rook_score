@@ -19,6 +19,9 @@ const VOICE_EXPERIMENTAL_ONBOARDING_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}voiceExpe
 const THEME_KEY = "rookSelectedTheme";
 const PRESET_BIDS_KEY = 'customPresetBids';
 const MISDEAL_HANDLING_KEY = "misdealHandlingEnabled";
+const GAME_DATA_EXPORT_FORMAT = "rook-score-game-data";
+const GAME_DATA_EXPORT_VERSION = 1;
+const MAX_GAME_DATA_IMPORT_BYTES = 15 * 1024 * 1024;
 const PROB_CACHE = new Map();   // memoise across calls
 const LOCAL_STORAGE_CACHE = new Map();
 const WIN_PROB_CACHE = { key: null, value: null };
@@ -339,7 +342,7 @@ function getLastRunningTotals() {
   return getBaseTotals();
 }
 
-let presetBids;
+function getStoredPresetBids() {
   try {
     const raw = localStorage.getItem(PRESET_BIDS_KEY);
     const parsed = JSON.parse(raw);
@@ -349,12 +352,20 @@ let presetBids;
         .filter(value => value > 0 && value % 5 === 0)
         .filter(value => (value <= 180 || value === 360) && value <= 360);
       const uniqueSorted = Array.from(new Set(numericPresets)).sort((a, b) => a - b);
-      presetBids = uniqueSorted.length ? [...uniqueSorted, "other"] : null;
-    } else {
-      presetBids = null;
+      if (uniqueSorted.length) return [...uniqueSorted, "other"];
     }
-   } catch (_) { presetBids = null; }
-  if (!presetBids) presetBids = [120,125,130,135,140,145,"other"];
+  } catch (_) {
+    // Fall through to the defaults when the saved value is missing or invalid.
+  }
+  return [120,125,130,135,140,145,"other"];
+}
+
+function refreshPresetBidsFromStorage() {
+  presetBids = getStoredPresetBids();
+  return presetBids;
+}
+
+let presetBids = getStoredPresetBids();
 
 let scoreCardAnimationIdentity = "";
 let historyCardAnimationRoundCount = 0;
@@ -1317,6 +1328,270 @@ function getLocalStorage(key, defaultValue = null) {
     if (defaultValue !== null) return defaultValue;
     if (key === "savedGames" || key === "freezerGames") return [];
     return {};
+  }
+}
+
+function isFirebaseInternalStorageKey(key) {
+  return typeof key === "string" && key.toLowerCase().startsWith("firebase");
+}
+
+function getAppStorageEntries(storage = localStorage) {
+  const entries = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (typeof key !== "string" || isFirebaseInternalStorageKey(key)) continue;
+    const value = storage.getItem(key);
+    if (value !== null) entries.push({ key, value });
+  }
+  return entries.sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function buildGameDataExport(storage = localStorage, exportedAt = new Date(), activeGameSnapshot = null) {
+  const timestamp = exportedAt instanceof Date ? exportedAt : new Date(exportedAt);
+  const storageEntries = getAppStorageEntries(storage);
+  if (activeGameSnapshot && typeof activeGameSnapshot === "object") {
+    const activeGameEntry = {
+      key: ACTIVE_GAME_KEY,
+      value: JSON.stringify(activeGameSnapshot),
+    };
+    const existingIndex = storageEntries.findIndex(({ key }) => key === ACTIVE_GAME_KEY);
+    if (existingIndex >= 0) storageEntries[existingIndex] = activeGameEntry;
+    else storageEntries.push(activeGameEntry);
+    storageEntries.sort((left, right) => left.key.localeCompare(right.key));
+  }
+  return {
+    format: GAME_DATA_EXPORT_FORMAT,
+    version: GAME_DATA_EXPORT_VERSION,
+    appVersion: APP_VERSION,
+    exportedAt: timestamp.toISOString(),
+    storage: storageEntries,
+  };
+}
+
+function getCurrentGameExportSnapshot(gameState = state, now = Date.now()) {
+  if (!gameState || typeof gameState !== "object") return null;
+  const timerRunning = isStartTimestampActive(gameState.startTime) && !gameState.gameOver;
+  const accumulatedTime = timerRunning
+    ? calculateSafeTimeAccumulation(gameState.accumulatedTime, gameState.startTime, now)
+    : clampDurationMs(gameState.accumulatedTime);
+  return {
+    ...gameState,
+    isSubmittingRound: false,
+    accumulatedTime,
+    startTime: timerRunning ? now : null,
+    timerLastSavedAt: now,
+    startingTotals: sanitizeTotals(gameState.startingTotals),
+  };
+}
+
+function normalizeImportedStorageEntries(entries) {
+  if (!Array.isArray(entries)) {
+    throw new Error("This file does not contain Rook Score game data.");
+  }
+  if (entries.length > 1000) {
+    throw new Error("This game data file contains too many storage entries.");
+  }
+
+  const seenKeys = new Set();
+  let totalCharacters = 0;
+  return entries.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("This game data file contains an invalid storage entry.");
+    }
+    const { key, value } = entry;
+    if (typeof key !== "string" || !key || key.length > 256) {
+      throw new Error("This game data file contains an invalid storage key.");
+    }
+    if (isFirebaseInternalStorageKey(key)) {
+      throw new Error("This game data file contains protected sign-in data.");
+    }
+    if (seenKeys.has(key)) {
+      throw new Error(`This game data file contains the key "${key}" more than once.`);
+    }
+    if (typeof value !== "string") {
+      throw new Error(`The saved value for "${key}" is invalid.`);
+    }
+    seenKeys.add(key);
+    totalCharacters += key.length + value.length;
+    if (totalCharacters > MAX_GAME_DATA_IMPORT_BYTES) {
+      throw new Error("This game data file is too large.");
+    }
+    return { key, value };
+  });
+}
+
+function parseGameDataImport(text) {
+  if (typeof text !== "string" || !text.trim()) {
+    throw new Error("The selected file is empty.");
+  }
+  if (text.length > MAX_GAME_DATA_IMPORT_BYTES) {
+    throw new Error("The selected file is too large.");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("The selected file is not valid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
+      || parsed.format !== GAME_DATA_EXPORT_FORMAT) {
+    throw new Error("The selected file is not a Rook Score game data export.");
+  }
+  if (parsed.version !== GAME_DATA_EXPORT_VERSION) {
+    throw new Error(`This Rook Score game data version is not supported (version ${String(parsed.version)}).`);
+  }
+
+  return {
+    format: parsed.format,
+    version: parsed.version,
+    appVersion: typeof parsed.appVersion === "string" ? parsed.appVersion : "",
+    exportedAt: typeof parsed.exportedAt === "string" ? parsed.exportedAt : "",
+    storage: normalizeImportedStorageEntries(parsed.storage),
+  };
+}
+
+function replaceAppStorage(entries, storage = localStorage) {
+  const nextEntries = normalizeImportedStorageEntries(entries);
+  const previousEntries = getAppStorageEntries(storage);
+
+  const removeAppEntries = () => {
+    getAppStorageEntries(storage).forEach(({ key }) => storage.removeItem(key));
+  };
+
+  try {
+    removeAppEntries();
+    nextEntries.forEach(({ key, value }) => storage.setItem(key, value));
+  } catch (error) {
+    try {
+      removeAppEntries();
+      previousEntries.forEach(({ key, value }) => storage.setItem(key, value));
+    } catch (rollbackError) {
+      console.error("Could not restore the previous local game data after import failed.", rollbackError);
+    }
+    throw new Error(`Rook Score could not store the imported game data: ${error?.message || "storage failed"}`);
+  }
+
+  if (storage === localStorage) LOCAL_STORAGE_CACHE.clear();
+  return { previousEntries, importedEntries: nextEntries };
+}
+
+function deserializeGameDataStorageValue(raw) {
+  if (!shouldAttemptJsonParse(raw)) return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+async function synchronizeImportedGameData(previousEntries, importedEntries) {
+  if (typeof window === "undefined" || !window.firebaseReady
+      || typeof window.syncToFirestore !== "function") {
+    return false;
+  }
+
+  const previousKeys = previousEntries.map(({ key }) => key);
+  const importedValues = new Map(importedEntries.map(({ key, value }) => [key, value]));
+  const keysToSync = [...new Set([...previousKeys, ...importedValues.keys()])]
+    .filter(key => !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX) && !isFirebaseInternalStorageKey(key));
+  const results = await Promise.allSettled(keysToSync.map((key) => {
+    const value = importedValues.has(key)
+      ? deserializeGameDataStorageValue(importedValues.get(key))
+      : null;
+    return window.syncToFirestore(key, value);
+  }));
+  return results.every(result => result.status === "fulfilled" && result.value !== false);
+}
+
+function rehydrateImportedGameData() {
+  refreshPresetBidsFromStorage();
+  performTeamPlayerMigration();
+  initializeTheme();
+  initializeCustomThemeColors();
+  loadCurrentGameState();
+
+  const mustWinToggle = document.getElementById("mustWinByBidToggle");
+  if (mustWinToggle) mustWinToggle.checked = Boolean(getLocalStorage(MUST_WIN_BY_BID_KEY, false));
+  const proModeEnabled = Boolean(getLocalStorage(PRO_MODE_KEY, false));
+  updateProModeUI(proModeEnabled);
+  loadSettings();
+  resetRenderAnimationState();
+  scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
+  renderApp();
+}
+
+function setGameDataTransferStatus(message, isError = false) {
+  const status = document.getElementById("gameDataTransferStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("hidden", !message);
+  status.classList.toggle("text-red-600", isError);
+  status.classList.toggle("dark:text-red-400", isError);
+  status.classList.toggle("text-green-700", !isError && Boolean(message));
+  status.classList.toggle("dark:text-green-300", !isError && Boolean(message));
+}
+
+function exportGameData() {
+  try {
+    saveSettings();
+    const payload = buildGameDataExport(localStorage, new Date(), getCurrentGameExportSnapshot());
+    const contents = `${JSON.stringify(payload, null, 2)}\n`;
+    const blob = new Blob([contents], { type: "application/json" });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `rook-score-game-data-${payload.exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    setGameDataTransferStatus(`Exported ${payload.storage.length} saved data items.`);
+    showSaveIndicator("Game data exported");
+    return payload;
+  } catch (error) {
+    console.error("Game data export failed.", error);
+    setGameDataTransferStatus(error?.message || "Game data export failed.", true);
+    showSaveIndicator("Export failed");
+    return null;
+  }
+}
+
+function readGameDataFile(file) {
+  if (file && typeof file.text === "function") return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")), { once: true });
+    reader.addEventListener("error", () => reject(reader.error || new Error("The selected file could not be read.")), { once: true });
+    reader.readAsText(file);
+  });
+}
+
+async function importGameData(input) {
+  const file = input?.files?.[0];
+  if (!file) return false;
+
+  setGameDataTransferStatus("Importing game data...");
+  try {
+    if (Number(file.size) > MAX_GAME_DATA_IMPORT_BYTES) {
+      throw new Error("The selected file is too large.");
+    }
+    const imported = parseGameDataImport(await readGameDataFile(file));
+    const { previousEntries } = replaceAppStorage(imported.storage);
+    rehydrateImportedGameData();
+    const restoredEntries = getAppStorageEntries();
+    setGameDataTransferStatus(`Imported ${restoredEntries.length} saved data items.`);
+    showSaveIndicator("Game data imported");
+    synchronizeImportedGameData(previousEntries, restoredEntries)
+      .catch(error => console.warn("Imported data could not be mirrored to Firebase.", error));
+    return true;
+  } catch (error) {
+    console.error("Game data import failed.", error);
+    setGameDataTransferStatus(error?.message || "Game data import failed.", true);
+    showSaveIndicator("Import failed");
+    return false;
+  } finally {
+    input.value = "";
   }
 }
 
@@ -9245,6 +9520,8 @@ if (typeof window !== 'undefined') {
   Object.assign(window, {
     DEFAULT_STATE,
     getLocalStorage,
+    exportGameData,
+    importGameData,
     loadCurrentGameState,
     renderApp,
     initializeTheme,
@@ -9271,6 +9548,10 @@ if (typeof module !== 'undefined' && module.exports) {
     setLocalStorage,
     getLocalStorage,
     shouldAttemptJsonParse,
+    getAppStorageEntries,
+    buildGameDataExport,
+    parseGameDataImport,
+    replaceAppStorage,
     ensurePlayersArray,
     canonicalizePlayers,
     formatTeamDisplay,

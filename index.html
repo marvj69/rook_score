@@ -563,6 +563,16 @@
                     </div>
                 </div>
             </section>
+            <section class="bg-gray-50 dark:bg-gray-700 rounded-xl p-5 mb-6">
+                <h3 class="text-xl font-semibold mb-2 text-gray-700 dark:text-white">Game Data</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-300 mb-4">Save a complete copy of this app's games, active game, teams, statistics data, settings, and preferences. Importing replaces this device's current app data.</p>
+                <div class="space-y-3">
+                    <button type="button" onclick="exportGameData()" class="w-full bg-blue-600 text-white px-5 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 threed font-medium">Export Game Data</button>
+                    <button type="button" onclick="document.getElementById('gameDataImportInput').click()" class="w-full bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-white px-5 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-400 threed font-medium">Import Game Data</button>
+                    <input id="gameDataImportInput" type="file" accept=".json,application/json" class="hidden" onchange="importGameData(this)" />
+                    <p id="gameDataTransferStatus" class="hidden text-sm" role="status" aria-live="polite"></p>
+                </div>
+            </section>
             <footer class="flex justify-end space-x-2">
                 <button type="button" onclick="closeSettingsModal()" class="bg-blue-600 text-white px-5 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 threed font-medium">Close</button>
             </footer>

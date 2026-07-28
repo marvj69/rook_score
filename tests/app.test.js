@@ -196,6 +196,10 @@ const {
   setLocalStorage,
   getLocalStorage,
   shouldAttemptJsonParse,
+  getAppStorageEntries,
+  buildGameDataExport,
+  parseGameDataImport,
+  replaceAppStorage,
   ensurePlayersArray,
   canonicalizePlayers,
   formatTeamDisplay,
@@ -457,6 +461,93 @@ test('shouldAttemptJsonParse only opts into likely JSON-compatible strings', () 
   assert.equal(shouldAttemptJsonParse('-12.5e2'), true);
   assert.equal(shouldAttemptJsonParse('Alice & Bob'), false);
   assert.equal(shouldAttemptJsonParse(''), false);
+});
+
+test('game data export captures every app-owned local value without authentication internals', () => {
+  resetState();
+  localStorage.setItem('activeGameState', '{"rounds":[{"bidAmount":125}]}');
+  localStorage.setItem('savedGames', '[{"id":"game-1"}]');
+  localStorage.setItem('localOnly:voiceExperimentalOnboardingCompleted', 'true');
+  localStorage.setItem('firebase:authUser:test', 'private-auth-token');
+
+  const exported = buildGameDataExport(localStorage, new Date('2026-07-28T12:00:00.000Z'));
+
+  assert.equal(exported.format, 'rook-score-game-data');
+  assert.equal(exported.version, 1);
+  assert.equal(exported.exportedAt, '2026-07-28T12:00:00.000Z');
+  assert.deepEqual(exported.storage, [
+    { key: 'activeGameState', value: '{"rounds":[{"bidAmount":125}]}' },
+    { key: 'localOnly:voiceExperimentalOnboardingCompleted', value: 'true' },
+    { key: 'savedGames', value: '[{"id":"game-1"}]' },
+  ]);
+});
+
+test('game data export can include the current in-memory game even when it is not locally persisted', () => {
+  resetState();
+  const liveGame = {
+    rounds: [{ bidAmount: 135 }],
+    gameOver: true,
+    winner: 'us',
+  };
+
+  const exported = buildGameDataExport(
+    localStorage,
+    new Date('2026-07-28T12:00:00.000Z'),
+    liveGame,
+  );
+
+  assert.deepEqual(exported.storage, [
+    { key: 'activeGameState', value: JSON.stringify(liveGame) },
+  ]);
+});
+
+test('game data import validates the backup format and restores app storage exactly', () => {
+  resetState();
+  localStorage.setItem('savedGames', '[{"id":"old-game"}]');
+  localStorage.setItem('obsoleteSetting', 'true');
+  localStorage.setItem('firebase:authUser:test', 'keep-auth-token');
+
+  const imported = parseGameDataImport(JSON.stringify({
+    format: 'rook-score-game-data',
+    version: 1,
+    appVersion: '2.1',
+    exportedAt: '2026-07-28T12:00:00.000Z',
+    storage: [
+      { key: 'savedGames', value: '[{"id":"restored-game"}]' },
+      { key: 'rookMustWinByBid', value: 'true' },
+    ],
+  }));
+  replaceAppStorage(imported.storage);
+
+  assert.deepEqual(getAppStorageEntries(), [
+    { key: 'rookMustWinByBid', value: 'true' },
+    { key: 'savedGames', value: '[{"id":"restored-game"}]' },
+  ]);
+  assert.equal(localStorage.getItem('obsoleteSetting'), null);
+  assert.equal(localStorage.getItem('firebase:authUser:test'), 'keep-auth-token');
+});
+
+test('game data import rejects malformed, duplicate, and protected storage entries', () => {
+  assert.throws(
+    () => parseGameDataImport('{"format":"other","version":1,"storage":[]}'),
+    /not a Rook Score game data export/,
+  );
+  assert.throws(
+    () => parseGameDataImport(JSON.stringify({
+      format: 'rook-score-game-data',
+      version: 1,
+      storage: [{ key: 'savedGames', value: '[]' }, { key: 'savedGames', value: '[]' }],
+    })),
+    /more than once/,
+  );
+  assert.throws(
+    () => parseGameDataImport(JSON.stringify({
+      format: 'rook-score-game-data',
+      version: 1,
+      storage: [{ key: 'firebase:authUser:test', value: 'token' }],
+    })),
+    /protected sign-in data/,
+  );
 });
 
 test('installed iOS safe-area fallback is limited to standalone zero-inset launches', () => {
@@ -3443,7 +3534,7 @@ test('service worker update flow activates without a user prompt', () => {
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.38";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.39";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -3576,6 +3667,17 @@ test('settings toggles use shared polished switch styling', () => {
   assert.match(css, /width:\s*3rem;/);
   assert.match(css, /height:\s*1\.625rem;/);
   assert.match(css, /transform:\s*translateY\(-50%\)\s+translateX\(1\.375rem\)/);
+});
+
+test('settings exposes export and import game data controls in that order', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const exportIndex = htmlSource.indexOf('>Export Game Data</button>');
+  const importIndex = htmlSource.indexOf('>Import Game Data</button>');
+
+  assert.ok(exportIndex >= 0);
+  assert.ok(importIndex > exportIndex);
+  assert.match(htmlSource, /id="gameDataImportInput"[^>]*accept="\.json,application\/json"[^>]*onchange="importGameData\(this\)"/);
+  assert.match(htmlSource, /id="gameDataTransferStatus"[^>]*role="status"[^>]*aria-live="polite"/);
 });
 
 test('voice improvement Firestore rules are create-only and reject unexpected payload fields', () => {
