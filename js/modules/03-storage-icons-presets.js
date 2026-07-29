@@ -1,7 +1,7 @@
 "use strict";
 
 // --- Local Storage & Sync ---
-function setLocalStorage(key, value) {
+function setLocalStorage(key, value, { sync = true } = {}) {
   try {
     const serialized = JSON.stringify(value);
     localStorage.setItem(key, serialized);
@@ -10,7 +10,7 @@ function setLocalStorage(key, value) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames(value);
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+    if (sync && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
       setTimeout(() => {
@@ -115,16 +115,10 @@ function buildGameDataExport(storage = localStorage, exportedAt = new Date(), ac
 
 function getCurrentGameExportSnapshot(gameState = state, now = Date.now()) {
   if (!gameState || typeof gameState !== "object") return null;
-  const timerRunning = isStartTimestampActive(gameState.startTime) && !gameState.gameOver;
-  const accumulatedTime = timerRunning
-    ? calculateSafeTimeAccumulation(gameState.accumulatedTime, gameState.startTime, now)
-    : clampDurationMs(gameState.accumulatedTime);
+  const checkpoint = buildCurrentGameTimerCheckpoint(gameState, now);
   return {
-    ...gameState,
+    ...checkpoint,
     isSubmittingRound: false,
-    accumulatedTime,
-    startTime: timerRunning ? now : null,
-    timerLastSavedAt: now,
     startingTotals: sanitizeTotals(gameState.startingTotals),
   };
 }

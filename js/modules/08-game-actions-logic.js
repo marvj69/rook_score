@@ -97,6 +97,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   // Get current state values
   const { biddingTeam, bidAmount, rounds, usTeamName, demTeamName } = state;
   if (!biddingTeam || !bidAmount) return;
+  if (!rounds.length) ensureCurrentGameTimerStarted();
   const numericBid = Number(bidAmount);
   const lastTotals = getLastRunningTotals();
 
@@ -190,10 +191,12 @@ victoryMethod  = "Set Other Team";
 function handleTeamClick(team) {
   if (state.gameOver) return;
   closeScoreKeypad(true);
+  let timerJustStarted = false;
   if (state.biddingTeam === team) { // Click active team to deselect
     state.savedScoreInputStates[team] = { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error };
     updateState({ biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: ""});
   } else { // Select a new team
+    timerJustStarted = ensureCurrentGameTimerStarted();
     state.savedScoreInputStates[team === "us" ? "dem" : "us"] = null; // Clear other team's saved input
     let newTeamState = { biddingTeam: team, bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "" };
     if (state.savedScoreInputStates[team]) { // Restore if previously selected
@@ -202,6 +205,7 @@ function handleTeamClick(team) {
     updateState(newTeamState);
   }
   ephemeralCustomBid = ""; ephemeralPoints = ""; // Clear ephemeral inputs on team switch
+  if (timerJustStarted) saveCurrentGameState({ showIndicator: false });
 }
 function handleBidSelect(bid) {
   closeScoreKeypad(true);
@@ -396,7 +400,7 @@ function commitRoundScore({ biddingTeam, bidAmount, pointsVal, enterBidderPoints
   const numericBid = Number(bidAmount);
   const numericPoints = Number(pointsVal);
   const isFirstRound = rounds.length === 0;
-  if (isFirstRound && state.startTime === null) updateState({ startTime: Date.now() });
+  if (isFirstRound) ensureCurrentGameTimerStarted();
 
   const lastTotals = getLastRunningTotals();
   const roundOutcome = calculateRoundPointsOutcome({
@@ -573,8 +577,14 @@ function handleUndo() {
   const nextState = { rounds: newRounds, undoneRounds: newUndoneRounds, gameOver: false, winner: null, victoryMethod: null, lastBidAmount: newLastBid, lastBidTeam: newLastBidTeam };
   if (!newRounds.length) {
       nextState.startTime = null;
+      nextState.timerStarted = false;
       nextState.accumulatedTime = 0;
       nextState.timerLastSavedAt = null;
+  } else if (wasGameOver) {
+      const resumedAt = Date.now();
+      nextState.timerStarted = true;
+      nextState.startTime = resumedAt;
+      nextState.timerLastSavedAt = resumedAt;
   }
   if (wasGameOver && priorWinner) {
     const teams = getTeamsObject();
@@ -612,13 +622,26 @@ function handleRedo() {
       gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team";
   }
 
-  updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam });
+  const timerUpdates = {};
+  if (gameOver) {
+      timerUpdates.timerStarted = true;
+      timerUpdates.accumulatedTime = getCurrentGameTime(state);
+      timerUpdates.startTime = null;
+      timerUpdates.timerLastSavedAt = Date.now();
+  } else if (newRounds.length && !hasStartedCurrentGameTimer(state)) {
+      const resumedAt = Date.now();
+      timerUpdates.timerStarted = true;
+      timerUpdates.startTime = resumedAt;
+      timerUpdates.timerLastSavedAt = resumedAt;
+  }
+  updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam, ...timerUpdates });
   if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
   saveCurrentGameState();
 }
 function handleMisdeal() {
   const currentDealer = getCurrentDealer(state);
   if (!currentDealer) return false;
+  ensureCurrentGameTimerStarted();
 
   // Attribute the misdeal before advancing to the next dealer.
   const parsedMisdealCount = Number(state.misdealCount);
@@ -834,7 +857,7 @@ function handleGameOverFixClick(e) {
 async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
   if (!state.rounds.length) return null;
 
-  const finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  const finalAccumulated = getCurrentGameTime(state);
 
   const lastRoundTotals = getCurrentTotals();
   const usTeam = getTeamSnapshotForSide(state, "us");
@@ -934,7 +957,7 @@ function confirmFreeze() {
   );
 }
 async function freezeCurrentGame() {
-  let finalAccumulated = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+  const finalAccumulated = getCurrentGameTime(state);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
   const usTeam = getTeamSnapshotForSide(state, "us");
@@ -1005,6 +1028,7 @@ function loadFreezerGame(index) {
       const chosenDemPlayers = ensurePlayersArray(chosen.demPlayers || parseLegacyTeamName(chosen.demName));
       const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
       const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
+      const resumedAt = Date.now();
       // Restore all relevant game state aspects
       updateState({
           rounds: chosen.rounds || [],
@@ -1024,7 +1048,9 @@ function loadFreezerGame(index) {
           usTeamName: chosenUsName,
           demTeamName: chosenDemName,
           accumulatedTime: clampDurationMs(chosen.accumulatedTime), // Cap accumulated time
-          startTime: Date.now(), // Restart timer
+          timerStarted: true,
+          startTime: resumedAt, // Restart timer
+          timerLastSavedAt: resumedAt,
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],

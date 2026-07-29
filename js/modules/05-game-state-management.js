@@ -1,6 +1,161 @@
 "use strict";
 
 // --- Game State Management ---
+const MAX_LEGACY_TIMER_RECOVERY_MS = 2 * 60 * 60 * 1000;
+const CURRENT_GAME_TIMER_TICK_MS = 1000;
+const CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 * 1000;
+let currentGameTimerIntervalId = null;
+let currentGameTimerLifecycleInitialized = false;
+let currentGameTimerLastCheckpointAt = 0;
+
+function clampDurationMs(value, cap = Number.MAX_SAFE_INTEGER) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return 0;
+  return Math.min(num, cap);
+}
+
+function isStartTimestampActive(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0;
+}
+
+function calculateSafeTimeAccumulation(currentAccumulated, startTime, nowTs = Date.now()) {
+  const base = clampDurationMs(currentAccumulated);
+  const startMs = Number(startTime);
+  const nowMs = Number(nowTs);
+  if (!Number.isFinite(startMs) || startMs <= 0 || !Number.isFinite(nowMs)) return base;
+
+  const elapsedMs = nowMs - startMs;
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return base;
+  return clampDurationMs(base + elapsedMs);
+}
+
+function hasStartedCurrentGameTimer(gameState = state) {
+  const hasRounds = Array.isArray(gameState?.rounds) && gameState.rounds.length > 0;
+  return Boolean(gameState?.timerStarted) || hasRounds || isStartTimestampActive(gameState?.startTime);
+}
+
+function shouldRunCurrentGameTimer(gameState = state) {
+  return hasStartedCurrentGameTimer(gameState) && !gameState?.gameOver;
+}
+
+function getCurrentGameTime(gameState = state, nowTs = Date.now()) {
+  const base = clampDurationMs(gameState?.accumulatedTime);
+  if (!shouldRunCurrentGameTimer(gameState) || !isStartTimestampActive(gameState?.startTime)) {
+    return base;
+  }
+  return calculateSafeTimeAccumulation(base, gameState.startTime, nowTs);
+}
+
+function buildCurrentGameTimerCheckpoint(gameState = state, nowTs = Date.now(), { pause = false } = {}) {
+  const parsedNow = Number(nowTs);
+  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
+  const timerStarted = hasStartedCurrentGameTimer(gameState);
+  const accumulatedTime = getCurrentGameTime(gameState, now);
+  const keepRunning = timerStarted && !gameState?.gameOver && !pause;
+
+  return {
+    ...gameState,
+    timerStarted,
+    accumulatedTime,
+    startTime: keepRunning ? now : null,
+    timerLastSavedAt: now,
+  };
+}
+
+function normalizeLoadedGameTimerState(gameState, nowTs = Date.now()) {
+  const parsedNow = Number(nowTs);
+  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
+  const hasRounds = Array.isArray(gameState?.rounds) && gameState.rounds.length > 0;
+  const timerStarted = Boolean(gameState?.timerStarted)
+    || hasRounds
+    || isStartTimestampActive(gameState?.startTime);
+  let accumulatedTime = clampDurationMs(gameState?.accumulatedTime);
+
+  if (isStartTimestampActive(gameState?.startTime)
+      && typeof gameState?.timerLastSavedAt !== "number") {
+    const legacyElapsed = Math.max(0, now - Number(gameState.startTime));
+    accumulatedTime = clampDurationMs(
+      accumulatedTime + Math.min(legacyElapsed, MAX_LEGACY_TIMER_RECOVERY_MS),
+    );
+  }
+
+  return {
+    ...gameState,
+    timerStarted,
+    accumulatedTime,
+    startTime: timerStarted && !gameState?.gameOver ? now : null,
+    timerLastSavedAt: now,
+  };
+}
+
+function ensureCurrentGameTimerStarted(nowTs = Date.now()) {
+  if (state.gameOver) return false;
+  const parsedNow = Number(nowTs);
+  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
+  if (state.timerStarted && isStartTimestampActive(state.startTime)) return false;
+
+  state.timerStarted = true;
+  state.startTime = now;
+  state.timerLastSavedAt = now;
+  currentGameTimerLastCheckpointAt = now;
+  updateCurrentGameTimerDisplay(now);
+  return true;
+}
+
+function updateCurrentGameTimerDisplay(nowTs = Date.now()) {
+  const timerValue = document.getElementById("currentGameTimerValue");
+  if (!timerValue) return;
+  timerValue.textContent = formatLiveGameDuration(getCurrentGameTime(state, nowTs));
+}
+
+function pauseCurrentGameTimer(nowTs = Date.now()) {
+  if (!shouldRunCurrentGameTimer(state) || !isStartTimestampActive(state.startTime)) return false;
+  saveCurrentGameState({
+    sync: false,
+    showIndicator: false,
+    pauseTimer: true,
+    now: nowTs,
+  });
+  updateCurrentGameTimerDisplay(nowTs);
+  return true;
+}
+
+function resumeCurrentGameTimer(nowTs = Date.now()) {
+  if (!shouldRunCurrentGameTimer(state) || isStartTimestampActive(state.startTime)) return false;
+  const parsedNow = Number(nowTs);
+  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
+  state.startTime = now;
+  state.timerLastSavedAt = now;
+  currentGameTimerLastCheckpointAt = now;
+  updateCurrentGameTimerDisplay(now);
+  return true;
+}
+
+function initializeCurrentGameTimer() {
+  if (currentGameTimerLifecycleInitialized) return;
+  currentGameTimerLifecycleInitialized = true;
+  currentGameTimerLastCheckpointAt = Date.now();
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseCurrentGameTimer();
+    else resumeCurrentGameTimer();
+  });
+  window.addEventListener("pagehide", () => pauseCurrentGameTimer());
+  window.addEventListener("pageshow", () => resumeCurrentGameTimer());
+
+  currentGameTimerIntervalId = setInterval(() => {
+    if (document.hidden) return;
+    const now = Date.now();
+    updateCurrentGameTimerDisplay(now);
+    if (shouldRunCurrentGameTimer(state)
+        && now - currentGameTimerLastCheckpointAt >= CURRENT_GAME_TIMER_CHECKPOINT_MS) {
+      saveCurrentGameState({ sync: false, showIndicator: false, now });
+      currentGameTimerLastCheckpointAt = now;
+    }
+  }, CURRENT_GAME_TIMER_TICK_MS);
+}
+
 function updateState(newState) {
   const nextState = { ...newState };
 
@@ -87,26 +242,7 @@ loadedState = JSON.parse(storedStateString);
     // Transient flag must never persist across loads; a stuck `true` (from an
     // older build) would freeze every submit. Always start fresh.
     completeLoadedState.isSubmittingRound = false;
-    const now = Date.now();
-    const hasRounds = Array.isArray(completeLoadedState.rounds) && completeLoadedState.rounds.length > 0;
-    const startTimeValid = isStartTimestampActive(completeLoadedState.startTime);
-    const timerWasRunning = startTimeValid && !completeLoadedState.gameOver && hasRounds;
-    const sanitizedAccumulated = clampDurationMs(completeLoadedState.accumulatedTime);
-
-    if (timerWasRunning) {
-      if (typeof completeLoadedState.timerLastSavedAt !== 'number') {
-        // Legacy snapshots did not pre-accumulate time; cap what we add just in case.
-        completeLoadedState.accumulatedTime = calculateSafeTimeAccumulation(sanitizedAccumulated, completeLoadedState.startTime, now);
-      } else {
-        completeLoadedState.accumulatedTime = sanitizedAccumulated;
-      }
-      completeLoadedState.startTime = now; // Resume timer from now so offline time is not double-counted.
-    } else {
-      completeLoadedState.accumulatedTime = sanitizedAccumulated;
-      completeLoadedState.startTime = null;
-    }
-
-    completeLoadedState.timerLastSavedAt = now;
+    Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
     completeLoadedState.showWinProbability = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"); // Add try-catch for this too
     completeLoadedState.startingTotals = sanitizeTotals(completeLoadedState.startingTotals);
@@ -126,28 +262,27 @@ timerLastSavedAt: null
     });
   }
 }
-function saveCurrentGameState() {
+function saveCurrentGameState({
+  sync = true,
+  showIndicator = true,
+  pauseTimer = false,
+  now = Date.now(),
+} = {}) {
   if (state.gameOver) {
     localStorage.removeItem(ACTIVE_GAME_KEY);
-    if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+    LOCAL_STORAGE_CACHE.delete(ACTIVE_GAME_KEY);
+    if (sync && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       window.syncToFirestore(ACTIVE_GAME_KEY, null);
     }
   } else {
-    const now = Date.now();
-    const timerRunning = isStartTimestampActive(state.startTime);
-    const baseAccumulated = clampDurationMs(state.accumulatedTime);
-    const finalAccumulated = timerRunning
-      ? calculateSafeTimeAccumulation(baseAccumulated, state.startTime, now)
-      : baseAccumulated;
-    const snapshot = {
-      ...state,
-      accumulatedTime: finalAccumulated,
-      startTime: timerRunning ? now : null,
-      timerLastSavedAt: now,
-      startingTotals: sanitizeTotals(state.startingTotals),
-    };
-    state.timerLastSavedAt = now;
-    setLocalStorage(ACTIVE_GAME_KEY, snapshot); // This now handles Firestore sync too
-    showSaveIndicator();
+    const snapshot = buildCurrentGameTimerCheckpoint(state, now, { pause: pauseTimer });
+    snapshot.startingTotals = sanitizeTotals(state.startingTotals);
+    state.timerStarted = snapshot.timerStarted;
+    state.accumulatedTime = snapshot.accumulatedTime;
+    state.startTime = snapshot.startTime;
+    state.timerLastSavedAt = snapshot.timerLastSavedAt;
+    currentGameTimerLastCheckpointAt = snapshot.timerLastSavedAt;
+    setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
+    if (showIndicator) showSaveIndicator();
   }
 }

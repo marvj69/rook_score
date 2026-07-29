@@ -183,6 +183,39 @@ body.liquid-glass #saveIndicator {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
+/* ── Current Game Timer ── */
+.history-game-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.12rem;
+  color: rgba(71, 85, 105, 0.72);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.history-game-timer__icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+.history-game-timer__value {
+  min-width: 2.6rem;
+  color: rgba(30, 41, 59, 0.82);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: left;
+}
+html.dark .history-game-timer {
+  color: rgba(203, 213, 225, 0.72);
+}
+html.dark .history-game-timer__value {
+  color: rgba(248, 250, 252, 0.88);
+}
+
 /* ── Version Badge ── */
 .version-badge {
   position: fixed;

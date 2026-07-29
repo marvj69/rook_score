@@ -37,6 +37,19 @@ function launchGameOverConfetti() {
   });
 }
 
+function renderCurrentGameTimer() {
+  const displayTime = formatLiveGameDuration(getCurrentGameTime(state));
+  return `
+    <div class="history-game-timer" aria-label="Current game time">
+      <svg class="history-game-timer__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5"></circle>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5V12l3 2"></path>
+      </svg>
+      <span>Game time</span>
+      <span id="currentGameTimerValue" class="history-game-timer__value" role="timer" aria-live="off">${displayTime}</span>
+    </div>`;
+}
+
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
   const scorePreview = getRoundScorePreview();
@@ -108,7 +121,6 @@ function renderApp() {
       ${dealerRow}
       ${renderVoiceScoreControls()}
     </div>
-    ${renderTimeWarning()}
     <div class="flex flex-row gap-3 flex-wrap justify-center items-stretch">
       ${renderTeamCard("us", totals.us, winProb, scorePreview.active)}
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
@@ -124,6 +136,7 @@ function renderApp() {
         ? renderInAppNumericKeypad("points", "Points keypad")
         : ""}
   `;
+  updateCurrentGameTimerDisplay();
   scheduleViewportCompatibilitySync();
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
@@ -448,9 +461,15 @@ function commitHistoryEdit(idx, field, rawValue) {
   }
   if (outcome.gameOver) {
     if (isStartTimestampActive(state.startTime)) {
-      nextState.accumulatedTime = calculateSafeTimeAccumulation(state.accumulatedTime, state.startTime);
+      nextState.accumulatedTime = getCurrentGameTime(state);
     }
     nextState.startTime = null;
+    nextState.timerStarted = hasStartedCurrentGameTimer(state);
+  } else if (state.gameOver && recalculatedRounds.length) {
+    const resumedAt = Date.now();
+    nextState.timerStarted = true;
+    nextState.startTime = resumedAt;
+    nextState.timerLastSavedAt = resumedAt;
   }
 
   const priorWinner = state.winner;
@@ -530,7 +549,10 @@ function renderHistoryCard() {
     <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-start justify-between gap-3">
-          <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>
+          <div>
+            <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>
+            ${renderCurrentGameTimer()}
+          </div>
           <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
             Point Difference:
             <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>

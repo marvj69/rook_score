@@ -41,6 +41,7 @@ const DEFAULT_STATE = {
   usTeamName: "", demTeamName: "",
   usPlayers: ["", ""], demPlayers: ["", ""],
   startTime: null,
+  timerStarted: false,
   accumulatedTime: 0, showWinProbability: false, pendingPenalty: null,
   isSubmittingRound: false,
   timerLastSavedAt: null,

@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeTheme(); // Predefined themes
   initializeCustomThemeColors(); // Custom primary/accent
   loadCurrentGameState(); // Load after theme
+  initializeCurrentGameTimer();
   loadSettings(); // Load settings after game state
   scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []));
   loadRuntimeModel().then(() => {
@@ -313,8 +314,16 @@ if (typeof module !== 'undefined' && module.exports) {
     validatePoints,
     applyInAppNumericKey,
     calculateRoundPointsOutcome,
+    clampDurationMs,
+    isStartTimestampActive,
     calculateSafeTimeAccumulation,
+    hasStartedCurrentGameTimer,
+    shouldRunCurrentGameTimer,
+    getCurrentGameTime,
+    buildCurrentGameTimerCheckpoint,
+    normalizeLoadedGameTimerState,
     formatDuration,
+    formatLiveGameDuration,
     shouldApplyStandaloneSafeAreaFallback,
     shouldEnableAppViewportScroll,
     getBugReportUrl,

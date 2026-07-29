@@ -261,40 +261,6 @@ function showVersionNum() {
 function closeVersionInfoModal() {
   closeModal("versionInfoModal");
 }
-// Time protection constants
-const MAX_GAME_TIME_MS = 10 * 60 * 60 * 1000; // 10 hours maximum
-const MAX_ROUND_TIME_MS = 2 * 60 * 60 * 1000; // 2 hours maximum per round
-
-function clampDurationMs(value, cap = MAX_GAME_TIME_MS) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) return 0;
-  return Math.min(num, cap);
-}
-
-function isStartTimestampActive(value) {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0;
-}
-
-function calculateSafeTimeAccumulation(currentAccumulated, startTime, nowTs = Date.now()) {
-  const base = clampDurationMs(currentAccumulated);
-  const startMs = Number(startTime);
-  if (!Number.isFinite(startMs) || startMs <= 0) return base;
-
-  const elapsedRaw = nowTs - startMs;
-  if (!Number.isFinite(elapsedRaw) || elapsedRaw <= 0) return base; // Guard against clock skew/invalid timestamps
-
-  const cappedElapsed = Math.min(elapsedRaw, MAX_ROUND_TIME_MS);
-  const totalTime = base + cappedElapsed;
-
-  // Cap the total game time as well
-  return Math.min(totalTime, MAX_GAME_TIME_MS);
-}
-
-function renderTimeWarning() {
-  return "";
-}
-
 function formatDuration(ms) {
   if (!ms || ms < 0) return "0:00";
   const totalMinutes = Math.floor(ms / 60000);
@@ -305,4 +271,16 @@ function formatDuration(ms) {
     return `${hrs}h ${minutePart}m`;
   }
   return `${mins}m`;
+}
+
+function formatLiveGameDuration(ms) {
+  const totalSeconds = Math.floor(clampDurationMs(ms) / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const secondsPart = String(seconds).padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${secondsPart}`;
+  }
+  return `${minutes}:${secondsPart}`;
 }

@@ -456,6 +456,7 @@ function handleResumeGameSubmit(event) {
     enterBidderPoints: false,
     error: "",
     startTime: null,
+    timerStarted: false,
     accumulatedTime: 0,
     timerLastSavedAt: null,
     pendingPenalty: null,
