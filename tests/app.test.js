@@ -3923,7 +3923,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.43";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.44";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4022,6 +4022,28 @@ test('bug reports stay in the app and submit through the backend', () => {
   assert.match(appSource, /VERCEL_BUG_REPORT_URL = "https:\/\/rook-score\.vercel\.app\/api\/bug-report"/);
   assert.match(apiSource, /RESEND_EMAILS_URL = "https:\/\/api\.resend\.com\/emails"/);
   assert.match(apiSource, /"Idempotency-Key": `bug-report\/\$\{report\.reportId\}`/);
+});
+
+test('standard scrollable modals share the About modal height cap', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const probabilitySource = readFileSync(
+    path.join(repoRoot, 'js/modules/10-probability-breakdown.js'),
+    'utf8',
+  );
+
+  for (const modalId of ['aboutModal', 'bugReportModal', 'resumeGameModal', 'settingsModal']) {
+    const modalStart = htmlSource.indexOf(`id="${modalId}"`);
+    assert.notEqual(modalStart, -1, `${modalId} should exist`);
+    assert.match(
+      htmlSource.slice(modalStart, modalStart + 600),
+      /style="max-height: 80vh;"/,
+      `${modalId} should use the standard 80vh height cap`,
+    );
+  }
+  assert.match(
+    probabilitySource,
+    /id="probabilityModal"[\s\S]*?style="max-height: 80vh;"/,
+  );
 });
 
 test('firebase cloud sync does not block the initial app shell render', () => {
