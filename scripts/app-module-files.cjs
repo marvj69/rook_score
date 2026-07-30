@@ -9,6 +9,7 @@ module.exports = [
   "js/modules/05-game-state-management.js",
   "js/modules/06-team-stats-helpers.js",
   "js/modules/07-menu-modal.js",
+  "js/modules/07-paper-game-photo.js",
   "js/modules/08-game-actions-logic.js",
   "js/modules/09-voice-scoring.js",
   "js/modules/09-settings-validation-misc.js",

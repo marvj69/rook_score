@@ -63,6 +63,9 @@ function isVoiceExperimentalOnboardingComplete() {
 function updateExperimentalFeaturesUI(isEnabled) {
   const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
   if (experimentalFeaturesToggle) experimentalFeaturesToggle.checked = Boolean(isEnabled);
+  if (typeof updatePaperGamePhotoExperimentUI === "function") {
+    updatePaperGamePhotoExperimentUI(isEnabled);
+  }
   updateVoiceImprovementConsentUI();
 }
 

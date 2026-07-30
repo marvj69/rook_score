@@ -18,7 +18,7 @@
     *   **Game Library:** Browse completed games with search and sort functionality.
     *   **View Game Details:** Review full round-by-round history, duration, and winner for saved games.
     *   **Freezer Games:** Pause an ongoing game to "freeze" it and resume later.
-    *   **Resume Paper Games:** Jump into an in-progress paper score sheet by entering current scores, player names, and dealer order.
+    *   **Resume Paper Games:** Jump into an in-progress paper score sheet by entering current scores and player names. With Experimental Features enabled, take or choose a photo of an `Us | Bid | Dem` sheet to fill the current scores from its bottom completed row.
 *   **Cloud Synchronization (Firebase):**
     *   Sign in with Google to securely back up your game data (active game, saved games, freezer games, settings) to the cloud.
     *   Access your data across multiple devices.
@@ -152,7 +152,7 @@ Accessible via the hamburger icon (☰) in the top-left:
     *   Tabs for "Completed Games" and "Freezer Games".
     *   Search and sort functionality.
     *   View details of completed games or load/delete freezer games.
-*   **Resume Paper Game:** A guided modal to enter current scores, player names, and (optionally) dealers so you can keep playing digitally.
+*   **Resume Paper Game:** A guided modal to enter current scores and player names so you can keep playing digitally. Its experimental photo reader uses the app's configured OpenRouter model to read the bottom completed `Us | Bid | Dem` row; the user reviews the filled scores before starting.
 *   **View Saved Game Details:** A read-only detailed view of a completed game's rounds and stats.
 *   **Team Selection:** Prompts for "Us" and "Dem" team names, allowing selection from previously used names or adding new ones. Dealer entry can auto-create the two teams.
 *   **Settings:** Configure game rules, Pro Mode, Experimental Features, table-talk penalties, misdeal handling, theme colors, and bid presets.
@@ -264,7 +264,7 @@ npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT
 ```
 
 ### GitHub Pages
-The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it uses `https://rook-score.vercel.app` for Firebase config, LLM voice actions, and in-app bug-report delivery. Those endpoints use separate CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS`, `VOICE_SCORE_ALLOWED_ORIGINS`, and `BUG_REPORT_ALLOWED_ORIGINS` in Vercel.
+The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it uses `https://rook-score.vercel.app` for Firebase config, LLM voice actions, experimental paper-game photo reading, and in-app bug-report delivery. Those endpoints use separate CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS`, `VOICE_SCORE_ALLOWED_ORIGINS`, `PAPER_GAME_PHOTO_ALLOWED_ORIGINS`, and `BUG_REPORT_ALLOWED_ORIGINS` in Vercel.
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:

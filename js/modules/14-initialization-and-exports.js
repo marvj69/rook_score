@@ -411,6 +411,11 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreActionTypes,
     normalizeVoiceScorePlan,
     resolveVoiceScoreStatisticsSelection,
+    getPaperGamePhotoUrl,
+    normalizePaperGamePhotoResult,
+    requestPaperGamePhotoScan,
+    applyPaperGamePhotoResult,
+    updatePaperGamePhotoExperimentUI,
     getOrderedPlayerSuggestions,
     getFilteredPlayerSuggestions,
   };

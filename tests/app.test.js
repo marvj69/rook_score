@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const repoRoot = path.join(__dirname, '..');
 const appModuleFiles = require('../scripts/app-module-files.cjs');
 const voiceScoreCommandHandler = require('../api/voice-score-command.js');
+const paperGamePhotoHandler = require('../api/paper-game-photo.js');
 const bugReportHandler = require('../api/bug-report.js');
 
 function setupDomStubs() {
@@ -293,6 +294,9 @@ const {
   getVoiceScoreActionTypes,
   normalizeVoiceScorePlan,
   resolveVoiceScoreStatisticsSelection,
+  getPaperGamePhotoUrl,
+  normalizePaperGamePhotoResult,
+  requestPaperGamePhotoScan,
   getFilteredPlayerSuggestions,
   getBugReportUrl,
   getBugReportDiagnostics,
@@ -1182,6 +1186,92 @@ test('voice score command URL routes GitHub Pages to the Vercel API', () => {
     assert.equal(getVoiceScoreCommandUrl(), '/api/voice-score-command');
   } finally {
     window.location.hostname = originalHostname;
+  }
+});
+
+test('paper game photo URL routes GitHub Pages to the Vercel API', () => {
+  const originalHostname = window.location.hostname;
+  try {
+    window.location.hostname = 'marvj69.github.io';
+    assert.equal(getPaperGamePhotoUrl(), 'https://rook-score.vercel.app/api/paper-game-photo');
+
+    window.location.hostname = 'rook-score.vercel.app';
+    assert.equal(getPaperGamePhotoUrl(), '/api/paper-game-photo');
+  } finally {
+    window.location.hostname = originalHostname;
+  }
+});
+
+test('paper game photo results enforce valid Rook score totals', () => {
+  assert.deepEqual(normalizePaperGamePhotoResult({
+    usScore: 245,
+    demScore: -20,
+    bid: 130,
+    confidence: 'high',
+  }), {
+    usScore: 245,
+    demScore: -20,
+    bid: 130,
+    confidence: 'high',
+    warning: '',
+  });
+
+  assert.throws(
+    () => normalizePaperGamePhotoResult({ usScore: 243, demScore: 180 }),
+    /invalid score/,
+  );
+  assert.throws(
+    () => normalizePaperGamePhotoResult({ usScore: 245, demScore: 1005 }),
+    /invalid score/,
+  );
+});
+
+test('browser paper game photo scan uploads binary multipart image data', async () => {
+  const originalFetch = global.fetch;
+  const originalHostname = window.location.hostname;
+  let fetchUrl = '';
+  let fetchOptions = null;
+  global.fetch = async (url, options) => {
+    fetchUrl = url;
+    fetchOptions = options;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        scan: {
+          usScore: 245,
+          demScore: 190,
+          bid: 130,
+          confidence: 'high',
+          warning: '',
+        },
+      }),
+    };
+  };
+
+  try {
+    window.location.hostname = 'rook-score.vercel.app';
+    const photoBlob = new Blob(['compressed-score-sheet'], { type: 'image/jpeg' });
+    const scan = await requestPaperGamePhotoScan(photoBlob);
+
+    assert.equal(fetchUrl, '/api/paper-game-photo');
+    assert.equal(fetchOptions.method, 'POST');
+    assert.equal(fetchOptions.headers.Accept, 'application/json');
+    assert.equal(fetchOptions.headers['Content-Type'], undefined);
+    assert.equal(fetchOptions.body instanceof FormData, true);
+    assert.equal(fetchOptions.body.get('photo').size, photoBlob.size);
+    assert.equal(fetchOptions.body.get('photo').type, 'image/jpeg');
+    assert.equal(fetchOptions.body.get('photo').name, 'rook-paper-score.jpg');
+    assert.deepEqual(scan, {
+      usScore: 245,
+      demScore: 190,
+      bid: 130,
+      confidence: 'high',
+      warning: '',
+    });
+  } finally {
+    window.location.hostname = originalHostname;
+    global.fetch = originalFetch;
   }
 });
 
@@ -2397,6 +2487,89 @@ test('browser voice capture uploads binary multipart audio without Base64 conver
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('paper game photo endpoint uses the configured voice LLM for the bottom score row', async () => {
+  const originalApiKey = process.env.OPENROUTER_API_KEY;
+  const originalModel = process.env.OPENROUTER_MODEL;
+  const originalFallbackModels = process.env.OPENROUTER_FALLBACK_MODELS;
+  const originalFetch = global.fetch;
+  const boundary = 'rook-paper-photo-test-boundary';
+  const imageBuffer = Buffer.concat([
+    Buffer.from([0xff, 0xd8, 0xff]),
+    Buffer.alloc(1024, 0x42),
+    Buffer.from([0xff, 0xd9]),
+  ]);
+  let openRouterBody = null;
+
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
+  process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
+  global.fetch = async (url, options) => {
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    openRouterBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'success',
+              usScore: 245,
+              demScore: 190,
+              bid: 130,
+              confidence: 'high',
+              rowCount: 6,
+              message: 'Bottom completed row is clear.',
+            }),
+          },
+        }],
+      }),
+    };
+  };
+
+  const multipartBody = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="score.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`),
+    imageBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const request = createMockRequest({
+    body: multipartBody,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  });
+  const response = createMockResponse();
+
+  try {
+    await paperGamePhotoHandler(request, response);
+  } finally {
+    if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalApiKey;
+    if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
+    else process.env.OPENROUTER_MODEL = originalModel;
+    if (originalFallbackModels === undefined) delete process.env.OPENROUTER_FALLBACK_MODELS;
+    else process.env.OPENROUTER_FALLBACK_MODELS = originalFallbackModels;
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['x-paper-game-photo-revision'], 'bottom-score-row-v1');
+  assert.equal(openRouterBody.model, 'google/gemini-3.1-flash-lite');
+  assert.deepEqual(openRouterBody.models, ['google/gemini-2.5-flash']);
+  assert.deepEqual(openRouterBody.reasoning, { effort: 'low' });
+  assert.deepEqual(openRouterBody.response_format, { type: 'json_object' });
+  assert.match(openRouterBody.messages[0].content, /physically bottommost completed numeric row/);
+  assert.match(openRouterBody.messages[0].content, /never the numerically smallest values/);
+  assert.equal(openRouterBody.messages[1].content[1].type, 'image_url');
+  assert.match(openRouterBody.messages[1].content[1].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.deepEqual(response.body.scan, {
+    usScore: 245,
+    demScore: 190,
+    bid: 130,
+    confidence: 'high',
+    rowCount: 6,
+    warning: '',
+  });
 });
 
 test('voice command endpoint accepts raw audio for multimodal planning', async () => {
@@ -3957,7 +4130,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.45";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.46";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4293,6 +4466,23 @@ test('settings toggles use shared polished switch styling', () => {
   assert.match(css, /width:\s*3rem;/);
   assert.match(css, /height:\s*1\.625rem;/);
   assert.match(css, /transform:\s*translateY\(-50%\)\s+translateX\(1\.375rem\)/);
+});
+
+test('experimental paper game photo import is camera-ready and gated by the shared setting', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const photoSource = readFileSync(path.join(repoRoot, 'js/modules/07-paper-game-photo.js'), 'utf8');
+  const menuSource = readFileSync(path.join(repoRoot, 'js/modules/07-menu-modal.js'), 'utf8');
+  const settingsSource = readFileSync(path.join(repoRoot, 'js/modules/09-settings-validation-misc.js'), 'utf8');
+
+  assert.match(htmlSource, /id="resumePaperPhotoContainer" class="hidden /);
+  assert.match(htmlSource, /id="resumePaperPhotoInput" accept="image\/\*" capture="environment"/);
+  assert.match(htmlSource, /Us \| Bid \| Dem/);
+  assert.match(htmlSource, /bottom filled number row becomes the current score/);
+  assert.match(photoSource, /function updatePaperGamePhotoExperimentUI/);
+  assert.match(photoSource, /container\.classList\.toggle\("hidden", !isEnabled\)/);
+  assert.match(photoSource, /body\.append\("photo", photoBlob, "rook-paper-score\.jpg"\)/);
+  assert.match(menuSource, /resetPaperGamePhotoUI\(\)/);
+  assert.match(settingsSource, /updatePaperGamePhotoExperimentUI\(isEnabled\)/);
 });
 
 test('settings exposes export and import game data controls in that order', () => {

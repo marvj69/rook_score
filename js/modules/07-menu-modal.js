@@ -344,6 +344,7 @@ function openResumeGameModal() {
     errorEl.classList.add("hidden");
   }
   if (form) form.reset();
+  if (typeof resetPaperGamePhotoUI === "function") resetPaperGamePhotoUI();
   refreshPlayerSuggestions();
 
   const totals = getCurrentTotals();
@@ -377,6 +378,7 @@ function openResumeGameModal() {
   openModal("resumeGameModal");
 }
 function closeResumeGameModal() {
+  if (typeof cancelPaperGamePhotoScan === "function") cancelPaperGamePhotoScan();
   const errorEl = document.getElementById("resumeGameError");
   if (errorEl) {
     errorEl.textContent = "";
