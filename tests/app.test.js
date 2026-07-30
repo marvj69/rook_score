@@ -3923,7 +3923,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.42";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.43";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4119,6 +4119,25 @@ test('liquid glass cards do not globally replay entrance animations', () => {
   assert.ok(glassCardRule);
   assert.doesNotMatch(glassCardRule[0], /animation:\s*cardPopIn/);
   assert.match(css, /\.animate-card-pop\s*\{/);
+});
+
+test('liquid glass only animates blurred viewport layers on large fine-pointer screens', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  const sharedGlowRule = css.match(
+    /body\.liquid-glass::before,\s*\nbody\.liquid-glass::after\s*\{[\s\S]*?\n\}/,
+  );
+  const desktopMotionRule = css.match(
+    /@media \(min-width: 769px\) and \(pointer: fine\) and \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\n\}/,
+  );
+
+  assert.ok(sharedGlowRule);
+  assert.ok(desktopMotionRule);
+  assert.match(sharedGlowRule[0], /filter:\s*blur\(90px\)/);
+  assert.doesNotMatch(sharedGlowRule[0], /animation:/);
+  assert.match(css, /body\.liquid-glass::before\s*\{[\s\S]*?transform:\s*translate\(-46%, -47%\)/);
+  assert.match(css, /body\.liquid-glass::after\s*\{[\s\S]*?transform:\s*translate\(-52%, -48%\)/);
+  assert.match(desktopMotionRule[0], /animation:\s*blobFloat 22s/);
+  assert.match(desktopMotionRule[0], /animation:\s*blobFloatReverse 26s/);
 });
 
 test('old installed app compatibility classes are scoped to safe area and overflow fixes', () => {
