@@ -1336,6 +1336,39 @@ function isFirebaseInternalStorageKey(key) {
   return typeof key === "string" && key.toLowerCase().startsWith("firebase");
 }
 
+function isCloudSyncStorageKey(key) {
+  return typeof key === "string"
+    && key !== "timestamp"
+    && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+    && !isFirebaseInternalStorageKey(key);
+}
+
+function captureCloudSyncStorageSnapshot(storage = localStorage) {
+  const snapshot = new Map();
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (isCloudSyncStorageKey(key)) {
+      snapshot.set(key, storage.getItem(key));
+    }
+  }
+  return snapshot;
+}
+
+function getCloudSyncStorageChanges(snapshot, storage = localStorage) {
+  const before = snapshot instanceof Map ? snapshot : new Map();
+  const current = captureCloudSyncStorageSnapshot(storage);
+  const keys = new Set([...before.keys(), ...current.keys()]);
+  const changes = new Map();
+
+  keys.forEach(key => {
+    const previousRaw = before.has(key) ? before.get(key) : null;
+    const currentRaw = current.has(key) ? current.get(key) : null;
+    if (previousRaw !== currentRaw) changes.set(key, currentRaw);
+  });
+
+  return changes;
+}
+
 function getAppStorageEntries(storage = localStorage) {
   const entries = [];
   for (let index = 0; index < storage.length; index += 1) {
@@ -9620,6 +9653,34 @@ function performTeamPlayerMigration() {
 "use strict";
 
 // --- Initialization ---
+const ROOK_APP_INTERACTION_EVENTS = ["pointerdown", "keydown", "input", "change", "submit"];
+let rookAppInteractionRevision = 0;
+
+function recordRookAppInteraction() {
+  rookAppInteractionRevision += 1;
+  return rookAppInteractionRevision;
+}
+
+function getRookAppInteractionRevision() {
+  return rookAppInteractionRevision;
+}
+
+function shouldReloadForServiceWorkerUpdate(
+  hasExistingController,
+  interactionRevisionAtStartup,
+  currentInteractionRevision,
+) {
+  return Boolean(hasExistingController)
+    && currentInteractionRevision === interactionRevisionAtStartup;
+}
+
+ROOK_APP_INTERACTION_EVENTS.forEach(eventName => {
+  document.addEventListener(eventName, recordRookAppInteraction, {
+    capture: true,
+    passive: eventName === "pointerdown",
+  });
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   performTeamPlayerMigration();
   document.body.classList.remove('modal-open');
@@ -9710,9 +9771,19 @@ document.addEventListener("DOMContentLoaded", () => {
 if ('serviceWorker' in navigator) {
   let refreshing = false;
   const reloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
+  const interactionRevisionAtStartup = getRookAppInteractionRevision();
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing || !reloadOnControllerChange) return;
+    if (refreshing || !shouldReloadForServiceWorkerUpdate(
+      reloadOnControllerChange,
+      interactionRevisionAtStartup,
+      getRookAppInteractionRevision(),
+    )) {
+      if (reloadOnControllerChange && !refreshing) {
+        console.info("App update activated; reload deferred until the next launch because the app is in use.");
+      }
+      return;
+    }
     refreshing = true;
     window.location.reload();
   });
@@ -9845,6 +9916,9 @@ if (typeof window !== 'undefined') {
   Object.assign(window, {
     DEFAULT_STATE,
     getLocalStorage,
+    captureCloudSyncStorageSnapshot,
+    getCloudSyncStorageChanges,
+    getRookAppInteractionRevision,
     exportGameData,
     importGameData,
     loadCurrentGameState,
@@ -9875,6 +9949,11 @@ if (typeof module !== 'undefined' && module.exports) {
     updateState,
     setLocalStorage,
     getLocalStorage,
+    captureCloudSyncStorageSnapshot,
+    getCloudSyncStorageChanges,
+    recordRookAppInteraction,
+    getRookAppInteractionRevision,
+    shouldReloadForServiceWorkerUpdate,
     shouldAttemptJsonParse,
     getAppStorageEntries,
     buildGameDataExport,

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const repoRoot = path.join(__dirname, '..');
 const appModuleFiles = require('../scripts/app-module-files.cjs');
@@ -196,6 +197,11 @@ const {
   updateState,
   setLocalStorage,
   getLocalStorage,
+  captureCloudSyncStorageSnapshot,
+  getCloudSyncStorageChanges,
+  recordRookAppInteraction,
+  getRookAppInteractionRevision,
+  shouldReloadForServiceWorkerUpdate,
   shouldAttemptJsonParse,
   getAppStorageEntries,
   buildGameDataExport,
@@ -3894,6 +3900,34 @@ test('service worker update flow activates without a user prompt', () => {
   assert.match(source, /SKIP_WAITING/);
   assert.match(source, /updateViaCache:\s*'none'/);
   assert.match(source, /registration\.update\(\)/);
+  assert.match(source, /reload deferred until the next launch/);
+  assert.equal(shouldReloadForServiceWorkerUpdate(false, 0, 0), false);
+  assert.equal(shouldReloadForServiceWorkerUpdate(true, 0, 0), true);
+  assert.equal(shouldReloadForServiceWorkerUpdate(true, 0, 1), false);
+});
+
+test('startup interaction revisions advance and stale cloud snapshots detect every changed key', () => {
+  resetState();
+  localStorage.setItem("activeGameState", JSON.stringify({ bidAmount: "120" }));
+  localStorage.setItem("savedGames", JSON.stringify([{ id: "before" }]));
+  localStorage.setItem("localOnly:voiceExperimentalOnboardingCompleted", "true");
+  localStorage.setItem("firebase:internal", "protected");
+
+  const beforeRevision = getRookAppInteractionRevision();
+  assert.equal(recordRookAppInteraction(), beforeRevision + 1);
+  const snapshot = captureCloudSyncStorageSnapshot();
+  assert.deepEqual([...snapshot.keys()].sort(), ["activeGameState", "savedGames"]);
+
+  localStorage.setItem("activeGameState", JSON.stringify({ bidAmount: "180" }));
+  localStorage.removeItem("savedGames");
+  localStorage.setItem("proModeEnabled", "true");
+
+  const changes = getCloudSyncStorageChanges(snapshot);
+  assert.equal(changes.get("activeGameState"), JSON.stringify({ bidAmount: "180" }));
+  assert.equal(changes.get("savedGames"), null);
+  assert.equal(changes.get("proModeEnabled"), "true");
+  assert.equal(changes.has("localOnly:voiceExperimentalOnboardingCompleted"), false);
+  assert.equal(changes.has("firebase:internal"), false);
 });
 
 test('current game timer is visible, starts with play, and checkpoints across page lifecycle changes', () => {
@@ -3923,7 +3957,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.44";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.45";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4055,6 +4089,166 @@ test('firebase cloud sync does not block the initial app shell render', () => {
   assert.match(source, /setTimeout\(startFirebaseInitialization, 0\)/);
   assert.match(source, /FIREBASE_CONFIG_TIMEOUT_MS = 3500/);
   assert.match(source, /Promise\.race\(\[fetchPromise, timeoutPromise\]\)/);
+  assert.match(source, /const firebaseMergePromises = new Map\(\)/);
+  assert.match(source, /localChangesDuringMerge\.has\(key\)/);
+  assert.match(source, /Cloud sync completed without refreshing the active screen/);
+  assert.doesNotMatch(
+    source,
+    /signInAnonymously\(auth\)[\s\S]{0,300}mergeUserDataForCurrentUser\(anonUserCredential\.user\)/,
+  );
+});
+
+test('firebase startup merge is single-flight and preserves interaction-time local changes', async () => {
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  const storageValues = new Map([
+    ["activeGameState", JSON.stringify({ biddingTeam: "us", bidAmount: "120" })],
+  ]);
+  const storage = {
+    getItem: key => (storageValues.has(key) ? storageValues.get(key) : null),
+    setItem: (key, value) => storageValues.set(key, String(value)),
+    removeItem: key => storageValues.delete(key),
+    key: index => Array.from(storageValues.keys())[index] ?? null,
+    get length() {
+      return storageValues.size;
+    },
+  };
+  const snapshotStorage = () => {
+    const snapshot = new Map();
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (!key.startsWith("firebase") && !key.startsWith("localOnly:")) {
+        snapshot.set(key, storage.getItem(key));
+      }
+    }
+    return snapshot;
+  };
+  const storageChanges = snapshot => {
+    const current = snapshotStorage();
+    const keys = new Set([...snapshot.keys(), ...current.keys()]);
+    const changes = new Map();
+    keys.forEach(key => {
+      const previousRaw = snapshot.has(key) ? snapshot.get(key) : null;
+      const currentRaw = current.has(key) ? current.get(key) : null;
+      if (previousRaw !== currentRaw) changes.set(key, currentRaw);
+    });
+    return changes;
+  };
+
+  let interactionRevision = 0;
+  let releaseFirstWrite;
+  let markFirstWriteStarted;
+  let readCount = 0;
+  let renderCount = 0;
+  let loadCount = 0;
+  const writePayloads = [];
+  const infoMessages = [];
+  const firstWriteStarted = new Promise(resolve => {
+    markFirstWriteStarted = resolve;
+  });
+  const firstWriteBlocked = new Promise(resolve => {
+    releaseFirstWrite = resolve;
+  });
+
+  const windowForFirebase = {
+    DEFAULT_STATE: {},
+    captureCloudSyncStorageSnapshot: snapshotStorage,
+    getCloudSyncStorageChanges: storageChanges,
+    getRookAppInteractionRevision: () => interactionRevision,
+    loadCurrentGameState: () => {
+      loadCount += 1;
+    },
+    loadSettings: () => {
+      loadCount += 1;
+    },
+    renderApp: () => {
+      renderCount += 1;
+    },
+  };
+  const context = {
+    window: windowForFirebase,
+    document: {
+      readyState: "loading",
+      addEventListener: () => {},
+      getElementById: () => null,
+    },
+    localStorage: storage,
+    fetch: async () => {
+      throw new Error("Unexpected fetch");
+    },
+    setTimeout,
+    clearTimeout,
+    console: {
+      log: () => {},
+      warn: () => {},
+      error: () => {},
+      info: message => infoMessages.push(message),
+    },
+    __getDoc: async () => {
+      readCount += 1;
+      return {
+        exists: () => true,
+        data: () => ({ proModeEnabled: true }),
+      };
+    },
+    __setDoc: async (_docRef, payload) => {
+      writePayloads.push(structuredClone(payload));
+      if (writePayloads.length === 1) {
+        markFirstWriteStarted();
+        await firstWriteBlocked;
+      }
+    },
+  };
+  windowForFirebase.window = windowForFirebase;
+  const instrumentedSource = firebaseSource
+    .replace(
+      "const reportedSyncFailures = new Set();",
+      [
+        "db = {};",
+        "auth = { currentUser: { uid: 'test-user' } };",
+        "doc = (_db, _collection, uid) => ({ uid });",
+        "getDoc = globalThis.__getDoc;",
+        "setDoc = globalThis.__setDoc;",
+        "const reportedSyncFailures = new Set();",
+      ].join("\n"),
+    )
+    .replace(
+      "scheduleFirebaseInitialization();",
+      "window.__mergeUserDataForCurrentUser = mergeUserDataForCurrentUser;",
+    );
+
+  vm.runInNewContext(instrumentedSource, context, { filename: 'firebase-init.test.js' });
+
+  const user = { uid: "test-user" };
+  const firstMerge = windowForFirebase.__mergeUserDataForCurrentUser(user);
+  const duplicateMerge = windowForFirebase.__mergeUserDataForCurrentUser(user);
+  await firstWriteStarted;
+
+  interactionRevision += 1;
+  storage.setItem(
+    "activeGameState",
+    JSON.stringify({ biddingTeam: "dem", bidAmount: "180" }),
+  );
+  releaseFirstWrite();
+
+  assert.deepEqual(await Promise.all([firstMerge, duplicateMerge]), [true, true]);
+  assert.equal(readCount, 1);
+  assert.equal(writePayloads.length, 2);
+  assert.equal(writePayloads[0].activeGameState.biddingTeam, "us");
+  assert.equal(writePayloads[1].activeGameState.biddingTeam, "dem");
+  assert.equal(JSON.parse(storage.getItem("activeGameState")).biddingTeam, "dem");
+  assert.equal(loadCount, 0);
+  assert.equal(renderCount, 0);
+  assert.match(infoMessages.join("\n"), /without refreshing the active screen/);
+
+  assert.equal(await windowForFirebase.__mergeUserDataForCurrentUser(user), true);
+  assert.equal(readCount, 1);
+  assert.equal(writePayloads.length, 2);
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore(user), true);
+  assert.equal(readCount, 2);
+  assert.equal(writePayloads.length, 3);
+  assert.equal(loadCount, 0);
+  assert.equal(renderCount, 0);
 });
 
 test('version surfaces are aligned for the 2.1 release', () => {

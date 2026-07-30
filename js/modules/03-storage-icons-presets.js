@@ -80,6 +80,39 @@ function isFirebaseInternalStorageKey(key) {
   return typeof key === "string" && key.toLowerCase().startsWith("firebase");
 }
 
+function isCloudSyncStorageKey(key) {
+  return typeof key === "string"
+    && key !== "timestamp"
+    && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+    && !isFirebaseInternalStorageKey(key);
+}
+
+function captureCloudSyncStorageSnapshot(storage = localStorage) {
+  const snapshot = new Map();
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (isCloudSyncStorageKey(key)) {
+      snapshot.set(key, storage.getItem(key));
+    }
+  }
+  return snapshot;
+}
+
+function getCloudSyncStorageChanges(snapshot, storage = localStorage) {
+  const before = snapshot instanceof Map ? snapshot : new Map();
+  const current = captureCloudSyncStorageSnapshot(storage);
+  const keys = new Set([...before.keys(), ...current.keys()]);
+  const changes = new Map();
+
+  keys.forEach(key => {
+    const previousRaw = before.has(key) ? before.get(key) : null;
+    const currentRaw = current.has(key) ? current.get(key) : null;
+    if (previousRaw !== currentRaw) changes.set(key, currentRaw);
+  });
+
+  return changes;
+}
+
 function getAppStorageEntries(storage = localStorage) {
   const entries = [];
   for (let index = 0; index < storage.length; index += 1) {

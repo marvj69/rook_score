@@ -92,6 +92,8 @@ let doc = null;
 let setDoc = null;
 let getDoc = null;
 const reportedSyncFailures = new Set();
+const firebaseMergePromises = new Map();
+let lastMergedAuthUid = null;
 
 window.firebaseReady = false;
 window.firebaseConfigLoaded = false;
@@ -162,6 +164,44 @@ function deserializeLocalStorageValue(key, raw) {
 function serializeForLocalStorage(value) {
   if (value === null || value === undefined) return null;
   return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function isCloudSyncStorageKey(key) {
+  return typeof key === "string"
+    && key !== "timestamp"
+    && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+    && !key.toLowerCase().startsWith("firebase");
+}
+
+function captureCloudSyncStorageSnapshot() {
+  if (typeof window.captureCloudSyncStorageSnapshot === "function") {
+    return window.captureCloudSyncStorageSnapshot(localStorage);
+  }
+
+  const snapshot = new Map();
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (isCloudSyncStorageKey(key)) {
+      snapshot.set(key, localStorage.getItem(key));
+    }
+  }
+  return snapshot;
+}
+
+function getCloudSyncStorageChanges(snapshot) {
+  if (typeof window.getCloudSyncStorageChanges === "function") {
+    return window.getCloudSyncStorageChanges(snapshot, localStorage);
+  }
+
+  const current = captureCloudSyncStorageSnapshot();
+  const keys = new Set([...snapshot.keys(), ...current.keys()]);
+  const changes = new Map();
+  keys.forEach(key => {
+    const previousRaw = snapshot.has(key) ? snapshot.get(key) : null;
+    const currentRaw = current.has(key) ? current.get(key) : null;
+    if (previousRaw !== currentRaw) changes.set(key, currentRaw);
+  });
+  return changes;
 }
 
 function getSafeProfileImageUrl(rawUrl) {
@@ -294,24 +334,27 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     return false;
   }
 
+  const userId = typeof user?.uid === "string" ? user.uid : "";
+  if (!userId) return false;
+  const interactionRevisionAtStart = Number(
+    window.getRookAppInteractionRevision?.() || 0,
+  );
   const docRef = doc(db, "rookData", user.uid);
   const docSnap = await getDoc(docRef);
-  let firestoreData = docSnap.exists() ? docSnap.data() : {};
+  if (auth?.currentUser?.uid !== userId) return false;
+  const firestoreData = docSnap.exists() ? docSnap.data() : {};
+  const localRawSnapshot = captureCloudSyncStorageSnapshot();
   const localData = {};
 
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key.startsWith('firebase') && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) {
-      const rawValue = localStorage.getItem(key);
-      localData[key] = deserializeLocalStorageValue(key, rawValue);
-    }
-  }
+  localRawSnapshot.forEach((rawValue, key) => {
+    localData[key] = deserializeLocalStorageValue(key, rawValue);
+  });
 
   const mergedData = {};
   const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
 
   allKeys.forEach(key => {
-    if (key === "timestamp" || key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) return;
+    if (!isCloudSyncStorageKey(key)) return;
 
     const localValue = localData[key];
     const firestoreValue = firestoreData[key];
@@ -349,19 +392,49 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   });
 
   mergedData.timestamp = new Date().toISOString();
+  if (auth?.currentUser?.uid !== userId) return false;
   await setDoc(docRef, mergedData, { merge: true });
+  if (auth?.currentUser?.uid !== userId) return false;
+  const localChangesDuringMerge = getCloudSyncStorageChanges(localRawSnapshot);
 
   // Update localStorage with merged data
+  let localStorageUpdatedByMerge = false;
   Object.entries(mergedData).forEach(([key, value]) => {
     if (key !== "timestamp" && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) {
+      if (localChangesDuringMerge.has(key)) return;
       const serialized = serializeForLocalStorage(value);
       if (serialized === null) {
-        localStorage.removeItem(key);
-      } else {
+        if (localStorage.getItem(key) !== null) {
+          localStorage.removeItem(key);
+          localStorageUpdatedByMerge = true;
+        }
+      } else if (localStorage.getItem(key) !== serialized) {
         localStorage.setItem(key, serialized);
+        localStorageUpdatedByMerge = true;
       }
     }
   });
+
+  if (localChangesDuringMerge.size > 0) {
+    const latestLocalData = { timestamp: new Date().toISOString() };
+    localChangesDuringMerge.forEach((rawValue, key) => {
+      latestLocalData[key] = rawValue === null
+        ? null
+        : deserializeLocalStorageValue(key, rawValue);
+    });
+    await setDoc(docRef, latestLocalData, { merge: true });
+    if (auth?.currentUser?.uid !== userId) return false;
+  }
+
+  if (!localStorageUpdatedByMerge) return true;
+
+  const userInteractedDuringMerge = Number(
+    window.getRookAppInteractionRevision?.() || 0,
+  ) !== interactionRevisionAtStart;
+  if (userInteractedDuringMerge) {
+    console.info("Cloud sync completed without refreshing the active screen because the app is in use.");
+    return true;
+  }
 
   // Re-initialize state from potentially merged localStorage
   if (typeof performTeamPlayerMigration === 'function') performTeamPlayerMigration();
@@ -375,13 +448,27 @@ window.mergeLocalStorageWithFirestore = async function(user) {
 }
 
 async function mergeUserDataForCurrentUser(user) {
-  try {
-    return await window.mergeLocalStorageWithFirestore(user);
-  } catch (error) {
-    console.error("Firestore merge error:", error);
-    trackSyncFailure("other", "merge_failed");
-    return false;
-  }
+  const userId = typeof user?.uid === "string" ? user.uid : "";
+  if (!userId) return false;
+  if (lastMergedAuthUid === userId) return true;
+  if (firebaseMergePromises.has(userId)) return firebaseMergePromises.get(userId);
+
+  const mergePromise = (async () => {
+    try {
+      const merged = await window.mergeLocalStorageWithFirestore(user);
+      if (merged && auth?.currentUser?.uid === userId) lastMergedAuthUid = userId;
+      return merged;
+    } catch (error) {
+      console.error("Firestore merge error:", error);
+      trackSyncFailure("other", "merge_failed");
+      return false;
+    } finally {
+      firebaseMergePromises.delete(userId);
+    }
+  })();
+
+  firebaseMergePromises.set(userId, mergePromise);
+  return mergePromise;
 }
 
 window.signInWithGoogle = async function() {
@@ -401,7 +488,6 @@ window.signInWithGoogle = async function() {
     window.firebaseReady = true;
     updateAuthUI(googleUser);
     trackFirebaseEvent("auth_signed_in", { method: "google" });
-    await mergeUserDataForCurrentUser(googleUser);
     return googleUser;
   } catch (error) {
     console.error("Google sign-in failed:", error);
@@ -787,11 +873,11 @@ function watchAuthState() {
       updateAuthUI(user);
       mergeUserDataForCurrentUser(user);
     } else {
+      lastMergedAuthUid = null;
       signInAnonymously(auth)
         .then((anonUserCredential) => {
           window.firebaseReady = true;
           updateAuthUI(anonUserCredential.user);
-          mergeUserDataForCurrentUser(anonUserCredential.user);
         })
         .catch((error) => {
           console.error("Anonymous sign-in failed:", error);
