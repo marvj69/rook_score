@@ -81,10 +81,10 @@ function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()
 function setExperimentalFeaturesEnabled(isEnabled, { notify = true } = {}) {
   setLocalStorage(EXPERIMENTAL_FEATURES_KEY, isEnabled);
   updateExperimentalFeaturesUI(isEnabled);
-  if (!isEnabled && typeof cancelVoiceScoreEntry === "function") {
-    cancelVoiceScoreEntry();
+  if (!isEnabled) {
+    cancelLoadedVoiceScoreEntry();
   } else {
-    scheduleRender();
+    initializeVoiceScoreModuleWhenEnabled();
   }
   if (notify) {
     showSaveIndicator(isEnabled ? "Experimental Features On" : "Experimental Features Off");
@@ -118,7 +118,7 @@ async function continueVoiceExperimentalOnboarding() {
   setVoiceExperimentalOnboardingError("");
 
   try {
-    await requestVoiceScoreMicrophonePermission();
+    await requestLazyVoiceScoreMicrophonePermission();
     const optedIn = Boolean(consentCheckbox?.checked);
     setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, optedIn);
     setLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, true);
@@ -143,7 +143,7 @@ async function continueVoiceExperimentalOnboarding() {
 async function enableExperimentalFeaturesWithMicrophone(checkbox) {
   if (checkbox) checkbox.disabled = true;
   try {
-    await requestVoiceScoreMicrophonePermission();
+    await requestLazyVoiceScoreMicrophonePermission();
     setExperimentalFeaturesEnabled(true);
     return true;
   } catch (error) {

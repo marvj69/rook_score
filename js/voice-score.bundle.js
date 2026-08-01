@@ -1,4 +1,8 @@
 "use strict";
+// Generated lazy voice bundle by scripts/build-js-bundle.mjs. Edit source modules instead.
+
+// ---- js/modules/09-voice-scoring.js ----
+"use strict";
 
 // --- Voice Score Entry ---
 const VOICE_SCORE_STATUS_TIMEOUT_MS = 4500;

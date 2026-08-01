@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
     scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
     scheduleRender();
   });
-  initializeVoiceScoreControls();
+  initializeVoiceScoreModuleWhenEnabled();
 
   const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
   if (experimentalFeaturesToggle) {
@@ -261,6 +261,7 @@ function handleTeamSelectionCancel() {
 
 // Expose integration hooks used by firebase-init.js, which runs as an ES module.
 if (typeof window !== 'undefined') {
+  const loadedVoiceScoreRuntime = getVoiceScoreRuntime();
   Object.assign(window, {
     DEFAULT_STATE,
     getLocalStorage,
@@ -275,12 +276,13 @@ if (typeof window !== 'undefined') {
     initializeCustomThemeColors,
     loadSettings,
     updateProModeUI,
-    startVoiceScoreEntry,
-    stopVoiceScoreEntry,
-    processVoiceScoreTranscript,
-    parseVoiceScoreCommand,
-    requestVoiceScoreActionPlan,
-    requestVoiceScoreMicrophonePermission,
+    startVoiceScoreEntry: loadedVoiceScoreRuntime?.startVoiceScoreEntry || startLazyVoiceScoreEntry,
+    stopVoiceScoreEntry: loadedVoiceScoreRuntime?.stopVoiceScoreEntry || stopLoadedVoiceScoreEntry,
+    processVoiceScoreTranscript: loadedVoiceScoreRuntime?.processVoiceScoreTranscript || processLazyVoiceScoreTranscript,
+    parseVoiceScoreCommand: loadedVoiceScoreRuntime?.parseVoiceScoreCommand || parseLazyVoiceScoreCommand,
+    requestVoiceScoreActionPlan: loadedVoiceScoreRuntime?.requestVoiceScoreActionPlan || requestLazyVoiceScoreActionPlan,
+    requestVoiceScoreMicrophonePermission: loadedVoiceScoreRuntime?.requestVoiceScoreMicrophonePermission
+      || requestLazyVoiceScoreMicrophonePermission,
     openBugReportModal,
     closeBugReportModal,
     handleBugReportSubmit,
@@ -411,6 +413,11 @@ if (typeof module !== 'undefined' && module.exports) {
     getVoiceScoreActionTypes,
     normalizeVoiceScorePlan,
     resolveVoiceScoreStatisticsSelection,
+    getVoiceScoreRuntime,
+    getVoiceScoreBundleUrl,
+    loadVoiceScoreModule,
+    initializeVoiceScoreModuleWhenEnabled,
+    renderLazyVoiceScoreControls,
     getPaperGamePhotoUrl,
     normalizePaperGamePhotoResult,
     requestPaperGamePhotoScan,

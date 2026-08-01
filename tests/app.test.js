@@ -2205,6 +2205,7 @@ test('completed voice entry reuses a muted microphone stream for an instant next
 
 test('voice score control is wired as a delegated hold-to-record button', () => {
   const voiceSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-scoring.js'), 'utf8');
+  const voiceLoaderSource = readFileSync(path.join(repoRoot, 'js/modules/09-voice-loader.js'), 'utf8');
   const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
   const cssSource = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
 
@@ -2237,9 +2238,23 @@ test('voice score control is wired as a delegated hold-to-record button', () => 
   assert.match(cssSource, /\.voice-score-button--active\s*{[^}]*transform: scale\(0\.94\);/s);
   assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
-  assert.match(initSource, /initializeVoiceScoreControls\(\);/);
+  assert.match(initSource, /initializeVoiceScoreModuleWhenEnabled\(\);/);
   assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);
   assert.match(initSource, /startVoiceScoreEntry/);
+  assert.match(voiceLoaderSource, /VOICE_SCORE_BUNDLE_PATH = "js\/voice-score\.bundle\.js"/);
+  assert.match(voiceLoaderSource, /function loadVoiceScoreModule\(\)/);
+  assert.match(voiceLoaderSource, /script\.dataset\.rookVoiceScoreBundle = "true"/);
+});
+
+test('experimental voice scoring is excluded from the startup bundle', () => {
+  const appBundle = readFileSync(path.join(repoRoot, 'js/app.bundle.js'), 'utf8');
+  const voiceBundle = readFileSync(path.join(repoRoot, 'js/voice-score.bundle.js'), 'utf8');
+  const serviceWorker = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
+
+  assert.doesNotMatch(appBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
+  assert.match(voiceBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
+  assert.ok(appBundle.length < 380000, `core startup bundle is unexpectedly large: ${appBundle.length}`);
+  assert.doesNotMatch(serviceWorker, /voice-score\.bundle\.js/);
 });
 
 test('experimental features are disabled by default and gate voice controls', () => {
@@ -4130,7 +4145,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.46";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.47";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4142,6 +4157,7 @@ test('mobile-only UI ships without mouse hover effects or hover tooltips', () =>
     'css/app.css',
     'css/tailwind.css',
     'js/app.bundle.js',
+    'js/voice-score.bundle.js',
     ...appModuleFiles,
   ];
 
