@@ -254,8 +254,10 @@ function handleTeamSelectionCancel() {
         overlay.style.opacity = "";
     }
 
-    document.addEventListener("touchstart", onTouchStart, { passive: false });
-    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    // These handlers never cancel native scrolling, so keep them off the
+    // browser's scroll-blocking path while retaining the horizontal menu drag.
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
 })();
 

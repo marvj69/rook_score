@@ -4094,6 +4094,32 @@ test('service worker update flow activates without a user prompt', () => {
   assert.equal(shouldReloadForServiceWorkerUpdate(true, 0, 1), false);
 });
 
+test('document-level menu touch tracking stays passive for scroll performance', () => {
+  const runtimeFiles = [
+    'js/modules/14-initialization-and-exports.js',
+    'js/app.bundle.js',
+  ];
+
+  for (const file of runtimeFiles) {
+    const source = readFileSync(path.join(repoRoot, file), 'utf8');
+    const gestureBlock = source.match(
+      /\/\/ Swipe-and-drag gesture for menu open\/close[\s\S]*?\}\)\(\);/,
+    );
+
+    assert.ok(gestureBlock, `${file} should include the menu touch gesture`);
+    assert.match(
+      gestureBlock[0],
+      /document\.addEventListener\("touchstart", onTouchStart, \{ passive: true \}\)/,
+    );
+    assert.match(
+      gestureBlock[0],
+      /document\.addEventListener\("touchmove", onTouchMove, \{ passive: true \}\)/,
+    );
+    assert.doesNotMatch(gestureBlock[0], /passive:\s*false/);
+    assert.doesNotMatch(gestureBlock[0], /preventDefault\(\)/);
+  }
+});
+
 test('startup interaction revisions advance and stale cloud snapshots detect every changed key', () => {
   resetState();
   localStorage.setItem("activeGameState", JSON.stringify({ bidAmount: "120" }));
@@ -4145,7 +4171,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.47";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.48";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
