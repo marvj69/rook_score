@@ -45,7 +45,7 @@ jobs:
           cp index.html manifest.json service-worker.js _pages/
           cp css/app.css css/tailwind.css _pages/css/
           cp icons/icon-192x192.png icons/icon-512x512.png _pages/icons/
-          cp js/analytics.js js/app.bundle.js js/app.js js/firebase-init.js js/model_runtime_v1.json _pages/js/
+          cp js/analytics.js js/app.bundle.js js/voice-score.bundle.js js/app.js js/firebase-init.js js/model_runtime_v1.json _pages/js/
           cp vendor/canvas-confetti.min.js _pages/vendor/
           touch _pages/.nojekyll
 

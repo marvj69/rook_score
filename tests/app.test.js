@@ -2250,11 +2250,13 @@ test('experimental voice scoring is excluded from the startup bundle', () => {
   const appBundle = readFileSync(path.join(repoRoot, 'js/app.bundle.js'), 'utf8');
   const voiceBundle = readFileSync(path.join(repoRoot, 'js/voice-score.bundle.js'), 'utf8');
   const serviceWorker = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
+  const pagesWorkflow = readFileSync(path.join(repoRoot, '.github/workflows/pages.yml'), 'utf8');
 
   assert.doesNotMatch(appBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
   assert.match(voiceBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
   assert.ok(appBundle.length < 380000, `core startup bundle is unexpectedly large: ${appBundle.length}`);
   assert.doesNotMatch(serviceWorker, /voice-score\.bundle\.js/);
+  assert.match(pagesWorkflow, /cp [^\n]*js\/voice-score\.bundle\.js[^\n]* _pages\/js\//);
 });
 
 test('experimental features are disabled by default and gate voice controls', () => {
