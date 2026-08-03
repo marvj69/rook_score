@@ -749,7 +749,7 @@ test('calculateSafeTimeAccumulation preserves full active play time and rejects 
   assert.equal(isStartTimestampActive(null), false);
 });
 
-test('current game timer checkpoints accumulate each segment exactly once', () => {
+test('current game timer checkpoints count background time exactly once', () => {
   const startedAt = new Date('2026-01-01T12:00:00.000Z').valueOf();
   const game = {
     rounds: [{ bidAmount: 120 }],
@@ -768,17 +768,17 @@ test('current game timer checkpoints accumulate each segment exactly once', () =
   assert.equal(secondCheckpoint.accumulatedTime, 135_000);
   assert.equal(secondCheckpoint.startTime, startedAt + 75_000);
 
-  const pausedCheckpoint = buildCurrentGameTimerCheckpoint(
-    secondCheckpoint,
-    startedAt + 80_000,
-    { pause: true },
-  );
-  assert.equal(pausedCheckpoint.accumulatedTime, 140_000);
-  assert.equal(pausedCheckpoint.startTime, null);
-  assert.equal(pausedCheckpoint.timerStarted, true);
+  const backgroundCheckpoint = buildCurrentGameTimerCheckpoint(secondCheckpoint, startedAt + 80_000);
+  assert.equal(backgroundCheckpoint.accumulatedTime, 140_000);
+  assert.equal(backgroundCheckpoint.startTime, startedAt + 80_000);
+  assert.equal(backgroundCheckpoint.timerStarted, true);
+
+  const foregroundCheckpoint = buildCurrentGameTimerCheckpoint(backgroundCheckpoint, startedAt + 380_000);
+  assert.equal(foregroundCheckpoint.accumulatedTime, 440_000);
+  assert.equal(foregroundCheckpoint.startTime, startedAt + 380_000);
 });
 
-test('loaded game timers resume without counting time spent away from the app', () => {
+test('loaded game timers include elapsed time while the app was hidden or closed', () => {
   const savedAt = new Date('2026-01-01T12:00:00.000Z').valueOf();
   const reopenedAt = savedAt + (45 * 60_000);
   const modernSnapshot = {
@@ -791,19 +791,22 @@ test('loaded game timers resume without counting time spent away from the app', 
   };
 
   const resumed = normalizeLoadedGameTimerState(modernSnapshot, reopenedAt);
-  assert.equal(resumed.accumulatedTime, 180_000);
+  assert.equal(resumed.accumulatedTime, 180_000 + (45 * 60_000));
   assert.equal(resumed.startTime, reopenedAt);
   assert.equal(resumed.timerStarted, true);
   assert.equal(hasStartedCurrentGameTimer(resumed), true);
   assert.equal(shouldRunCurrentGameTimer(resumed), true);
-  assert.equal(getCurrentGameTime(resumed, reopenedAt + 20_000), 200_000);
+  assert.equal(getCurrentGameTime(resumed, reopenedAt + 20_000), 180_000 + (45 * 60_000) + 20_000);
 
-  const paused = normalizeLoadedGameTimerState({
+  const oldHiddenSnapshot = normalizeLoadedGameTimerState({
     ...modernSnapshot,
     startTime: null,
   }, reopenedAt);
-  assert.equal(paused.accumulatedTime, 180_000);
-  assert.equal(paused.startTime, reopenedAt);
+  assert.equal(oldHiddenSnapshot.accumulatedTime, 180_000 + (45 * 60_000));
+  assert.equal(oldHiddenSnapshot.startTime, reopenedAt);
+
+  const checkpointedAgain = normalizeLoadedGameTimerState(resumed, reopenedAt + 20_000);
+  assert.equal(checkpointedAgain.accumulatedTime, 180_000 + (45 * 60_000) + 20_000);
 
   const completed = normalizeLoadedGameTimerState({
     ...modernSnapshot,
@@ -4146,7 +4149,7 @@ test('startup interaction revisions advance and stale cloud snapshots detect eve
   assert.equal(changes.has("firebase:internal"), false);
 });
 
-test('current game timer is visible, starts with play, and checkpoints across page lifecycle changes', () => {
+test('current game timer is visible, starts with play, and keeps counting across page lifecycle changes', () => {
   const stateSource = readFileSync(path.join(repoRoot, 'js/modules/05-game-state-management.js'), 'utf8');
   const actionsSource = readFileSync(path.join(repoRoot, 'js/modules/08-game-actions-logic.js'), 'utf8');
   const renderingSource = readFileSync(path.join(repoRoot, 'js/modules/11-rendering.js'), 'utf8');
@@ -4160,9 +4163,11 @@ test('current game timer is visible, starts with play, and checkpoints across pa
   assert.match(actionsSource, /function handleTeamClick[\s\S]*ensureCurrentGameTimerStarted\(\)/);
   assert.match(actionsSource, /function handleMisdeal[\s\S]*ensureCurrentGameTimerStarted\(\)/);
   assert.match(stateSource, /CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 \* 1000/);
-  assert.match(stateSource, /document\.addEventListener\("visibilitychange"/);
-  assert.match(stateSource, /window\.addEventListener\("pagehide"/);
-  assert.match(stateSource, /window\.addEventListener\("pageshow"/);
+  assert.match(stateSource, /function checkpointCurrentGameTimer\(/);
+  assert.match(stateSource, /document\.addEventListener\("visibilitychange"[\s\S]*checkpointCurrentGameTimer\(\)/);
+  assert.match(stateSource, /window\.addEventListener\("pagehide", \(\) => checkpointCurrentGameTimer\(\)\)/);
+  assert.match(stateSource, /window\.addEventListener\("pageshow", \(\) => checkpointCurrentGameTimer\(\)\)/);
+  assert.doesNotMatch(stateSource, /pauseCurrentGameTimer|resumeCurrentGameTimer|pauseTimer/);
   assert.match(stateSource, /saveCurrentGameState\(\{ sync: false, showIndicator: false, now \}\)/);
   assert.match(initializationSource, /initializeCurrentGameTimer\(\);/);
   assert.match(cssSource, /\.history-game-timer\s*\{/);
@@ -4173,7 +4178,7 @@ test('current game timer is visible, starts with play, and checkpoints across pa
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.48";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.49";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

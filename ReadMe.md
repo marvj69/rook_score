@@ -9,7 +9,7 @@
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
 *   **Voice Score Entry:** Enable Experimental Features to complete the microphone-permission onboarding and show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
-*   **Live Game Timer:** Shows the current game's active play time and preserves it across reloads, backgrounding, freezes, and score corrections.
+*   **Live Game Timer:** Shows the current game's elapsed time, keeps counting through screen locks, app switching, and reloads, and pauses only when a game is frozen or completed.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
 *   **Undo/Redo Functionality:** Easily correct mistakes in score entry.
 *   **Game Management:**
