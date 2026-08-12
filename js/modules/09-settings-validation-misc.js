@@ -201,7 +201,6 @@ function handleTableTalkPenaltyChange() {
     }
 
     // Save the penalty type setting
-    console.log("Saving Table Talk Penalty Type:", penaltySelect.value);
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
   }
 }
@@ -224,7 +223,6 @@ function handlePenaltyPointsChange() {
     }
 
     // Save the penalty points setting
-    console.log("Saving Table Talk Penalty Points:", points);
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
   }
 }

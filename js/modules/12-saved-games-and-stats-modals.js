@@ -1168,7 +1168,6 @@ function buildStatsRowCard(mode, item, additionalStatKey, rank) {
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')
     : sanitizePlayerName(item.name) || 'Unnamed Player');
-  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
   const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
   const winPctRaw = Number(item.winPercent);
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
@@ -1214,7 +1213,6 @@ function buildStatsTableRow(mode, item, additionalStatKey, rank) {
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')
     : sanitizePlayerName(item.name) || 'Unnamed Player');
-  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
   const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
   const winPctRaw = Number(item.winPercent);
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;

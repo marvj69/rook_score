@@ -586,7 +586,7 @@ function getVoiceScoreRecorderOptions(mimeType = "") {
 function createVoiceScoreMediaRecorder(stream, mimeType = "") {
   try {
     return new window.MediaRecorder(stream, getVoiceScoreRecorderOptions(mimeType));
-  } catch (error) {
+  } catch {
     const compatibilityOptions = mimeType ? { mimeType } : undefined;
     return new window.MediaRecorder(stream, compatibilityOptions);
   }
@@ -837,9 +837,6 @@ function sanitizeVoiceImprovementAction(action, identityMap) {
   const copyNumber = (key) => {
     const number = sanitizeVoiceImprovementNumber(action[key]);
     if (number !== null) safe[key] = number;
-  };
-  const copyTeam = (key) => {
-    if (action[key] === "us" || action[key] === "dem") safe[key] = action[key];
   };
   const copyEnum = (key, allowed) => {
     if (allowed.includes(action[key])) safe[key] = action[key];
@@ -1236,7 +1233,7 @@ function closeVoiceScoreModalTarget(target) {
     ].forEach(closeHandler => {
       try {
         closeHandler();
-      } catch (_) {}
+      } catch {}
     });
     return true;
   }
@@ -1852,7 +1849,7 @@ function cancelVoiceScoreEntry() {
     recorder.onstop = null;
     try {
       if (recorder.state === "recording") recorder.stop();
-    } catch (_) {}
+    } catch {}
     voiceScoreRecorder = null;
   }
 
@@ -2085,7 +2082,7 @@ function initializeVoiceScoreControls() {
     event.preventDefault();
     try {
       target.setPointerCapture?.(event.pointerId);
-    } catch (_) {}
+    } catch {}
     beginVoiceScoreHold("pointer", event.pointerId);
   });
 

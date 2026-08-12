@@ -66,11 +66,11 @@ function getStoredPresetBids() {
       const numericPresets = parsed
         .filter(value => typeof value === 'number' && Number.isFinite(value))
         .filter(value => value > 0 && value % 5 === 0)
-        .filter(value => (value <= 180 || value === 360) && value <= 360);
+        .filter(value => value <= 180 || value === 360);
       const uniqueSorted = Array.from(new Set(numericPresets)).sort((a, b) => a - b);
       if (uniqueSorted.length) return [...uniqueSorted, "other"];
     }
-  } catch (_) {
+  } catch {
     // Fall through to the defaults when the saved value is missing or invalid.
   }
   return [120,125,130,135,140,145,"other"];

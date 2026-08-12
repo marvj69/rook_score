@@ -2,8 +2,6 @@
 
 // --- Settings Loading ---
 function loadSettings() {
-  console.log("Loading settings from localStorage...");
-
   // Load misdeal handling setting
   const misdealToggle = document.getElementById("misdealHandlingToggle");
   if (misdealToggle) {
@@ -17,7 +15,6 @@ function loadSettings() {
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
     const savedPenaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
-    console.log("Loading Table Talk Penalty Type:", savedPenaltyType);
     penaltySelect.value = savedPenaltyType;
   } else {
     console.warn("tableTalkPenaltySelect element not found");
@@ -26,7 +23,6 @@ function loadSettings() {
   const penaltyPointsInput = document.getElementById("penaltyPointsInput");
   if (penaltyPointsInput) {
     const savedPenaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
-    console.log("Loading Table Talk Penalty Points:", savedPenaltyPoints);
     penaltyPointsInput.value = savedPenaltyPoints;
   } else {
     console.warn("penaltyPointsInput element not found");
@@ -34,8 +30,6 @@ function loadSettings() {
 
   // Show/hide custom points input based on penalty type
   handleTableTalkPenaltyChange();
-
-  console.log("Settings loading completed");
 }
 
 function migrateTeamsCollection() {

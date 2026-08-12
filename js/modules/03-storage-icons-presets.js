@@ -69,7 +69,7 @@ function getLocalStorage(key, defaultValue = null) {
     const parsed = JSON.parse(raw);
     LOCAL_STORAGE_CACHE.set(key, { raw, parsed });
     return parsed;
-  } catch (e) {
+  } catch {
     if (defaultValue !== null) return defaultValue;
     if (key === "savedGames" || key === "freezerGames") return [];
     return {};

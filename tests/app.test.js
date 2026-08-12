@@ -4178,7 +4178,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.49";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.50";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

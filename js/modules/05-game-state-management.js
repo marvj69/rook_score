@@ -4,7 +4,6 @@
 const MAX_LEGACY_TIMER_RECOVERY_MS = 2 * 60 * 60 * 1000;
 const CURRENT_GAME_TIMER_TICK_MS = 1000;
 const CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 * 1000;
-let currentGameTimerIntervalId = null;
 let currentGameTimerLifecycleInitialized = false;
 let currentGameTimerLastCheckpointAt = 0;
 
@@ -143,7 +142,7 @@ function initializeCurrentGameTimer() {
   window.addEventListener("pagehide", () => checkpointCurrentGameTimer());
   window.addEventListener("pageshow", () => checkpointCurrentGameTimer());
 
-  currentGameTimerIntervalId = setInterval(() => {
+  setInterval(() => {
     if (document.hidden) return;
     const now = Date.now();
     updateCurrentGameTimerDisplay(now);

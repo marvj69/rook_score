@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v2.1.49";
+const CACHE_NAME = "rook-cache-v2.1.50";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -103,15 +103,15 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("activate", (event) => {
   self.clients.claim();
-    event.waitUntil(
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              return caches.delete(cacheName);
-            }
-          })
-        );
-      })
-    );
-  });
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+});

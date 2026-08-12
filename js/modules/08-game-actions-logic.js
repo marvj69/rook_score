@@ -68,16 +68,12 @@ function applyTableTalkPenalty(flaggedTeam) {
   const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
   let confirmationMessage;
 
-  console.log("Table Talk Penalty Type:", penaltyType);
-
   if (penaltyType === "setPoints") {
     const penaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
-    console.log("Using setPoints penalty:", penaltyPoints);
     confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${penaltyPoints} points.`;
   } else {
     // penaltyType === "loseBid" - they lose the bid amount in points
     const bidAmount = state.bidAmount || "0";
-    console.log("Using loseBid penalty:", bidAmount);
     confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${bidAmount} points (the bid amount).`;
   }
 
@@ -130,8 +126,8 @@ function applyCheatPenaltyRound(flaggedTeam) {
     usTeamNameOnRound: usTeamName || "Us",
     demTeamNameOnRound: demTeamName || "Dem",
     penalty: "cheat",
-    penaltyType: penaltyType,
-    penaltyAmount: penaltyAmount
+    penaltyType,
+    penaltyAmount
   };
   const updatedRounds = [...rounds, newRound];
 

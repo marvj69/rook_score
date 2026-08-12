@@ -351,11 +351,11 @@ function getStoredPresetBids() {
       const numericPresets = parsed
         .filter(value => typeof value === 'number' && Number.isFinite(value))
         .filter(value => value > 0 && value % 5 === 0)
-        .filter(value => (value <= 180 || value === 360) && value <= 360);
+        .filter(value => value <= 180 || value === 360);
       const uniqueSorted = Array.from(new Set(numericPresets)).sort((a, b) => a - b);
       if (uniqueSorted.length) return [...uniqueSorted, "other"];
     }
-  } catch (_) {
+  } catch {
     // Fall through to the defaults when the saved value is missing or invalid.
   }
   return [120,125,130,135,140,145,"other"];
@@ -1325,7 +1325,7 @@ function getLocalStorage(key, defaultValue = null) {
     const parsed = JSON.parse(raw);
     LOCAL_STORAGE_CACHE.set(key, { raw, parsed });
     return parsed;
-  } catch (e) {
+  } catch {
     if (defaultValue !== null) return defaultValue;
     if (key === "savedGames" || key === "freezerGames") return [];
     return {};
@@ -2091,7 +2091,6 @@ function showSaveIndicator(message = "Saved") {
 const MAX_LEGACY_TIMER_RECOVERY_MS = 2 * 60 * 60 * 1000;
 const CURRENT_GAME_TIMER_TICK_MS = 1000;
 const CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 * 1000;
-let currentGameTimerIntervalId = null;
 let currentGameTimerLifecycleInitialized = false;
 let currentGameTimerLastCheckpointAt = 0;
 
@@ -2230,7 +2229,7 @@ function initializeCurrentGameTimer() {
   window.addEventListener("pagehide", () => checkpointCurrentGameTimer());
   window.addEventListener("pageshow", () => checkpointCurrentGameTimer());
 
-  currentGameTimerIntervalId = setInterval(() => {
+  setInterval(() => {
     if (document.hidden) return;
     const now = Date.now();
     updateCurrentGameTimerDisplay(now);
@@ -3466,16 +3465,12 @@ function applyTableTalkPenalty(flaggedTeam) {
   const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
   let confirmationMessage;
 
-  console.log("Table Talk Penalty Type:", penaltyType);
-
   if (penaltyType === "setPoints") {
     const penaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
-    console.log("Using setPoints penalty:", penaltyPoints);
     confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${penaltyPoints} points.`;
   } else {
     // penaltyType === "loseBid" - they lose the bid amount in points
     const bidAmount = state.bidAmount || "0";
-    console.log("Using loseBid penalty:", bidAmount);
     confirmationMessage = `Flag ${teamName} for table-talk? They will lose ${bidAmount} points (the bid amount).`;
   }
 
@@ -3528,8 +3523,8 @@ function applyCheatPenaltyRound(flaggedTeam) {
     usTeamNameOnRound: usTeamName || "Us",
     demTeamNameOnRound: demTeamName || "Dem",
     penalty: "cheat",
-    penaltyType: penaltyType,
-    penaltyAmount: penaltyAmount
+    penaltyType,
+    penaltyAmount
   };
   const updatedRounds = [...rounds, newRound];
 
@@ -4835,7 +4830,6 @@ function handleTableTalkPenaltyChange() {
     }
 
     // Save the penalty type setting
-    console.log("Saving Table Talk Penalty Type:", penaltySelect.value);
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
   }
 }
@@ -4858,7 +4852,6 @@ function handlePenaltyPointsChange() {
     }
 
     // Save the penalty points setting
-    console.log("Saving Table Talk Penalty Points:", points);
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
   }
 }
@@ -7519,7 +7512,6 @@ function buildStatsRowCard(mode, item, additionalStatKey, rank) {
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')
     : sanitizePlayerName(item.name) || 'Unnamed Player');
-  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
   const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
   const winPctRaw = Number(item.winPercent);
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
@@ -7565,7 +7557,6 @@ function buildStatsTableRow(mode, item, additionalStatKey, rank) {
   const displayName = item.name || (mode === 'teams'
     ? deriveTeamDisplay(item.players, 'Unnamed Team')
     : sanitizePlayerName(item.name) || 'Unnamed Player');
-  const playersDisplay = mode === 'teams' ? formatTeamDisplay(item.players || []) : '';
   const initials = getEntityInitials(displayName, mode === 'teams' ? item.players : null);
   const winPctRaw = Number(item.winPercent);
   const winPct = Number.isFinite(winPctRaw) ? winPctRaw : 0;
@@ -7608,8 +7599,6 @@ function buildStatsTableRow(mode, item, additionalStatKey, rank) {
 
 // --- Settings Loading ---
 function loadSettings() {
-  console.log("Loading settings from localStorage...");
-
   // Load misdeal handling setting
   const misdealToggle = document.getElementById("misdealHandlingToggle");
   if (misdealToggle) {
@@ -7623,7 +7612,6 @@ function loadSettings() {
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
     const savedPenaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
-    console.log("Loading Table Talk Penalty Type:", savedPenaltyType);
     penaltySelect.value = savedPenaltyType;
   } else {
     console.warn("tableTalkPenaltySelect element not found");
@@ -7632,7 +7620,6 @@ function loadSettings() {
   const penaltyPointsInput = document.getElementById("penaltyPointsInput");
   if (penaltyPointsInput) {
     const savedPenaltyPoints = getLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, "180");
-    console.log("Loading Table Talk Penalty Points:", savedPenaltyPoints);
     penaltyPointsInput.value = savedPenaltyPoints;
   } else {
     console.warn("penaltyPointsInput element not found");
@@ -7640,8 +7627,6 @@ function loadSettings() {
 
   // Show/hide custom points input based on penalty type
   handleTableTalkPenaltyChange();
-
-  console.log("Settings loading completed");
 }
 
 function migrateTeamsCollection() {
