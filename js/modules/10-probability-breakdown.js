@@ -595,10 +595,6 @@ function closeBugReportModal() {
   closeModal("bugReportModal");
 }
 
-function handleBugReportClick() {
-  openBugReportModal();
-}
-
 function validateBugReportForm(form) {
   const summaryInput = form.elements.namedItem("summary");
   const descriptionInput = form.elements.namedItem("description");

@@ -6,7 +6,6 @@
   --app-background-color: #0a0e27;
   --app-status-bar-color: #161b3d;
   --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --smooth: cubic-bezier(0.25, 0.8, 0.25, 1);
   --pop-duration: 0.35s;
   --shadow-3d-sm: 0 4px 0 rgba(0,0,0,0.25), 0 6px 15px rgba(0,0,0,0.3);
@@ -18,7 +17,6 @@
   --radius-sm: 0.75rem;
   --radius-md: 1.25rem;
   --radius-lg: 1.75rem;
-  --radius-xl: 2.25rem;
   --radius-full: 9999px;
 }
 
@@ -56,7 +54,6 @@ body.liquid-glass {
   --glass-border-strong: rgba(148, 163, 184, 0.22);
   --glass-border-soft: rgba(148, 163, 184, 0.1);
   --glass-shadow: 0 20px 50px -20px rgba(8, 30, 80, 0.7);
-  --glass-highlight: rgba(226, 232, 240, 0.15);
   --glass-blur: blur(28px) saturate(200%);
   background:
     radial-gradient(ellipse 80% 60% at 15% 20%, color-mix(in srgb, var(--primary-color) 35%, transparent), transparent 55%),
@@ -119,20 +116,10 @@ body.liquid-glass::after {
   }
 }
 
-/* ── Floating Card Animation ── */
-@keyframes cardFloat {
-  0%, 100% { transform: translateY(0px); }
-  50%      { transform: translateY(-4px); }
-}
 @keyframes cardPopIn {
   0%   { opacity: 0; transform: scale(0.85) translateY(20px); }
   60%  { transform: scale(1.03) translateY(-3px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-@keyframes gentleBob {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  25%      { transform: translateY(-3px) rotate(0.5deg); }
-  75%      { transform: translateY(2px) rotate(-0.5deg); }
 }
 
 body.liquid-glass main#app {
@@ -462,10 +449,6 @@ body.liquid-glass .hamburger-menu .bar {
   left: 0;
   border-radius: var(--radius-full);
 }
-html.dark body.liquid-glass .hamburger-menu {
-  background: transparent;
-  box-shadow: none;
-}
 body.liquid-glass .menu-overlay {
   background: transparent;
 }
@@ -733,9 +716,6 @@ html.dark nav ul li label { color: #fff; }
 .dark .settings-switch__track {
   background: rgba(60, 65, 85, 0.6);
   box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35);
-}
-.dark .settings-switch__track::before {
-  background: #ffffff;
 }
 .dark .settings-switch__input:checked + .settings-switch__track {
   background: var(--primary-color);
@@ -1097,10 +1077,6 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   max-height: 80vh;
   overflow: hidden;
 }
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-25px) scale(0.92); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
 
 /* ══════════════════════════════════════════════════════════════════
    STATISTICS MODAL — Refreshed Cartoony 3-D UI
@@ -1436,11 +1412,6 @@ body.liquid-glass .stats-row-card {
 .dark .stats-row-card__metric-label { color: rgba(156, 163, 175, 1); }
 .stats-row-card__metric-value { font-size: 0.9rem; font-weight: 800; color: #111827; line-height: 1.15; margin-top: 0.05rem; max-width: 4.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dark .stats-row-card__metric-value { color: #f8fafc; }
-.stats-row-card__metric-value--warn {
-  color: #b45309; background: rgba(245, 158, 11, 0.2);
-  padding: 0.15rem 0.55rem; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 700;
-}
-.dark .stats-row-card__metric-value--warn { color: #fcd34d; background: rgba(245, 158, 11, 0.2); }
 .stats-row-card__chevron { color: #9ca3af; flex-shrink: 0; }
 .dark .stats-row-card__chevron { color: rgba(148, 163, 184, 0.7); }
 
@@ -1654,22 +1625,6 @@ body.liquid-glass .entity-section { background: var(--glass-layer); border-color
 .dark .entity-section__label { color: rgba(203, 213, 225, 0.9); }
 .entity-section__value { font-weight: 800; color: #111827; text-align: right; }
 .dark .entity-section__value { color: #f8fafc; }
-
-/* ── Badges ── */
-.entity-badge--yes {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.25rem 0.65rem; border-radius: var(--radius-full);
-  background: rgba(245, 158, 11, 0.2); color: #b45309;
-  font-size: 0.75rem; font-weight: 800;
-}
-.dark .entity-badge--yes { color: #fcd34d; }
-.entity-badge--no {
-  display: inline-flex; align-items: center;
-  padding: 0.25rem 0.65rem; border-radius: var(--radius-full);
-  background: rgba(16, 185, 129, 0.18); color: #047857;
-  font-size: 0.75rem; font-weight: 800;
-}
-.dark .entity-badge--no { color: #6ee7b7; }
 
 /* ── Stats Controls Tweaks ── */
 .stats-controls { padding-top: 0.5rem; padding-bottom: 0.5rem; }

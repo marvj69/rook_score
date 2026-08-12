@@ -1441,8 +1441,4 @@ module.exports = async function handler(request, response) {
 };
 
 module.exports.ACTION_SCHEMA = ACTION_SCHEMA;
-module.exports.buildSystemPrompt = buildSystemPrompt;
 module.exports.buildLocalActionPlan = buildLocalActionPlan;
-module.exports.buildOpenRouterMessages = buildOpenRouterMessages;
-module.exports.resolveContextStatisticsEntity = resolveContextStatisticsEntity;
-module.exports.sanitizeConversation = sanitizeConversation;

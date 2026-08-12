@@ -67,8 +67,6 @@ const FALLBACK_RUNTIME_MODEL = Object.freeze({
 
 const RUNTIME_MODEL_STATE = {
   model: FALLBACK_RUNTIME_MODEL,
-  loaded: false,
-  error: null,
 };
 let runtimeModelLoadPromise = null;
 const PERSONALIZATION_STATE_CACHE = { key: null, value: null };
@@ -223,8 +221,6 @@ function loadRuntimeModel() {
 
       const previousModelId = getActiveRuntimeModel().modelId;
       RUNTIME_MODEL_STATE.model = normalized;
-      RUNTIME_MODEL_STATE.loaded = true;
-      RUNTIME_MODEL_STATE.error = null;
       clearWinProbabilityCache();
       clearPersonalizationStateCache();
 
@@ -236,7 +232,6 @@ function loadRuntimeModel() {
       return normalized;
     })
     .catch(error => {
-      RUNTIME_MODEL_STATE.error = error?.message || String(error);
       console.warn("Unable to load runtime model JSON. Falling back to bundled model.", error);
       return getActiveRuntimeModel();
     });

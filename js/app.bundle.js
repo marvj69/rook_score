@@ -491,8 +491,6 @@ const FALLBACK_RUNTIME_MODEL = Object.freeze({
 
 const RUNTIME_MODEL_STATE = {
   model: FALLBACK_RUNTIME_MODEL,
-  loaded: false,
-  error: null,
 };
 let runtimeModelLoadPromise = null;
 const PERSONALIZATION_STATE_CACHE = { key: null, value: null };
@@ -647,8 +645,6 @@ function loadRuntimeModel() {
 
       const previousModelId = getActiveRuntimeModel().modelId;
       RUNTIME_MODEL_STATE.model = normalized;
-      RUNTIME_MODEL_STATE.loaded = true;
-      RUNTIME_MODEL_STATE.error = null;
       clearWinProbabilityCache();
       clearPersonalizationStateCache();
 
@@ -660,7 +656,6 @@ function loadRuntimeModel() {
       return normalized;
     })
     .catch(error => {
-      RUNTIME_MODEL_STATE.error = error?.message || String(error);
       console.warn("Unable to load runtime model JSON. Falling back to bundled model.", error);
       return getActiveRuntimeModel();
     });
@@ -1632,7 +1627,6 @@ const Icons = { // SVG strings for icons to avoid multiple DOM elements
   Trash: '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
   Load: '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>',
   Mic: '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/></svg>',
-  Trophy: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 10V4h10v6M7 10l-1 12h12 l-1-12M7 10h10m-5 12v-6"/></svg>',
 };
 
 // --- Bid Preset Logic ---
@@ -2767,7 +2761,6 @@ function createDealerSuggestionController(inputId) {
       container.innerHTML = "";
       setDealerSuggestionsVisibility(container, false);
     },
-    update: updateSuggestions,
   };
 }
 
@@ -2825,7 +2818,6 @@ function closeModal(modalId) {
 function openSavedGamesModal() {
   updateGamesCount();
   switchGamesTab('completed'); // Default to completed games
-  renderGamesWithFilter(); // Render based on default filter/sort
   openModal("savedGamesModal");
 }
 function closeSavedGamesModal() { closeModal("savedGamesModal"); }
@@ -3056,22 +3048,11 @@ function handleResumeGameSubmit(event) {
   showSaveIndicator("Starting scores set!");
 }
 
-// Ensure resume modal helpers are available to inline handlers
-if (typeof window !== "undefined") {
-  window.openResumeGameModal = openResumeGameModal;
-  window.closeResumeGameModal = closeResumeGameModal;
-  window.handleResumeGameSubmit = handleResumeGameSubmit;
-}
 function openSettingsModal() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
   if (mustWinToggle) mustWinToggle.checked = !!getLocalStorage(MUST_WIN_BY_BID_KEY, false);
   const proToggleModal = document.getElementById("proModeToggleModal");
   if (proToggleModal) proToggleModal.checked = !!getLocalStorage(PRO_MODE_KEY, false);
-  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
-  if (experimentalFeaturesToggle) {
-    experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
-  }
-  document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
 
   // Load all settings using the common function
   loadSettings();
@@ -3088,11 +3069,6 @@ function openStatisticsModal() { renderStatisticsContent(); openModal("statistic
 function closeStatisticsModal() {
   closeModal("statisticsModal");
   document.getElementById("statisticsModalContent").innerHTML = "";
-  const footer = document.getElementById("statisticsModalFooter");
-  if (footer) {
-    footer.innerHTML = "";
-    footer.classList.add("hidden");
-  }
   closeEntityStatisticsModal();
 }
 function openViewSavedGameModal() { openModal("viewSavedGameModal"); }
@@ -3287,7 +3263,6 @@ async function preparePaperGamePhoto(file) {
 
   let scale = Math.min(1, PAPER_GAME_PHOTO_MAX_DIMENSION / Math.max(sourceWidth, sourceHeight));
   const qualityLevels = [0.9, 0.82, 0.74, 0.66];
-  let lastBlob = null;
 
   for (const quality of qualityLevels) {
     const canvas = document.createElement("canvas");
@@ -3298,12 +3273,11 @@ async function preparePaperGamePhoto(file) {
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    lastBlob = await canvasToPaperGamePhotoBlob(canvas, quality);
-    if (lastBlob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return lastBlob;
+    const blob = await canvasToPaperGamePhotoBlob(canvas, quality);
+    if (blob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return blob;
     scale *= 0.86;
   }
 
-  if (lastBlob && lastBlob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return lastBlob;
   throw new Error("The prepared photo is still too large. Crop it to the score table and try again.");
 }
 
@@ -3387,11 +3361,6 @@ function cancelPaperGamePhotoScan() {
     activePaperGamePhotoController = null;
   }
   setPaperGamePhotoBusy(false);
-}
-
-if (typeof window !== "undefined") {
-  window.triggerPaperGamePhotoInput = triggerPaperGamePhotoInput;
-  window.handlePaperGamePhotoSelected = handlePaperGamePhotoSelected;
 }
 
 // ---- js/modules/08-game-actions-logic.js ----
@@ -3556,8 +3525,7 @@ victoryMethod  = "Set Other Team";
 
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
-  if (timerRunning && !gameFinished) { /* Time continues */ }
-  else if (timerRunning && gameFinished) { 
+  if (timerRunning && gameFinished) {
     finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 
@@ -3642,10 +3610,6 @@ function setCustomBidInputValue(value) {
     lastBidTeam: isValidBid ? state.biddingTeam : null,
     error: "",
   });
-}
-
-function handleCustomBidChange(e) {
-  setCustomBidInputValue(e?.target?.value);
 }
 
 function openScoreKeypad(target) {
@@ -3841,8 +3805,7 @@ victoryMethod  = "Set Other Team";
   closeScoreKeypad(true);
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
-  if (timerRunning && !gameFinished) { /* Time continues */ }
-  else if (timerRunning && gameFinished) { 
+  if (timerRunning && gameFinished) {
     finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 
@@ -4664,7 +4627,6 @@ function saveSettings() {
   showSaveIndicator("Settings Saved");
 }
 function updateProModeUI(isProMode) {
-  document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
   const proToggleModal = document.getElementById("proModeToggleModal");
   if (proToggleModal) proToggleModal.checked = isProMode;
   updateState({ showWinProbability: isProMode }); // Update live state
@@ -5513,10 +5475,6 @@ function closeBugReportModal() {
   closeModal("bugReportModal");
 }
 
-function handleBugReportClick() {
-  openBugReportModal();
-}
-
 function validateBugReportForm(form) {
   const summaryInput = form.elements.namedItem("summary");
   const descriptionInput = form.elements.namedItem("description");
@@ -5855,7 +5813,7 @@ function renderInAppNumericKeypad(target, label) {
 
   return `
     <div id="scoreKeypadBackdrop" class="score-keypad-backdrop" onclick="closeScoreKeypad()" aria-hidden="true"></div>
-    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" data-keypad-target="${safeTarget}" role="dialog" aria-label="${safeLabel}">
+    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" role="dialog" aria-label="${safeLabel}">
       <div class="score-keypad-sheet__header">
         <span>${escapeHtmlValue(label)}</span>
         <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
@@ -6199,7 +6157,7 @@ function renderHistoryCard() {
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
               : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
-              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
+              <div class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
                 <div class="text-left">${usScoreContent}</div>
                 <div class="text-center text-gray-600 dark:text-gray-400">${bidContent}</div>
                 <div class="text-right">${demScoreContent}</div>
@@ -6840,11 +6798,6 @@ function renderStatisticsContent() {
   const stats = getStatistics();
   const contentEl = document.getElementById("statisticsModalContent");
   if (!contentEl) return;
-  const footerEl = document.getElementById("statisticsModalFooter");
-  if (footerEl) {
-    footerEl.innerHTML = "";
-    footerEl.classList.add("hidden");
-  }
 
   if (!stats.totalGames && !stats.teamsData.length) {
     contentEl.innerHTML = `
@@ -7606,7 +7559,6 @@ function loadSettings() {
   }
 
   updateExperimentalFeaturesUI(isExperimentalFeaturesEnabled());
-  updateVoiceImprovementConsentUI(isVoiceImprovementOptedIn());
 
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
@@ -8065,7 +8017,6 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveTeamDisplay,
     getTeamSnapshotForSide,
     getGameTeamDisplay,
-    normalizeMisdealDealers,
     getCurrentDealer,
     normalizeTeamsStorage,
     applyTeamResultDelta,
@@ -8073,7 +8024,6 @@ if (typeof module !== 'undefined' && module.exports) {
     buildDealerOrderStartingWith,
     buildRematchSetupState,
     handleMisdeal,
-    saveCompletedGameSnapshot,
     startRematchWithFirstDealer,
     playersEqual,
     renderReadOnlyGameDetails,
@@ -8088,19 +8038,11 @@ if (typeof module !== 'undefined' && module.exports) {
     MODEL_FEATURE_SET,
     FALLBACK_RUNTIME_MODEL,
     PROBABILITY_PERSONALIZATION_KEY,
-    getActiveRuntimeModel,
-    normalizeRuntimeModelArtifact,
-    loadRuntimeModel,
     buildModelFeatureVector,
     extractModelFeaturesFromRoundContext,
-    computeRawModelProbabilityFromFeatures,
     predictBaseModelProbabilityFromFeatures,
-    applyPlattCalibration,
     fitPersonalizationCalibration,
     ensureProbabilityPersonalizationForGames,
-    refreshProbabilityPersonalizationFromSavedGames,
-    scheduleProbabilityPersonalizationRefresh,
-    getProbabilityContext,
     getModelProbabilitySnapshotForState,
     buildWinProbabilityCacheKey,
     getWinProbability,
@@ -8129,10 +8071,8 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeVoiceScoreTranscript,
     parseVoiceScoreCommand,
     formatVoiceScoreIntentSummary,
-    initializeVoiceScoreControls,
     startVoiceScoreEntry,
     stopVoiceScoreEntry,
-    processVoiceScoreTranscript,
     getVoiceScoreCommandUrl,
     getVoiceScoreRecordingMimeType,
     getVoiceScoreAudioConstraints,
@@ -8150,28 +8090,17 @@ if (typeof module !== 'undefined' && module.exports) {
     isExperimentalFeaturesEnabled,
     isVoiceImprovementOptedIn,
     isVoiceExperimentalOnboardingComplete,
-    setExperimentalFeaturesEnabled,
-    toggleExperimentalFeatures,
     toggleVoiceImprovementConsent,
     continueVoiceExperimentalOnboarding,
-    cancelVoiceExperimentalOnboarding,
-    maybePromptForVoiceExperimentalOnboarding,
     renderVoiceScoreControls,
     getVoiceScoreAppContext,
     getVoiceScoreActionTypes,
     normalizeVoiceScorePlan,
     resolveVoiceScoreStatisticsSelection,
-    getVoiceScoreRuntime,
-    getVoiceScoreBundleUrl,
-    loadVoiceScoreModule,
-    initializeVoiceScoreModuleWhenEnabled,
-    renderLazyVoiceScoreControls,
     getPaperGamePhotoUrl,
     normalizePaperGamePhotoResult,
     requestPaperGamePhotoScan,
-    applyPaperGamePhotoResult,
     updatePaperGamePhotoExperimentUI,
-    getOrderedPlayerSuggestions,
     getFilteredPlayerSuggestions,
   };
 }

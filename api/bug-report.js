@@ -397,7 +397,5 @@ async function handler(request, response) {
 }
 
 module.exports = handler;
-module.exports.formatBugReportEmail = formatBugReportEmail;
-module.exports.sanitizeDiagnostics = sanitizeDiagnostics;
 module.exports.validateBugReportPayload = validateBugReportPayload;
 module.exports.resetRateLimitsForTests = () => rateLimitBuckets.clear();

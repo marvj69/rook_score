@@ -241,7 +241,7 @@ function renderInAppNumericKeypad(target, label) {
 
   return `
     <div id="scoreKeypadBackdrop" class="score-keypad-backdrop" onclick="closeScoreKeypad()" aria-hidden="true"></div>
-    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" data-keypad-target="${safeTarget}" role="dialog" aria-label="${safeLabel}">
+    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" role="dialog" aria-label="${safeLabel}">
       <div class="score-keypad-sheet__header">
         <span>${escapeHtmlValue(label)}</span>
         <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
@@ -585,7 +585,7 @@ function renderHistoryCard() {
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
               : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
-              <div key="${idx}" class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
+              <div class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
                 <div class="text-left">${usScoreContent}</div>
                 <div class="text-center text-gray-600 dark:text-gray-400">${bidContent}</div>
                 <div class="text-right">${demScoreContent}</div>

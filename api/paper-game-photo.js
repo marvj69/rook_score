@@ -431,7 +431,3 @@ module.exports = async function handler(request, response) {
     return response.status(statusCode).json({ error: safeMessage });
   }
 };
-
-module.exports.buildOpenRouterMessages = buildOpenRouterMessages;
-module.exports.detectImageMimeType = detectImageMimeType;
-module.exports.normalizeScanResult = normalizeScanResult;

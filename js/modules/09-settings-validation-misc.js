@@ -35,7 +35,6 @@ function saveSettings() {
   showSaveIndicator("Settings Saved");
 }
 function updateProModeUI(isProMode) {
-  document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
   const proToggleModal = document.getElementById("proModeToggleModal");
   if (proToggleModal) proToggleModal.checked = isProMode;
   updateState({ showWinProbability: isProMode }); // Update live state

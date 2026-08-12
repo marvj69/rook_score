@@ -496,11 +496,6 @@ function renderStatisticsContent() {
   const stats = getStatistics();
   const contentEl = document.getElementById("statisticsModalContent");
   if (!contentEl) return;
-  const footerEl = document.getElementById("statisticsModalFooter");
-  if (footerEl) {
-    footerEl.innerHTML = "";
-    footerEl.classList.add("hidden");
-  }
 
   if (!stats.totalGames && !stats.teamsData.length) {
     contentEl.innerHTML = `

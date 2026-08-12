@@ -159,8 +159,7 @@ victoryMethod  = "Set Other Team";
 
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
-  if (timerRunning && !gameFinished) { /* Time continues */ }
-  else if (timerRunning && gameFinished) { 
+  if (timerRunning && gameFinished) {
     finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 
@@ -245,10 +244,6 @@ function setCustomBidInputValue(value) {
     lastBidTeam: isValidBid ? state.biddingTeam : null,
     error: "",
   });
-}
-
-function handleCustomBidChange(e) {
-  setCustomBidInputValue(e?.target?.value);
 }
 
 function openScoreKeypad(target) {
@@ -444,8 +439,7 @@ victoryMethod  = "Set Other Team";
   closeScoreKeypad(true);
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
-  if (timerRunning && !gameFinished) { /* Time continues */ }
-  else if (timerRunning && gameFinished) { 
+  if (timerRunning && gameFinished) {
     finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
   }
 

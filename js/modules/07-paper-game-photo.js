@@ -146,7 +146,6 @@ async function preparePaperGamePhoto(file) {
 
   let scale = Math.min(1, PAPER_GAME_PHOTO_MAX_DIMENSION / Math.max(sourceWidth, sourceHeight));
   const qualityLevels = [0.9, 0.82, 0.74, 0.66];
-  let lastBlob = null;
 
   for (const quality of qualityLevels) {
     const canvas = document.createElement("canvas");
@@ -157,12 +156,11 @@ async function preparePaperGamePhoto(file) {
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    lastBlob = await canvasToPaperGamePhotoBlob(canvas, quality);
-    if (lastBlob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return lastBlob;
+    const blob = await canvasToPaperGamePhotoBlob(canvas, quality);
+    if (blob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return blob;
     scale *= 0.86;
   }
 
-  if (lastBlob && lastBlob.size <= PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES) return lastBlob;
   throw new Error("The prepared photo is still too large. Crop it to the score table and try again.");
 }
 
@@ -246,9 +244,4 @@ function cancelPaperGamePhotoScan() {
     activePaperGamePhotoController = null;
   }
   setPaperGamePhotoBusy(false);
-}
-
-if (typeof window !== "undefined") {
-  window.triggerPaperGamePhotoInput = triggerPaperGamePhotoInput;
-  window.handlePaperGamePhotoSelected = handlePaperGamePhotoSelected;
 }

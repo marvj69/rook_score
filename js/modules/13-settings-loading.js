@@ -9,7 +9,6 @@ function loadSettings() {
   }
 
   updateExperimentalFeaturesUI(isExperimentalFeaturesEnabled());
-  updateVoiceImprovementConsentUI(isVoiceImprovementOptedIn());
 
   // Load table talk penalty settings
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");

@@ -475,7 +475,6 @@
           <button type="button" onclick="closeStatisticsModal()" class="stats-modal__close text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-2 -mr-2" aria-label="Close Statistics"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         </header>
         <div id="statisticsModalScroll" class="stats-modal__scroll p-4 sm:p-6 overflow-y-auto no-scrollbar flex-1 min-h-0"><div id="statisticsModalContent"></div></div>
-        <div id="statisticsModalFooter" class="hidden stats-footer px-4 sm:px-6"></div>
       </div>
     </div>
     <!-- Entity Statistics Modal -->
@@ -790,11 +789,11 @@
             </div>
           </div>
           <div class="mb-6">
-            <button type="button" onclick="randomizeThemeColors(); updatePreview();" class="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-md threed flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Randomize Colors</button>
+            <button type="button" onclick="randomizeThemeColors()" class="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-md threed flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Randomize Colors</button>
           </div>
           <footer class="flex space-x-3">
             <button type="button" onclick="applyCustomThemeColors()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md threed font-medium">Apply Colors</button>
-            <button type="button" onclick="resetThemeColors(); updatePreview();" class="flex-1 bg-gray-200 text-gray-800 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 shadow-md threed font-medium dark:bg-gray-600 dark:text-white">Reset Default</button>
+            <button type="button" onclick="resetThemeColors()" class="flex-1 bg-gray-200 text-gray-800 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 shadow-md threed font-medium dark:bg-gray-600 dark:text-white">Reset Default</button>
           </footer>
         </div>
       </div>

@@ -187,7 +187,6 @@ function createDealerSuggestionController(inputId) {
       container.innerHTML = "";
       setDealerSuggestionsVisibility(container, false);
     },
-    update: updateSuggestions,
   };
 }
 
@@ -245,7 +244,6 @@ function closeModal(modalId) {
 function openSavedGamesModal() {
   updateGamesCount();
   switchGamesTab('completed'); // Default to completed games
-  renderGamesWithFilter(); // Render based on default filter/sort
   openModal("savedGamesModal");
 }
 function closeSavedGamesModal() { closeModal("savedGamesModal"); }
@@ -476,22 +474,11 @@ function handleResumeGameSubmit(event) {
   showSaveIndicator("Starting scores set!");
 }
 
-// Ensure resume modal helpers are available to inline handlers
-if (typeof window !== "undefined") {
-  window.openResumeGameModal = openResumeGameModal;
-  window.closeResumeGameModal = closeResumeGameModal;
-  window.handleResumeGameSubmit = handleResumeGameSubmit;
-}
 function openSettingsModal() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
   if (mustWinToggle) mustWinToggle.checked = !!getLocalStorage(MUST_WIN_BY_BID_KEY, false);
   const proToggleModal = document.getElementById("proModeToggleModal");
   if (proToggleModal) proToggleModal.checked = !!getLocalStorage(PRO_MODE_KEY, false);
-  const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
-  if (experimentalFeaturesToggle) {
-    experimentalFeaturesToggle.checked = isExperimentalFeaturesEnabled();
-  }
-  document.getElementById('editPresetsContainerModal')?.classList.remove('hidden'); // Always show
 
   // Load all settings using the common function
   loadSettings();
@@ -508,11 +495,6 @@ function openStatisticsModal() { renderStatisticsContent(); openModal("statistic
 function closeStatisticsModal() {
   closeModal("statisticsModal");
   document.getElementById("statisticsModalContent").innerHTML = "";
-  const footer = document.getElementById("statisticsModalFooter");
-  if (footer) {
-    footer.innerHTML = "";
-    footer.classList.add("hidden");
-  }
   closeEntityStatisticsModal();
 }
 function openViewSavedGameModal() { openModal("viewSavedGameModal"); }

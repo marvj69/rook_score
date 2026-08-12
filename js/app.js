@@ -8,10 +8,8 @@ if (typeof module !== "undefined" && module.exports) {
   const moduleFiles = require(path.join(__dirname, "..", "scripts", "app-module-files.cjs"));
 
   const previousModule = globalThis.module;
-  const previousExports = globalThis.exports;
 
   globalThis.module = module;
-  globalThis.exports = module.exports;
 
   try {
     for (const relativePath of moduleFiles) {
@@ -21,6 +19,5 @@ if (typeof module !== "undefined" && module.exports) {
     }
   } finally {
     globalThis.module = previousModule;
-    globalThis.exports = previousExports;
   }
 }

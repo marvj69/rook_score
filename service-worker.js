@@ -1,4 +1,4 @@
-const CACHE_NAME = "rook-cache-v2.1.50";
+const CACHE_NAME = "rook-cache-v2.1.51";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
@@ -13,13 +13,11 @@ const urlsToCache = [
   "./manifest.json",
   "./icons/icon-192x192.png",
   "./icons/icon-512x512.png",
-  "./service-worker.js",
   "./vendor/canvas-confetti.min.js"
 ];
 
 async function getCachedOfflineShell() {
   return (await caches.match(OFFLINE_URL))
-    || (await caches.match("./index.html"))
     || (await caches.match("./"));
 }
 
