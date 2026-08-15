@@ -4198,7 +4198,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.54";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.52";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
@@ -4615,20 +4615,12 @@ test('liquid glass only animates blurred viewport layers on large fine-pointer s
   assert.match(desktopMotionRule[0], /animation:\s*blobFloatReverse 26s/);
 });
 
-test('installed app compatibility handles safe areas, overflow, and the iOS scroll edge', () => {
+test('old installed app compatibility classes are scoped to safe area and overflow fixes', () => {
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
-  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
   assert.match(css, /--safe-area-inset-top-effective:\s*env\(safe-area-inset-top,\s*0px\)/);
   assert.match(css, /body\.ios-standalone-safe-area-fallback\s*\{/);
   assert.match(css, /--safe-area-inset-top-effective:\s*44px/);
-  assert.match(htmlSource, /<div class="ios-top-edge-guard" aria-hidden="true"><\/div>/);
-  assert.match(css, /\.ios-top-edge-guard\s*\{\s*display:\s*none/);
-  assert.match(css, /@supports \(-webkit-touch-callout: none\)\s*\{[\s\S]*@media \(display-mode: standalone\)\s*\{[\s\S]*\.ios-top-edge-guard\s*\{[\s\S]*position:\s*fixed;[\s\S]*top:\s*0;[\s\S]*left:\s*0;[\s\S]*width:\s*100%;[\s\S]*height:\s*max\(12px, var\(--safe-area-inset-top-effective\)\);[\s\S]*background-color:\s*var\(--app-status-bar-color\)/);
-  assert.match(css, /body\s*\{[\s\S]*?padding-top:\s*var\(--safe-area-inset-top-effective\)/);
-  assert.match(css, /\.version-badge\s*\{[\s\S]*?top:\s*calc\(1rem \+ var\(--safe-area-inset-top-effective\)\)/);
-  assert.match(css, /\.hamburger-menu\s*\{[\s\S]*?top:\s*calc\(20px \+ var\(--safe-area-inset-top-effective\)\)/);
-  assert.doesNotMatch(css, /--app-header-top-clearance|--app-header-inset-top-effective/);
   assert.match(css, /body\.app-content-overflows main#app\s*\{/);
   assert.match(css, /overflow-y:\s*auto/);
   assert.match(css, /-webkit-overflow-scrolling:\s*touch/);

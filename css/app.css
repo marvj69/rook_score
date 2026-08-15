@@ -20,27 +20,6 @@
   --radius-full: 9999px;
 }
 
-.ios-top-edge-guard {
-  display: none;
-}
-
-/* A fixed, opaque top edge suppresses iOS WebKit's automatic scroll-edge blur. */
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone) {
-    .ios-top-edge-guard {
-      display: block;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: max(12px, var(--safe-area-inset-top-effective));
-      background-color: var(--app-status-bar-color);
-      pointer-events: none;
-      z-index: 1090;
-    }
-  }
-}
-
 html {
   background-color: var(--app-status-bar-color);
 }
