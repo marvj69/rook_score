@@ -1857,7 +1857,13 @@ function syncAppViewportOverflowClass() {
   const safeAreaInsetTop = body.classList.contains(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS)
     ? IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX
     : getComputedSafeAreaInsetTop();
-  const shouldScroll = shouldEnableAppViewportScroll(app.scrollHeight, getViewportHeight(), safeAreaInsetTop);
+  const computedBodyPaddingTop = typeof getComputedStyle === "function"
+    ? parseFloat(getComputedStyle(body).paddingTop)
+    : NaN;
+  const appHeaderInsetTop = Number.isFinite(computedBodyPaddingTop)
+    ? computedBodyPaddingTop
+    : safeAreaInsetTop;
+  const shouldScroll = shouldEnableAppViewportScroll(app.scrollHeight, getViewportHeight(), appHeaderInsetTop);
   body.classList.toggle(APP_CONTENT_OVERFLOWS_CLASS, shouldScroll);
   return shouldScroll;
 }
