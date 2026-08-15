@@ -225,6 +225,7 @@ const {
   handleMisdeal,
   startRematchWithFirstDealer,
   playersEqual,
+  getHistoryRoundsForDisplay,
   renderReadOnlyGameDetails,
   buildSavedGameCard,
   buildFreezerGameCard,
@@ -1057,6 +1058,26 @@ test('recalcRunningTotals recomputes history from starting totals', () => {
   ]);
   assert.equal(rounds[0].runningTotals.us, 145);
   assert.equal(rounds[0].bidAmount, 120);
+});
+
+test('history card display puts the newest round first without changing edit indices', () => {
+  const rounds = Object.freeze([
+    { id: 'oldest' },
+    { id: 'middle' },
+    { id: 'newest' },
+  ]);
+
+  const displayEntries = getHistoryRoundsForDisplay(rounds);
+
+  assert.deepEqual(
+    displayEntries.map(({ round, idx }) => ({ id: round.id, idx })),
+    [
+      { id: 'newest', idx: 2 },
+      { id: 'middle', idx: 1 },
+      { id: 'oldest', idx: 0 },
+    ],
+  );
+  assert.deepEqual(rounds.map(round => round.id), ['oldest', 'middle', 'newest']);
 });
 
 test('computeGameOutcomeFromRounds detects won-on-bid and set-other-team endings', () => {
@@ -4177,7 +4198,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.51";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.52";/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

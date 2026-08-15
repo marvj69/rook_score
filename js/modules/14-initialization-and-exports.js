@@ -328,6 +328,7 @@ if (typeof module !== 'undefined' && module.exports) {
     handleMisdeal,
     startRematchWithFirstDealer,
     playersEqual,
+    getHistoryRoundsForDisplay,
     renderReadOnlyGameDetails,
     buildSavedGameCard,
     buildFreezerGameCard,

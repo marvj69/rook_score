@@ -500,6 +500,10 @@ function commitHistoryEdit(idx, field, rawValue) {
   updateState(nextState);
   saveCurrentGameState();
 }
+function getHistoryRoundsForDisplay(rounds) {
+  return rounds.map((round, idx) => ({ round, idx })).reverse();
+}
+
 function renderHistoryCard() {
   const { rounds, usTeamName, demTeamName } = state;
   const labelUs = usTeamName || "Us";
@@ -566,7 +570,7 @@ function renderHistoryCard() {
       </div>
       <div class="p-4 max-h-60 overflow-y-auto no-scrollbar">
         <div class="space-y-2">
-          ${rounds.map((round, idx) => {
+          ${getHistoryRoundsForDisplay(rounds).map(({ round, idx }) => {
             const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);
             const biddingTeamLabelAttr = escapeAttribute(biddingTeamLabel);
             const bidValue = Number.isFinite(Number(round.bidAmount)) ? round.bidAmount : 0;
