@@ -1,7 +1,6 @@
 :root {
   --safe-area-inset-top-effective: env(safe-area-inset-top, 0px);
   --safe-area-inset-bottom-effective: env(safe-area-inset-bottom, 0px);
-  --app-header-top-clearance: 0px;
   --primary-color: #4f8cff;
   --accent-color: #ff5c5c;
   --app-background-color: #0a0e27;
@@ -21,11 +20,23 @@
   --radius-full: 9999px;
 }
 
-/* iOS Home Screen apps add a soft system scroll edge below the safe area. */
+.ios-top-edge-guard {
+  display: none;
+}
+
+/* A fixed, opaque top edge suppresses iOS WebKit's automatic scroll-edge blur. */
 @supports (-webkit-touch-callout: none) {
   @media (display-mode: standalone) {
-    :root {
-      --app-header-top-clearance: 1.25rem;
+    .ios-top-edge-guard {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: max(12px, var(--safe-area-inset-top-effective));
+      background-color: var(--app-status-bar-color);
+      pointer-events: none;
+      z-index: 1090;
     }
   }
 }
@@ -35,8 +46,7 @@ html {
 }
 
 body {
-  --app-header-inset-top-effective: calc(var(--safe-area-inset-top-effective) + var(--app-header-top-clearance));
-  padding-top: var(--app-header-inset-top-effective);
+  padding-top: var(--safe-area-inset-top-effective);
   background-color: var(--app-background-color);
 }
 
@@ -45,7 +55,7 @@ body.ios-standalone-safe-area-fallback {
 }
 
 body.app-content-overflows main#app {
-  max-height: calc(100dvh - var(--app-header-inset-top-effective));
+  max-height: calc(100dvh - var(--safe-area-inset-top-effective));
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
@@ -54,7 +64,7 @@ body.app-content-overflows main#app {
 
 @supports not (height: 100dvh) {
   body.app-content-overflows main#app {
-    max-height: calc(100vh - var(--app-header-inset-top-effective));
+    max-height: calc(100vh - var(--safe-area-inset-top-effective));
   }
 }
 
@@ -228,7 +238,7 @@ html.dark .history-game-timer__value {
 /* ── Version Badge ── */
 .version-badge {
   position: fixed;
-  top: calc(1rem + var(--app-header-inset-top-effective));
+  top: calc(1rem + var(--safe-area-inset-top-effective));
   right: 1rem;
   display: inline-flex;
   align-items: center;
@@ -360,7 +370,7 @@ body.liquid-glass .voice-score-button {
 
 @media (max-width: 640px) {
   .version-badge {
-    top: calc(0.75rem + var(--app-header-inset-top-effective));
+    top: calc(0.75rem + var(--safe-area-inset-top-effective));
     right: 0.75rem;
     width: 26px;
     height: 22px;
@@ -535,7 +545,7 @@ input[type="color"]:focus {
 /* ── Hamburger Icon ── */
 .hamburger-menu {
   position: absolute;
-  top: calc(20px + var(--app-header-inset-top-effective));
+  top: calc(20px + var(--safe-area-inset-top-effective));
   left: 20px;
   width: 32px;
   height: 26px;
@@ -601,7 +611,7 @@ nav ul {
   list-style-type: none;
   padding: 0;
   margin: 0;
-  margin-top: calc(60px + var(--app-header-inset-top-effective));
+  margin-top: calc(60px + var(--safe-area-inset-top-effective));
 }
 nav ul li { margin: 0; border-bottom: 1px solid #e0e0e0; }
 html.dark nav ul li { border-bottom: 1px solid rgba(148, 163, 184, 0.2); }
