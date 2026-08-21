@@ -49,7 +49,12 @@ function generateProbabilityBreakdown() {
   const roundsPlayed = state.rounds.length;
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
-  const modelSnapshot = getModelProbabilitySnapshotForState(state, probabilityContext.model, probabilityContext.personalization);
+  const modelSnapshot = getModelProbabilitySnapshotForState(
+    state,
+    probabilityContext.model,
+    probabilityContext.personalization,
+    games,
+  );
 
   return generateComplexProbabilityBreakdown(
     scoreDiff,
@@ -89,21 +94,30 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const snapshot = modelSnapshot || getModelProbabilitySnapshotForState(
     state,
     probabilityContext?.model || getActiveRuntimeModel(),
-    probabilityContext?.personalization || null
+    probabilityContext?.personalization || null,
+    games,
   );
   const modelProbUs = snapshot.modelProbUs;
   const baseModelProbUs = snapshot.baseModelProbUs;
   const personalizationRecord = snapshot.personalizationRecord;
   const personalizationActive = snapshot.personalizationActive;
-  const historicalContributes = beta > 0;
-  const modelContributes = beta < 1;
+  const effectiveModel = probabilityContext?.model || getActiveRuntimeModel();
+  const usesEmpiricalBlend = effectiveModel?.metadata?.empiricalBlendEnabled !== false;
+  const historicalContributes = usesEmpiricalBlend && beta > 0;
+  const modelContributes = !usesEmpiricalBlend || beta < 1;
   const personalizationContributes = modelContributes && personalizationActive;
+  const hierarchicalPrior = snapshot.hierarchicalPlayerPrior;
+  const hierarchicalContributes = modelContributes && snapshot.hierarchicalPlayerPriorActive;
   const bucketRange = getBucketRange(bucketedScore);
   const empiricalWeight = Math.round(beta * 100);
   const modelWeight = Math.round((1 - beta) * 100);
   const empiricalPercent = Math.round(empirical * 100);
   const modelPercent = Math.round(modelProbUs * 100);
-  const modelLabel = personalizationContributes ? "Personalized model" : "Regression model";
+  const modelLabel = personalizationContributes
+    ? "Personalized model"
+    : hierarchicalContributes
+      ? "Player-adjusted model"
+      : "Regression model";
   const methodLabel = historicalContributes
     ? (modelContributes ? `Saved-game history + ${modelLabel.toLowerCase()}` : "Saved-game history")
     : modelLabel;
@@ -114,7 +128,9 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         title: "Model Estimate",
         source: `100% ${modelLabel}`,
         input: `Current estimate: ${winProb.us.toFixed(1)}% for ${labelUsDisplay}`,
-        detail: "Uses the current score, round, recent score movement, and latest bid context.",
+        detail: hierarchicalContributes
+          ? "Uses the current score and bid context, then adjusts for each player's prior results and opponent strength."
+          : "Uses the current score, round, recent score movement, and latest bid context.",
       };
     }
 
@@ -146,6 +162,11 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
     };
   })() : null;
 
+  const hierarchicalAnalysis = hierarchicalContributes ? {
+    detail: `${hierarchicalPrior.historyGames} prior games • ${hierarchicalPrior.playersWithHistory} of 4 current players have history`,
+    effectText: `State model: ${Math.round(baseModelProbUs * 100)}% -> Player-adjusted: ${Math.round(modelProbUs * 100)}%`,
+  } : null;
+
   const activeEngineExplanation = [
     modelContributes
       ? `<p>• <strong>Current game:</strong> Reads the score after round ${roundsPlayed}, the stage of the game, recent score movement, and the latest bid context.</p>`
@@ -158,6 +179,9 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
       : "",
     personalizationContributes
       ? `<p>• <strong>Personalization:</strong> A locally learned adjustment is currently refining the model estimate for your games.</p>`
+      : "",
+    hierarchicalContributes
+      ? `<p>• <strong>Player strength:</strong> Prior results are shrunk toward even odds and adjusted for the strength of partners and opponents.</p>`
       : "",
     historicalContributes && modelContributes
       ? `<p>• <strong>Final result:</strong> The displayed probability blends the model estimate with the matching saved-game results.</p>`
@@ -245,6 +269,21 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             ${escapeHtmlValue(personalizationAnalysis.effectText)}
+          </div>
+        </div>
+        ` : ""}
+
+        ${hierarchicalAnalysis ? `
+        <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
+          <div class="flex justify-between items-start mb-2">
+            <div class="font-medium text-gray-700 dark:text-gray-300">Player Strength Adjustment</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">Active</div>
+          </div>
+          <div class="text-sm text-gray-600 dark:text-gray-400">
+            ${escapeHtmlValue(hierarchicalAnalysis.detail)}
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            ${escapeHtmlValue(hierarchicalAnalysis.effectText)}
           </div>
         </div>
         ` : ""}

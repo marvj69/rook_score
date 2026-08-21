@@ -426,7 +426,7 @@ function getHistoryCardAnimation(roundCount, options = {}) {
 
 // --- Win‑probability engine -------------------------------------------
 
-const RUNTIME_MODEL_PATH = "./js/model_runtime_v1.json";
+const RUNTIME_MODEL_PATH = "./js/model_runtime_v2.json";
 const PROBABILITY_PERSONALIZATION_KEY = "probabilityPersonalizationV1";
 const PROBABILITY_PERSONALIZATION_SCHEMA_VERSION = 1;
 const PERSONALIZATION_MIN_GAMES = 10;
@@ -439,7 +439,7 @@ const PERSONALIZATION_MIN_SLOPE = 0.25;
 const PERSONALIZATION_MAX_SLOPE = 3.5;
 const PERSONALIZATION_MAX_ABS_INTERCEPT = 2.5;
 
-const MODEL_FEATURE_SET = Object.freeze([
+const LEGACY_MODEL_FEATURE_SET = Object.freeze([
   "diff",
   "round_idx",
   "momentum",
@@ -456,36 +456,78 @@ const MODEL_FEATURE_SET = Object.freeze([
   "lead_sign",
 ]);
 
+const MODEL_FEATURE_SET = Object.freeze([
+  "diff",
+  "momentum",
+  "bidding_team_sign",
+  "point_delta",
+  "diff_x_round",
+  "point_delta_x_round",
+  "bid_x_team",
+  "momentum_x_round",
+  "lead_sign",
+  "diff_x_abs_diff",
+  "momentum_x_abs_momentum",
+  "diff_x_score_sum",
+  "lead_sign_x_score_sum",
+  "target_pressure_diff",
+  "diff_x_bid",
+  "bidder_sign_x_abs_point_delta",
+  "bidder_sign_x_round",
+]);
+
+const SUPPORTED_MODEL_FEATURES = new Set([
+  ...LEGACY_MODEL_FEATURE_SET,
+  ...MODEL_FEATURE_SET,
+]);
+
 const FALLBACK_RUNTIME_MODEL = Object.freeze({
-  schemaVersion: 1,
-  modelId: "prod-270g-1958r",
+  schemaVersion: 2,
+  modelId: "prod-432g-2777r-63ea9bf3-hier-v2",
   featureSet: [...MODEL_FEATURE_SET],
-  intercept: -1.7553030137814647,
+  intercept: 0,
   coefficients: {
-    diff: 0.002508448836128177,
-    round_idx: -0.021977202303692153,
-    momentum: 0.000011076800877172538,
-    bid_amount: 0.013462765270560048,
-    bidding_team_sign: 0.10755381707923319,
-    point_delta: 0.0007116890088571467,
-    abs_diff: 0.00038873243876060373,
-    abs_momentum: -0.0006314111596346127,
-    diff_x_round: 0.00037637904888010085,
-    point_delta_x_round: 0.00004790781748288295,
-    bid_x_team: 0.0008082813362465263,
-    diff_x_point_delta: -0.000001250862888064988,
-    momentum_x_round: 0.00004790781748288295,
-    lead_sign: 0.12223547645614245,
+    diff: 0.010160915989335243,
+    momentum: -0.00221923785135143,
+    bidding_team_sign: -0.7517611772780889,
+    point_delta: 0.001545385931995299,
+    diff_x_round: 4.804561549038419e-06,
+    point_delta_x_round: 3.4232473772779214e-05,
+    bid_x_team: 0.005319098297900099,
+    momentum_x_round: 3.4232473772779214e-05,
+    lead_sign: -0.18721698502684647,
+    diff_x_abs_diff: -1.3739440446480084e-06,
+    momentum_x_abs_momentum: 6.092703472996122e-06,
+    diff_x_score_sum: 3.0242533832366335e-06,
+    lead_sign_x_score_sum: 0.00044410681303124464,
+    target_pressure_diff: -0.004257452492109581,
+    diff_x_bid: -4.896794125162152e-05,
+    bidder_sign_x_abs_point_delta: 0.0009991705997680564,
+    bidder_sign_x_round: -0.012837195999746604,
   },
   calibration: {
     type: "platt",
-    slope: 0.9403348112138662,
-    intercept: -0.0024757172493712894,
+    slope: 1,
+    intercept: 0,
+  },
+  hierarchicalPlayerPrior: {
+    type: "beta-plus-bradley-terry",
+    betaAlpha: 12,
+    playerWinLogOddsCoefficient: 0.5,
+    opponentAdjustedL2: 0.05,
+    opponentAdjustedCoefficient: 0.25,
+    optimizer: "cyclic-coordinate-newton",
+    maximumSweeps: 60,
+    convergenceTolerance: 1e-8,
   },
   metadata: {
-    generatedAt: "2026-02-06T00:00:00.000Z",
-    games: 270,
-    roundSamples: 1958,
+    generatedAt: "2026-08-21T00:04:26.827558Z",
+    games: 432,
+    roundSamples: 2777,
+    normalizedInputSha256: "63ea9bf3abc405c230f30c9a942ffe18a8ec2160b77c989515ff0882958a33d7",
+    empiricalBlendEnabled: false,
+    legacyPersonalizationEnabled: false,
+    selection: "rolling-origin state model plus library-local hierarchical player prior; state coefficients refit on all valid games after holdout evaluation",
   },
 });
 
@@ -495,6 +537,7 @@ const RUNTIME_MODEL_STATE = {
 let runtimeModelLoadPromise = null;
 const PERSONALIZATION_STATE_CACHE = { key: null, value: null };
 const PROBABILITY_GAMES_HASH_CACHE = typeof WeakMap === "function" ? new WeakMap() : null;
+const PLAYER_STRENGTH_CACHE = typeof WeakMap === "function" ? new WeakMap() : null;
 
 const scheduleIdleWork = typeof requestIdleCallback === "function"
   ? (callback) => requestIdleCallback(callback, { timeout: 1200 })
@@ -575,6 +618,9 @@ function invalidateProbabilityCachesForGames(games = null) {
   if (games && typeof games === "object" && PROBABILITY_GAMES_HASH_CACHE) {
     PROBABILITY_GAMES_HASH_CACHE.delete(games);
   }
+  if (games && typeof games === "object" && PLAYER_STRENGTH_CACHE) {
+    PLAYER_STRENGTH_CACHE.delete(games);
+  }
 }
 
 function getActiveRuntimeModel() {
@@ -583,18 +629,21 @@ function getActiveRuntimeModel() {
 
 function normalizeRuntimeModelArtifact(raw) {
   if (!raw || typeof raw !== "object") return null;
-  if (Number(raw.schemaVersion) !== 1) return null;
+  const schemaVersion = Number(raw.schemaVersion);
+  if (schemaVersion !== 1 && schemaVersion !== 2) return null;
 
   const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : "";
   const featureSet = Array.isArray(raw.featureSet) ? raw.featureSet.map(String) : [];
-  const hasAllFeatures = MODEL_FEATURE_SET.every(name => featureSet.includes(name));
-  if (!modelId || !hasAllFeatures) return null;
+  const expectedFeatureSet = schemaVersion === 2 ? MODEL_FEATURE_SET : LEGACY_MODEL_FEATURE_SET;
+  const hasExpectedFeatures = expectedFeatureSet.every(name => featureSet.includes(name));
+  const hasOnlySupportedFeatures = featureSet.every(name => SUPPORTED_MODEL_FEATURES.has(name));
+  if (!modelId || !hasExpectedFeatures || !hasOnlySupportedFeatures) return null;
 
   const intercept = parseFiniteNumber(raw.intercept, NaN);
   if (!Number.isFinite(intercept)) return null;
 
   const coefficients = {};
-  for (const featureName of MODEL_FEATURE_SET) {
+  for (const featureName of featureSet) {
     const coeff = parseFiniteNumber(raw.coefficients?.[featureName], NaN);
     if (!Number.isFinite(coeff)) return null;
     coefficients[featureName] = coeff;
@@ -605,10 +654,35 @@ function normalizeRuntimeModelArtifact(raw) {
   const calIntercept = parseFiniteNumber(raw.calibration?.intercept, NaN);
   if (!Number.isFinite(calSlope) || !Number.isFinite(calIntercept)) return null;
 
+  let hierarchicalPlayerPrior = null;
+  if (schemaVersion === 2) {
+    const rawPrior = raw.hierarchicalPlayerPrior;
+    if (rawPrior?.type !== "beta-plus-bradley-terry") return null;
+    hierarchicalPlayerPrior = {
+      type: "beta-plus-bradley-terry",
+      betaAlpha: parseFiniteNumber(rawPrior.betaAlpha, NaN),
+      playerWinLogOddsCoefficient: parseFiniteNumber(rawPrior.playerWinLogOddsCoefficient, NaN),
+      opponentAdjustedL2: parseFiniteNumber(rawPrior.opponentAdjustedL2, NaN),
+      opponentAdjustedCoefficient: parseFiniteNumber(rawPrior.opponentAdjustedCoefficient, NaN),
+      optimizer: "cyclic-coordinate-newton",
+      maximumSweeps: Math.max(1, Math.trunc(parseFiniteNumber(rawPrior.maximumSweeps, NaN))),
+      convergenceTolerance: parseFiniteNumber(rawPrior.convergenceTolerance, NaN),
+    };
+    const priorValues = [
+      hierarchicalPlayerPrior.betaAlpha,
+      hierarchicalPlayerPrior.playerWinLogOddsCoefficient,
+      hierarchicalPlayerPrior.opponentAdjustedL2,
+      hierarchicalPlayerPrior.opponentAdjustedCoefficient,
+      hierarchicalPlayerPrior.maximumSweeps,
+      hierarchicalPlayerPrior.convergenceTolerance,
+    ];
+    if (priorValues.some(value => !Number.isFinite(value) || value <= 0)) return null;
+  }
+
   return {
-    schemaVersion: 1,
+    schemaVersion,
     modelId,
-    featureSet: [...MODEL_FEATURE_SET],
+    featureSet: [...featureSet],
     intercept,
     coefficients,
     calibration: {
@@ -616,10 +690,13 @@ function normalizeRuntimeModelArtifact(raw) {
       slope: calSlope,
       intercept: calIntercept,
     },
+    hierarchicalPlayerPrior,
     metadata: {
       generatedAt: typeof raw.metadata?.generatedAt === "string" ? raw.metadata.generatedAt : null,
       games: parseFiniteNumber(raw.metadata?.games, 0),
       roundSamples: parseFiniteNumber(raw.metadata?.roundSamples, 0),
+      empiricalBlendEnabled: raw.metadata?.empiricalBlendEnabled !== false,
+      legacyPersonalizationEnabled: raw.metadata?.legacyPersonalizationEnabled !== false,
     },
   };
 }
@@ -648,7 +725,8 @@ function loadRuntimeModel() {
       clearWinProbabilityCache();
       clearPersonalizationStateCache();
 
-      if (normalized.modelId !== previousModelId) {
+      if (normalized.modelId !== previousModelId
+          && normalized.metadata.legacyPersonalizationEnabled !== false) {
         const savedGames = getLocalStorage("savedGames", []);
         ensureProbabilityPersonalizationForGames(savedGames, normalized, { force: true });
       }
@@ -676,13 +754,31 @@ function getBiddingTeamSign(biddingTeam) {
   return 0;
 }
 
-function buildModelFeatureVector({ diff, roundIdx, momentum, bidAmount, biddingTeamSign, pointDelta }) {
+function buildModelFeatureVector({
+  diff,
+  roundIdx,
+  momentum,
+  bidAmount,
+  biddingTeamSign,
+  pointDelta,
+  usTotal,
+  demTotal,
+}) {
   const safeDiff = parseFiniteNumber(diff, 0);
   const safeRoundIdx = Math.max(0, Math.trunc(parseFiniteNumber(roundIdx, 0)));
   const safeMomentum = parseFiniteNumber(momentum, 0);
   const safeBidAmount = parseFiniteNumber(bidAmount, 0);
   const safeBiddingTeamSign = parseFiniteNumber(biddingTeamSign, 0);
   const safePointDelta = parseFiniteNumber(pointDelta, 0);
+  const hasExplicitTotals = Number.isFinite(Number(usTotal)) && Number.isFinite(Number(demTotal));
+  const safeUsTotal = hasExplicitTotals
+    ? parseFiniteNumber(usTotal, 0)
+    : Math.max(0, safeDiff);
+  const safeDemTotal = hasExplicitTotals
+    ? parseFiniteNumber(demTotal, 0)
+    : Math.max(0, -safeDiff);
+  const leadSign = safeDiff > 0 ? 1 : safeDiff < 0 ? -1 : 0;
+  const scoreSum = safeUsTotal + safeDemTotal;
 
   return {
     diff: safeDiff,
@@ -698,7 +794,15 @@ function buildModelFeatureVector({ diff, roundIdx, momentum, bidAmount, biddingT
     bid_x_team: safeBidAmount * safeBiddingTeamSign,
     diff_x_point_delta: safeDiff * safePointDelta,
     momentum_x_round: safeMomentum * safeRoundIdx,
-    lead_sign: safeDiff > 0 ? 1 : safeDiff < 0 ? -1 : 0,
+    lead_sign: leadSign,
+    diff_x_abs_diff: safeDiff * Math.abs(safeDiff),
+    momentum_x_abs_momentum: safeMomentum * Math.abs(safeMomentum),
+    diff_x_score_sum: safeDiff * scoreSum,
+    lead_sign_x_score_sum: leadSign * scoreSum,
+    target_pressure_diff: Math.max(0, safeUsTotal - 400) - Math.max(0, safeDemTotal - 400),
+    diff_x_bid: safeDiff * safeBidAmount,
+    bidder_sign_x_abs_point_delta: safeBiddingTeamSign * Math.abs(safePointDelta),
+    bidder_sign_x_round: safeBiddingTeamSign * safeRoundIdx,
   };
 }
 
@@ -723,12 +827,15 @@ function extractModelFeaturesFromRoundContext(roundIndex, lastRound, prevRound =
     bidAmount,
     biddingTeamSign,
     pointDelta,
+    usTotal: lastTotals.us,
+    demTotal: lastTotals.dem,
   });
 }
 
 function computeRawModelProbabilityFromFeatures(features, model = getActiveRuntimeModel()) {
   let z = parseFiniteNumber(model?.intercept, 0);
-  for (const featureName of MODEL_FEATURE_SET) {
+  const featureSet = Array.isArray(model?.featureSet) ? model.featureSet : MODEL_FEATURE_SET;
+  for (const featureName of featureSet) {
     const featureValue = parseFiniteNumber(features?.[featureName], 0);
     const coefficient = parseFiniteNumber(model?.coefficients?.[featureName], 0);
     z += coefficient * featureValue;
@@ -760,6 +867,183 @@ function normalizeGameRoundsForModeling(rounds) {
       originalIndex: idx,
     }))
     .sort((a, b) => a.roundIndex - b.roundIndex || a.originalIndex - b.originalIndex);
+}
+
+function normalizeProbabilityPlayerKey(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!normalized || normalized === "us" || normalized === "dem") return "";
+  return normalized;
+}
+
+function getProbabilityPlayerKeys(source, side) {
+  const storedPlayers = Array.isArray(source?.[`${side}Players`])
+    ? source[`${side}Players`].map(normalizeProbabilityPlayerKey).filter(Boolean)
+    : [];
+  let players = storedPlayers;
+  if (players.length !== 2) {
+    const display = source?.[`${side}TeamName`] || source?.[`${side}Name`] || "";
+    players = parseLegacyTeamName(display).map(normalizeProbabilityPlayerKey).filter(Boolean);
+  }
+  const unique = [...new Set(players)].sort();
+  return unique.length === 2 ? unique : [];
+}
+
+function betaPlayerLogOdds(record, alpha) {
+  const games = Math.max(0, Math.trunc(parseFiniteNumber(record?.games, 0)));
+  const wins = Math.min(games, Math.max(0, parseFiniteNumber(record?.wins, 0)));
+  const safeAlpha = Math.max(1e-6, parseFiniteNumber(alpha, 12));
+  return probabilityToLogit((wins + safeAlpha) / (games + (2 * safeAlpha)));
+}
+
+function fitOpponentAdjustedPlayerRatings(validGames, priorConfig) {
+  const playerKeys = [...new Set(validGames.flatMap(game => [
+    ...game.usPlayers,
+    ...game.demPlayers,
+  ]))].sort();
+  if (!playerKeys.length || !validGames.length) return new Map();
+
+  const playerIndex = new Map(playerKeys.map((key, index) => [key, index]));
+  const rowEntries = validGames.map(game => [
+    ...game.usPlayers.map(key => ({ playerIndex: playerIndex.get(key), value: 0.5 })),
+    ...game.demPlayers.map(key => ({ playerIndex: playerIndex.get(key), value: -0.5 })),
+  ]);
+  const entriesByPlayer = Array.from({ length: playerKeys.length }, () => []);
+  rowEntries.forEach((entries, rowIndex) => {
+    entries.forEach(entry => entriesByPlayer[entry.playerIndex].push({
+      rowIndex,
+      value: entry.value,
+    }));
+  });
+
+  const labels = validGames.map(game => game.label);
+  const ratings = Array(playerKeys.length).fill(0);
+  const logits = Array(validGames.length).fill(0);
+  const l2 = Math.max(1e-6, parseFiniteNumber(priorConfig?.opponentAdjustedL2, 0.05));
+  const maximumSweeps = Math.max(1, Math.trunc(parseFiniteNumber(priorConfig?.maximumSweeps, 60)));
+  const tolerance = Math.max(1e-12, parseFiniteNumber(priorConfig?.convergenceTolerance, 1e-8));
+
+  for (let sweep = 0; sweep < maximumSweeps; sweep += 1) {
+    let maximumDelta = 0;
+    for (let playerIdx = 0; playerIdx < playerKeys.length; playerIdx += 1) {
+      let gradient = l2 * ratings[playerIdx];
+      let hessian = l2;
+      const entries = entriesByPlayer[playerIdx];
+      for (const entry of entries) {
+        const probability = safeSigmoid(logits[entry.rowIndex]);
+        gradient += entry.value * (probability - labels[entry.rowIndex]);
+        hessian += entry.value * entry.value * probability * (1 - probability);
+      }
+      const delta = hessian > 0 ? -gradient / hessian : 0;
+      if (!Number.isFinite(delta)) continue;
+      ratings[playerIdx] += delta;
+      maximumDelta = Math.max(maximumDelta, Math.abs(delta));
+      for (const entry of entries) {
+        logits[entry.rowIndex] += entry.value * delta;
+      }
+    }
+    if (maximumDelta < tolerance) break;
+  }
+
+  return new Map(playerKeys.map((key, index) => [key, ratings[index]]));
+}
+
+function buildHierarchicalPlayerStrengthProfile(historicalGames, model = getActiveRuntimeModel()) {
+  const games = Array.isArray(historicalGames) ? historicalGames : [];
+  const priorConfig = model?.hierarchicalPlayerPrior;
+  if (model?.schemaVersion !== 2 || !priorConfig) {
+    return { playerRecords: new Map(), ratings: new Map(), validGames: 0 };
+  }
+
+  const gamesHash = getProbabilityCacheKey(games);
+  const configSignature = [
+    model.modelId,
+    priorConfig.betaAlpha,
+    priorConfig.opponentAdjustedL2,
+    priorConfig.maximumSweeps,
+    priorConfig.convergenceTolerance,
+    gamesHash,
+  ].join("|");
+  const cached = PLAYER_STRENGTH_CACHE?.get(games);
+  if (cached?.signature === configSignature) return cached.profile;
+
+  const playerRecords = new Map();
+  const validGames = [];
+  for (const game of games) {
+    const winner = inferWinnerSide(game);
+    const usPlayers = getProbabilityPlayerKeys(game, "us");
+    const demPlayers = getProbabilityPlayerKeys(game, "dem");
+    if (!winner) continue;
+    const label = winner === "us" ? 1 : 0;
+    if (usPlayers.length === 2 && demPlayers.length === 2) {
+      validGames.push({ usPlayers, demPlayers, label });
+    }
+    for (const [side, players] of [["us", usPlayers], ["dem", demPlayers]]) {
+      if (players.length !== 2) continue;
+      const won = winner === side ? 1 : 0;
+      for (const playerKey of players) {
+        const record = playerRecords.get(playerKey) || { games: 0, wins: 0 };
+        record.games += 1;
+        record.wins += won;
+        playerRecords.set(playerKey, record);
+      }
+    }
+  }
+
+  const profile = {
+    playerRecords,
+    ratings: fitOpponentAdjustedPlayerRatings(validGames, priorConfig),
+    validGames: validGames.length,
+  };
+  PLAYER_STRENGTH_CACHE?.set(games, { signature: configSignature, profile });
+  return profile;
+}
+
+function getHierarchicalPlayerPriorForState(
+  currentState,
+  historicalGames,
+  model = getActiveRuntimeModel(),
+) {
+  const priorConfig = model?.hierarchicalPlayerPrior;
+  const usPlayers = getProbabilityPlayerKeys(currentState, "us");
+  const demPlayers = getProbabilityPlayerKeys(currentState, "dem");
+  if (model?.schemaVersion !== 2 || !priorConfig
+      || usPlayers.length !== 2 || demPlayers.length !== 2) {
+    return {
+      active: false,
+      correction: 0,
+      playerWinLogOddsDiff: 0,
+      opponentAdjustedLogOddsDiff: 0,
+      historyGames: 0,
+      playersWithHistory: 0,
+    };
+  }
+
+  const profile = buildHierarchicalPlayerStrengthProfile(historicalGames, model);
+  const averagePlayerLogOdds = players => players.reduce((sum, playerKey) => (
+    sum + betaPlayerLogOdds(profile.playerRecords.get(playerKey), priorConfig.betaAlpha)
+  ), 0) / players.length;
+  const averageRating = players => players.reduce((sum, playerKey) => (
+    sum + parseFiniteNumber(profile.ratings.get(playerKey), 0)
+  ), 0) / players.length;
+  const playerWinLogOddsDiff = averagePlayerLogOdds(usPlayers) - averagePlayerLogOdds(demPlayers);
+  const opponentAdjustedLogOddsDiff = averageRating(usPlayers) - averageRating(demPlayers);
+  const correction = (
+    priorConfig.playerWinLogOddsCoefficient * playerWinLogOddsDiff
+    + priorConfig.opponentAdjustedCoefficient * opponentAdjustedLogOddsDiff
+  );
+  const playersWithHistory = [...usPlayers, ...demPlayers].filter(
+    playerKey => (profile.playerRecords.get(playerKey)?.games || 0) > 0,
+  ).length;
+
+  return {
+    active: playersWithHistory > 0 && Number.isFinite(correction) && correction !== 0,
+    correction: Number.isFinite(correction) ? correction : 0,
+    playerWinLogOddsDiff,
+    opponentAdjustedLogOddsDiff,
+    historyGames: profile.validGames,
+    playersWithHistory,
+  };
 }
 
 function buildPersonalizationDataset(savedGames, model = getActiveRuntimeModel()) {
@@ -986,6 +1270,7 @@ function createPersonalizationRecord(historicalGames, model = getActiveRuntimeMo
 }
 
 function ensureProbabilityPersonalizationForGames(historicalGames, model = getActiveRuntimeModel(), options = {}) {
+  if (model?.metadata?.legacyPersonalizationEnabled === false) return null;
   const games = Array.isArray(historicalGames) ? historicalGames : [];
   const gamesHash = getProbabilityCacheKey(games);
   const cacheKey = `${model.modelId}|${gamesHash}`;
@@ -1034,11 +1319,18 @@ function scheduleProbabilityPersonalizationRefresh(savedGames = getLocalStorage(
 
 function getProbabilityContext(historicalGames, options = {}) {
   const model = getActiveRuntimeModel();
-  const personalization = ensureProbabilityPersonalizationForGames(historicalGames, model, options);
+  const personalization = model?.metadata?.legacyPersonalizationEnabled === false
+    ? null
+    : ensureProbabilityPersonalizationForGames(historicalGames, model, options);
   return { model, personalization };
 }
 
-function getModelProbabilitySnapshotForState(currentState, model = getActiveRuntimeModel(), personalization = null) {
+function getModelProbabilitySnapshotForState(
+  currentState,
+  model = getActiveRuntimeModel(),
+  personalization = null,
+  historicalGames = [],
+) {
   const rounds = Array.isArray(currentState?.rounds) ? currentState.rounds : [];
   if (!rounds.length) {
     return {
@@ -1052,6 +1344,8 @@ function getModelProbabilitySnapshotForState(currentState, model = getActiveRunt
       modelProbUs: 0.5,
       personalizationRecord: personalization,
       personalizationActive: false,
+      hierarchicalPlayerPrior: null,
+      hierarchicalPlayerPriorActive: false,
     };
   }
 
@@ -1062,10 +1356,27 @@ function getModelProbabilitySnapshotForState(currentState, model = getActiveRunt
   const rawModelProbUs = computeRawModelProbabilityFromFeatures(features, model);
   const baseModelProbUs = applyPlattCalibration(rawModelProbUs, model.calibration.slope, model.calibration.intercept);
   const personalizationRecord = normalizePersonalizationRecord(personalization);
-  const personalizationActive = isPersonalizationRecordActive(personalizationRecord, model.modelId);
-  const modelProbUs = personalizationActive
-    ? applyPlattCalibration(baseModelProbUs, personalizationRecord.slope, personalizationRecord.intercept)
-    : baseModelProbUs;
+  const personalizationActive = model?.metadata?.legacyPersonalizationEnabled !== false
+    && isPersonalizationRecordActive(personalizationRecord, model.modelId);
+  const hierarchicalPlayerPrior = getHierarchicalPlayerPriorForState(
+    currentState,
+    historicalGames,
+    model,
+  );
+  const hierarchicalPlayerPriorActive = model?.schemaVersion === 2
+    && hierarchicalPlayerPrior.active;
+  let modelProbUs = baseModelProbUs;
+  if (personalizationActive) {
+    modelProbUs = applyPlattCalibration(
+      baseModelProbUs,
+      personalizationRecord.slope,
+      personalizationRecord.intercept,
+    );
+  } else if (hierarchicalPlayerPriorActive) {
+    modelProbUs = safeSigmoid(
+      probabilityToLogit(baseModelProbUs) + hierarchicalPlayerPrior.correction,
+    );
+  }
 
   return {
     modelId: model.modelId,
@@ -1078,6 +1389,8 @@ function getModelProbabilitySnapshotForState(currentState, model = getActiveRunt
     modelProbUs,
     personalizationRecord,
     personalizationActive,
+    hierarchicalPlayerPrior,
+    hierarchicalPlayerPriorActive,
   };
 }
 
@@ -1116,6 +1429,8 @@ function getProbabilityCacheKey(historicalGames) {
     hashText(totals.us);
     hashText(totals.dem);
     hashText(rounds.length);
+    getProbabilityPlayerKeys(game, "us").forEach(hashText);
+    getProbabilityPlayerKeys(game, "dem").forEach(hashText);
 
     for (let roundIdx = 0; roundIdx < rounds.length; roundIdx += 1) {
       const round = rounds[roundIdx];
@@ -1193,8 +1508,17 @@ function calculateWinProbabilityComplex(state, historicalGames, probabilityConte
   const observationsInBucket = (counts.us - 1) + (counts.dem - 1);
 
   const context = probabilityContext || { model: getActiveRuntimeModel(), personalization: null };
-  const modelSnapshot = getModelProbabilitySnapshotForState(state, context.model, context.personalization);
+  const modelSnapshot = getModelProbabilitySnapshotForState(
+    state,
+    context.model,
+    context.personalization,
+    games,
+  );
   const modelProbUs = modelSnapshot.modelProbUs;
+
+  if (context.model?.metadata?.empiricalBlendEnabled === false) {
+    return toDisplayProbabilityPercents(modelProbUs);
+  }
 
   const K_CONFIDENCE_THRESHOLD = 30;
   const beta = Math.min(1, Math.log(observationsInBucket + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));
@@ -1215,11 +1539,19 @@ function buildWinProbabilityCacheKey(currentState, historicalGames, probabilityC
   const prevTotals = sanitizeTotals(prevRound?.runningTotals);
   const roundIndex = rounds.length > 0 ? rounds.length - 1 : 0;
   const features = extractModelFeaturesFromRoundContext(roundIndex, lastRound, prevRound);
-  const featureSignature = MODEL_FEATURE_SET.map(name => parseFiniteNumber(features[name], 0)).join(",");
   const gamesKey = getProbabilityCacheKey(historicalGames);
   const context = probabilityContext || getProbabilityContext(historicalGames);
   const modelId = context.model?.modelId || getActiveRuntimeModel().modelId;
+  const featureSet = Array.isArray(context.model?.featureSet)
+    ? context.model.featureSet
+    : MODEL_FEATURE_SET;
+  const featureSignature = featureSet.map(name => parseFiniteNumber(features[name], 0)).join(",");
   const personalizationSignature = getPersonalizationSignature(context.personalization, modelId);
+  const currentPlayerSignature = [
+    ...getProbabilityPlayerKeys(currentState, "us"),
+    "vs",
+    ...getProbabilityPlayerKeys(currentState, "dem"),
+  ].join("|");
 
   return [
     rounds.length,
@@ -1231,6 +1563,7 @@ function buildWinProbabilityCacheKey(currentState, historicalGames, probabilityC
     gamesKey,
     modelId,
     personalizationSignature,
+    currentPlayerSignature,
   ].join("|");
 }
 
@@ -4929,7 +5262,12 @@ function generateProbabilityBreakdown() {
   const roundsPlayed = state.rounds.length;
   const labelUs = state.usTeamName || "Us";
   const labelDem = state.demTeamName || "Dem";
-  const modelSnapshot = getModelProbabilitySnapshotForState(state, probabilityContext.model, probabilityContext.personalization);
+  const modelSnapshot = getModelProbabilitySnapshotForState(
+    state,
+    probabilityContext.model,
+    probabilityContext.personalization,
+    games,
+  );
 
   return generateComplexProbabilityBreakdown(
     scoreDiff,
@@ -4969,21 +5307,30 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const snapshot = modelSnapshot || getModelProbabilitySnapshotForState(
     state,
     probabilityContext?.model || getActiveRuntimeModel(),
-    probabilityContext?.personalization || null
+    probabilityContext?.personalization || null,
+    games,
   );
   const modelProbUs = snapshot.modelProbUs;
   const baseModelProbUs = snapshot.baseModelProbUs;
   const personalizationRecord = snapshot.personalizationRecord;
   const personalizationActive = snapshot.personalizationActive;
-  const historicalContributes = beta > 0;
-  const modelContributes = beta < 1;
+  const effectiveModel = probabilityContext?.model || getActiveRuntimeModel();
+  const usesEmpiricalBlend = effectiveModel?.metadata?.empiricalBlendEnabled !== false;
+  const historicalContributes = usesEmpiricalBlend && beta > 0;
+  const modelContributes = !usesEmpiricalBlend || beta < 1;
   const personalizationContributes = modelContributes && personalizationActive;
+  const hierarchicalPrior = snapshot.hierarchicalPlayerPrior;
+  const hierarchicalContributes = modelContributes && snapshot.hierarchicalPlayerPriorActive;
   const bucketRange = getBucketRange(bucketedScore);
   const empiricalWeight = Math.round(beta * 100);
   const modelWeight = Math.round((1 - beta) * 100);
   const empiricalPercent = Math.round(empirical * 100);
   const modelPercent = Math.round(modelProbUs * 100);
-  const modelLabel = personalizationContributes ? "Personalized model" : "Regression model";
+  const modelLabel = personalizationContributes
+    ? "Personalized model"
+    : hierarchicalContributes
+      ? "Player-adjusted model"
+      : "Regression model";
   const methodLabel = historicalContributes
     ? (modelContributes ? `Saved-game history + ${modelLabel.toLowerCase()}` : "Saved-game history")
     : modelLabel;
@@ -4994,7 +5341,9 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
         title: "Model Estimate",
         source: `100% ${modelLabel}`,
         input: `Current estimate: ${winProb.us.toFixed(1)}% for ${labelUsDisplay}`,
-        detail: "Uses the current score, round, recent score movement, and latest bid context.",
+        detail: hierarchicalContributes
+          ? "Uses the current score and bid context, then adjusts for each player's prior results and opponent strength."
+          : "Uses the current score, round, recent score movement, and latest bid context.",
       };
     }
 
@@ -5026,6 +5375,11 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
     };
   })() : null;
 
+  const hierarchicalAnalysis = hierarchicalContributes ? {
+    detail: `${hierarchicalPrior.historyGames} prior games • ${hierarchicalPrior.playersWithHistory} of 4 current players have history`,
+    effectText: `State model: ${Math.round(baseModelProbUs * 100)}% -> Player-adjusted: ${Math.round(modelProbUs * 100)}%`,
+  } : null;
+
   const activeEngineExplanation = [
     modelContributes
       ? `<p>• <strong>Current game:</strong> Reads the score after round ${roundsPlayed}, the stage of the game, recent score movement, and the latest bid context.</p>`
@@ -5038,6 +5392,9 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
       : "",
     personalizationContributes
       ? `<p>• <strong>Personalization:</strong> A locally learned adjustment is currently refining the model estimate for your games.</p>`
+      : "",
+    hierarchicalContributes
+      ? `<p>• <strong>Player strength:</strong> Prior results are shrunk toward even odds and adjusted for the strength of partners and opponents.</p>`
       : "",
     historicalContributes && modelContributes
       ? `<p>• <strong>Final result:</strong> The displayed probability blends the model estimate with the matching saved-game results.</p>`
@@ -5125,6 +5482,21 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             ${escapeHtmlValue(personalizationAnalysis.effectText)}
+          </div>
+        </div>
+        ` : ""}
+
+        ${hierarchicalAnalysis ? `
+        <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-lg p-3">
+          <div class="flex justify-between items-start mb-2">
+            <div class="font-medium text-gray-700 dark:text-gray-300">Player Strength Adjustment</div>
+            <div class="text-sm text-amber-700 dark:text-amber-300 font-medium">Active</div>
+          </div>
+          <div class="text-sm text-gray-600 dark:text-gray-400">
+            ${escapeHtmlValue(hierarchicalAnalysis.detail)}
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            ${escapeHtmlValue(hierarchicalAnalysis.effectText)}
           </div>
         </div>
         ` : ""}
@@ -8041,11 +8413,16 @@ if (typeof module !== 'undefined' && module.exports) {
     generateComplexProbabilityBreakdown,
     buildProbabilityIndex,
     MODEL_FEATURE_SET,
+    LEGACY_MODEL_FEATURE_SET,
     FALLBACK_RUNTIME_MODEL,
     PROBABILITY_PERSONALIZATION_KEY,
     buildModelFeatureVector,
     extractModelFeaturesFromRoundContext,
     predictBaseModelProbabilityFromFeatures,
+    normalizeRuntimeModelArtifact,
+    fitOpponentAdjustedPlayerRatings,
+    buildHierarchicalPlayerStrengthProfile,
+    getHierarchicalPlayerPriorForState,
     fitPersonalizationCalibration,
     ensureProbabilityPersonalizationForGames,
     getModelProbabilitySnapshotForState,

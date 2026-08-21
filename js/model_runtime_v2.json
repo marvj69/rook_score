@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "modelId": "prod-432g-2777r-63ea9bf3-hier-v2",
+  "featureSet": [
+    "diff",
+    "momentum",
+    "bidding_team_sign",
+    "point_delta",
+    "diff_x_round",
+    "point_delta_x_round",
+    "bid_x_team",
+    "momentum_x_round",
+    "lead_sign",
+    "diff_x_abs_diff",
+    "momentum_x_abs_momentum",
+    "diff_x_score_sum",
+    "lead_sign_x_score_sum",
+    "target_pressure_diff",
+    "diff_x_bid",
+    "bidder_sign_x_abs_point_delta",
+    "bidder_sign_x_round"
+  ],
+  "intercept": 0.0,
+  "coefficients": {
+    "diff": 0.010160915989335243,
+    "momentum": -0.00221923785135143,
+    "bidding_team_sign": -0.7517611772780889,
+    "point_delta": 0.001545385931995299,
+    "diff_x_round": 4.804561549038419e-06,
+    "point_delta_x_round": 3.4232473772779214e-05,
+    "bid_x_team": 0.005319098297900099,
+    "momentum_x_round": 3.4232473772779214e-05,
+    "lead_sign": -0.18721698502684647,
+    "diff_x_abs_diff": -1.3739440446480084e-06,
+    "momentum_x_abs_momentum": 6.092703472996122e-06,
+    "diff_x_score_sum": 3.0242533832366335e-06,
+    "lead_sign_x_score_sum": 0.00044410681303124464,
+    "target_pressure_diff": -0.004257452492109581,
+    "diff_x_bid": -4.896794125162152e-05,
+    "bidder_sign_x_abs_point_delta": 0.0009991705997680564,
+    "bidder_sign_x_round": -0.012837195999746604
+  },
+  "calibration": {
+    "type": "platt",
+    "slope": 1.0,
+    "intercept": 0.0
+  },
+  "hierarchicalPlayerPrior": {
+    "type": "beta-plus-bradley-terry",
+    "betaAlpha": 12.0,
+    "playerWinLogOddsCoefficient": 0.5,
+    "opponentAdjustedL2": 0.05,
+    "opponentAdjustedCoefficient": 0.25,
+    "optimizer": "cyclic-coordinate-newton",
+    "maximumSweeps": 60,
+    "convergenceTolerance": 1e-8
+  },
+  "metadata": {
+    "generatedAt": "2026-08-21T00:04:26.827558Z",
+    "games": 432,
+    "roundSamples": 2777,
+    "normalizedInputSha256": "63ea9bf3abc405c230f30c9a942ffe18a8ec2160b77c989515ff0882958a33d7",
+    "empiricalBlendEnabled": false,
+    "legacyPersonalizationEnabled": false,
+    "selection": "rolling-origin state model plus library-local hierarchical player prior; state coefficients refit on all valid games after holdout evaluation"
+  }
+}

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { readFileSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
@@ -10,6 +10,7 @@ const appModuleFiles = require('../scripts/app-module-files.cjs');
 const voiceScoreCommandHandler = require('../api/voice-score-command.js');
 const paperGamePhotoHandler = require('../api/paper-game-photo.js');
 const bugReportHandler = require('../api/bug-report.js');
+const LEGACY_RUNTIME_MODEL = require('../js/model_runtime_v1.json');
 
 function setupDomStubs() {
   const noop = () => {};
@@ -236,11 +237,14 @@ const {
   generateComplexProbabilityBreakdown,
   buildProbabilityIndex,
   MODEL_FEATURE_SET,
+  LEGACY_MODEL_FEATURE_SET,
   FALLBACK_RUNTIME_MODEL,
   PROBABILITY_PERSONALIZATION_KEY,
   buildModelFeatureVector,
   extractModelFeaturesFromRoundContext,
   predictBaseModelProbabilityFromFeatures,
+  normalizeRuntimeModelArtifact,
+  getHierarchicalPlayerPriorForState,
   fitPersonalizationCalibration,
   ensureProbabilityPersonalizationForGames,
   getModelProbabilitySnapshotForState,
@@ -3434,7 +3438,7 @@ test('probability breakdown shows saved history and personalization only when th
   ];
   const personalizationRecord = {
     schemaVersion: 1,
-    modelId: FALLBACK_RUNTIME_MODEL.modelId,
+    modelId: LEGACY_RUNTIME_MODEL.modelId,
     slope: 1.1,
     intercept: 0.1,
     roundSamples: 60,
@@ -3452,9 +3456,19 @@ test('probability breakdown shows saved history and personalization only when th
     { us: 44.8, dem: 55.2 },
     historicalGames,
     { us: -85, dem: 150 },
-    null,
     {
-      modelId: FALLBACK_RUNTIME_MODEL.modelId,
+      model: {
+        ...LEGACY_RUNTIME_MODEL,
+        metadata: {
+          ...LEGACY_RUNTIME_MODEL.metadata,
+          empiricalBlendEnabled: true,
+          legacyPersonalizationEnabled: true,
+        },
+      },
+      personalization: personalizationRecord,
+    },
+    {
+      modelId: LEGACY_RUNTIME_MODEL.modelId,
       modelProbUs: 0.41,
       baseModelProbUs: 0.393,
       personalizationRecord,
@@ -3469,11 +3483,52 @@ test('probability breakdown shows saved history and personalization only when th
   assert.match(html, /<strong>Personalization:<\/strong>/);
 });
 
+test('runtime v2 probability breakdown explains player strength without legacy blending', () => {
+  const html = generateComplexProbabilityBreakdown(
+    40,
+    2,
+    'North',
+    'South',
+    { us: 61.2, dem: 38.8 },
+    [{
+      winner: 'us',
+      rounds: [
+        { runningTotals: { us: 20, dem: 0 } },
+        { runningTotals: { us: 40, dem: 0 } },
+      ],
+    }],
+    { us: 220, dem: 180 },
+    { model: FALLBACK_RUNTIME_MODEL, personalization: null },
+    {
+      modelId: FALLBACK_RUNTIME_MODEL.modelId,
+      modelProbUs: 0.612,
+      baseModelProbUs: 0.571,
+      personalizationRecord: null,
+      personalizationActive: false,
+      hierarchicalPlayerPriorActive: true,
+      hierarchicalPlayerPrior: {
+        historyGames: 12,
+        playersWithHistory: 4,
+      },
+    },
+  );
+
+  assert.match(html, /Method: Player-adjusted model/);
+  assert.match(html, /Player Strength Adjustment/);
+  assert.match(html, /State model: 57% -&gt; Player-adjusted: 61%/);
+  assert.match(html, /<strong>Player strength:<\/strong>/);
+  assert.doesNotMatch(html, /Saved-Game Matches/);
+  assert.doesNotMatch(html, /Per-User Calibration/);
+});
+
 test('model feature set includes all expected runtime features', () => {
-  assert.equal(MODEL_FEATURE_SET.length, 14);
+  assert.equal(MODEL_FEATURE_SET.length, 17);
+  assert.equal(LEGACY_MODEL_FEATURE_SET.length, 14);
   assert.ok(MODEL_FEATURE_SET.includes('diff'));
   assert.ok(MODEL_FEATURE_SET.includes('momentum_x_round'));
   assert.ok(MODEL_FEATURE_SET.includes('lead_sign'));
+  assert.ok(MODEL_FEATURE_SET.includes('diff_x_score_sum'));
+  assert.ok(MODEL_FEATURE_SET.includes('target_pressure_diff'));
 });
 
 test('extractModelFeaturesFromRoundContext maps full feature vector correctly', () => {
@@ -3525,8 +3580,315 @@ test('base model probability matches expected calibrated value for known round s
     pointDelta: -90,
   });
 
-  const probUs = predictBaseModelProbabilityFromFeatures(features, FALLBACK_RUNTIME_MODEL);
+  const probUs = predictBaseModelProbabilityFromFeatures(features, LEGACY_RUNTIME_MODEL);
   assert.ok(Math.abs(probUs - 0.3609258237010129) < 1e-9);
+});
+
+test('runtime v2 artifact validates with the promoted hierarchical configuration', () => {
+  const artifact = require('../js/model_runtime_v2.json');
+  const normalized = normalizeRuntimeModelArtifact(artifact);
+
+  assert.ok(normalized);
+  assert.equal(normalized.schemaVersion, 2);
+  assert.equal(normalized.modelId, FALLBACK_RUNTIME_MODEL.modelId);
+  assert.deepEqual(normalized.featureSet, MODEL_FEATURE_SET);
+  assert.equal(normalized.hierarchicalPlayerPrior.betaAlpha, 12);
+  assert.equal(normalized.hierarchicalPlayerPrior.playerWinLogOddsCoefficient, 0.5);
+  assert.equal(normalized.hierarchicalPlayerPrior.opponentAdjustedCoefficient, 0.25);
+  assert.equal(normalized.metadata.empiricalBlendEnabled, false);
+  assert.equal(normalized.metadata.legacyPersonalizationEnabled, false);
+});
+
+test('symmetric v2 feature values negate exactly when team sides swap', () => {
+  const original = buildModelFeatureVector({
+    diff: 120,
+    roundIdx: 2,
+    momentum: 35,
+    bidAmount: 130,
+    biddingTeamSign: 1,
+    pointDelta: 45,
+    usTotal: 310,
+    demTotal: 190,
+  });
+  const swapped = buildModelFeatureVector({
+    diff: -120,
+    roundIdx: 2,
+    momentum: -35,
+    bidAmount: 130,
+    biddingTeamSign: -1,
+    pointDelta: -45,
+    usTotal: 190,
+    demTotal: 310,
+  });
+
+  MODEL_FEATURE_SET.forEach(featureName => {
+    assert.ok(
+      Math.abs(swapped[featureName] + original[featureName]) < 1e-12,
+      featureName,
+    );
+  });
+});
+
+test('runtime v2 applies a local player-strength prior from completed saved games', () => {
+  const historicalGames = Array.from({ length: 12 }, (_, index) => ({
+    winner: index < 9 ? 'us' : 'dem',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Cara', 'Dan'],
+    finalScore: index < 9 ? { us: 510, dem: 400 } : { us: 400, dem: 510 },
+    rounds: [{
+      roundIndex: 0,
+      biddingTeam: 'us',
+      bidAmount: 120,
+      usPoints: index < 9 ? 120 : -120,
+      demPoints: index < 9 ? 60 : 180,
+      runningTotals: index < 9 ? { us: 120, dem: 60 } : { us: -120, dem: 180 },
+    }],
+  }));
+  const currentState = {
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Cara', 'Dan'],
+    rounds: [{
+      runningTotals: { us: 90, dem: 90 },
+      bidAmount: 120,
+      biddingTeam: 'us',
+      usPoints: 90,
+      demPoints: 90,
+    }],
+  };
+
+  const snapshot = getModelProbabilitySnapshotForState(
+    currentState,
+    FALLBACK_RUNTIME_MODEL,
+    null,
+    historicalGames,
+  );
+  assert.equal(snapshot.hierarchicalPlayerPriorActive, true);
+  assert.equal(snapshot.hierarchicalPlayerPrior.playersWithHistory, 4);
+  assert.equal(snapshot.hierarchicalPlayerPrior.historyGames, 12);
+  assert.ok(snapshot.hierarchicalPlayerPrior.correction > 0);
+  assert.ok(snapshot.modelProbUs > snapshot.baseModelProbUs);
+});
+
+test('runtime v2 probability is exactly complementary when team sides swap', () => {
+  const historicalGames = Array.from({ length: 8 }, (_, index) => ({
+    winner: index < 6 ? 'us' : 'dem',
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Cara', 'Dan'],
+    finalScore: index < 6 ? { us: 510, dem: 400 } : { us: 400, dem: 510 },
+    rounds: [],
+  }));
+  const originalState = {
+    usPlayers: ['Alice', 'Bob'],
+    demPlayers: ['Cara', 'Dan'],
+    rounds: [{
+      runningTotals: { us: 250, dem: 180 },
+      bidAmount: 130,
+      biddingTeam: 'us',
+      usPoints: 145,
+      demPoints: 35,
+    }],
+  };
+  const swappedState = {
+    usPlayers: originalState.demPlayers,
+    demPlayers: originalState.usPlayers,
+    rounds: [{
+      runningTotals: { us: 180, dem: 250 },
+      bidAmount: 130,
+      biddingTeam: 'dem',
+      usPoints: 35,
+      demPoints: 145,
+    }],
+  };
+
+  const original = getModelProbabilitySnapshotForState(
+    originalState,
+    FALLBACK_RUNTIME_MODEL,
+    null,
+    historicalGames,
+  );
+  const swapped = getModelProbabilitySnapshotForState(
+    swappedState,
+    FALLBACK_RUNTIME_MODEL,
+    null,
+    historicalGames,
+  );
+
+  assert.ok(Math.abs(original.baseModelProbUs + swapped.baseModelProbUs - 1) < 1e-12);
+  assert.ok(Math.abs(original.modelProbUs + swapped.modelProbUs - 1) < 1e-12);
+  assert.ok(Math.abs(
+    original.hierarchicalPlayerPrior.correction
+    + swapped.hierarchicalPlayerPrior.correction
+  ) < 1e-12);
+});
+
+test('runtime v2 returns neutral player strength when team identities are unavailable', () => {
+  const prior = getHierarchicalPlayerPriorForState(
+    { usPlayers: ['', ''], demPlayers: ['', ''] },
+    [],
+    FALLBACK_RUNTIME_MODEL,
+  );
+  assert.equal(prior.active, false);
+  assert.equal(prior.correction, 0);
+});
+
+test('runtime v2 matches the Python holdout replay when private normalized data is available', { timeout: 30_000 }, t => {
+  const normalizedPath = path.join(
+    repoRoot,
+    'Logistic Regression Model',
+    'generated',
+    'games_normalized_v2.json',
+  );
+  const reportPath = path.join(
+    repoRoot,
+    'Logistic Regression Model',
+    'generated',
+    'engine_replay_report_v2.json',
+  );
+  const candidateReportPath = path.join(
+    repoRoot,
+    'Logistic Regression Model',
+    'generated',
+    'candidate_training_report_v2.json',
+  );
+  if (!existsSync(normalizedPath) || !existsSync(reportPath) || !existsSync(candidateReportPath)) {
+    t.skip('private normalized training snapshot is not present');
+    return;
+  }
+
+  const normalized = JSON.parse(readFileSync(normalizedPath, 'utf8'));
+  const games = [...normalized.games].sort((a, b) => (
+    a.completedAt.localeCompare(b.completedAt) || a.gameId.localeCompare(b.gameId)
+  ));
+  const fitEnd = Math.trunc(games.length * 0.65);
+  const selectionEnd = fitEnd + Math.trunc(games.length * 0.10);
+  const calibrationEnd = selectionEnd + Math.trunc(games.length * 0.10);
+  const replayReport = JSON.parse(readFileSync(reportPath, 'utf8'));
+  const candidateReport = JSON.parse(readFileSync(candidateReportPath, 'utf8'));
+  const selectedName = candidateReport.selectedCandidate.name;
+  const evaluationModel = candidateReport.allCandidateTestResults.find(
+    result => result.name === selectedName,
+  ).model;
+  const hierarchy = replayReport.selection.selectedHierarchicalPrior;
+  const evaluationRuntime = normalizeRuntimeModelArtifact({
+    schemaVersion: 2,
+    modelId: 'holdout-evaluation-only',
+    featureSet: evaluationModel.featureSet,
+    intercept: evaluationModel.intercept,
+    coefficients: evaluationModel.coefficients,
+    calibration: {
+      type: 'platt',
+      slope: evaluationModel.calibration.slope,
+      intercept: evaluationModel.calibration.intercept,
+    },
+    hierarchicalPlayerPrior: {
+      type: 'beta-plus-bradley-terry',
+      betaAlpha: hierarchy.alpha,
+      playerWinLogOddsCoefficient: hierarchy.playerCoefficient,
+      opponentAdjustedL2: hierarchy.opponentAdjustedL2,
+      opponentAdjustedCoefficient: hierarchy.opponentAdjustedCoefficient,
+      optimizer: 'cyclic-coordinate-newton',
+      maximumSweeps: 60,
+      convergenceTolerance: 1e-8,
+    },
+    metadata: {
+      empiricalBlendEnabled: false,
+      legacyPersonalizationEnabled: false,
+    },
+  });
+  assert.ok(evaluationRuntime);
+  const expected = replayReport
+    .test.normalizedCandidatePlusSelectedHierarchicalPrior.roundWeighted;
+  const savedGame = game => ({
+    id: game.gameId,
+    timestamp: game.completedAt,
+    winner: game.winner,
+    finalScore: game.finalScore,
+    rounds: game.rounds,
+    usPlayers: game.teams.us.playerIds,
+    demPlayers: game.teams.dem.playerIds,
+  });
+  const priorByLibrary = new Map();
+  const labels = [];
+  const probabilities = [];
+  const weights = [];
+
+  games.forEach((game, gameIndex) => {
+    const libraryIds = game.provenance.libraryIds;
+    if (gameIndex >= calibrationEnd) {
+      const nonterminalRounds = game.rounds.filter(round => !round.terminal);
+      libraryIds.forEach(libraryId => {
+        const history = priorByLibrary.get(libraryId) || [];
+        nonterminalRounds.forEach((round, roundIndex) => {
+          const stateForRound = {
+            usPlayers: game.teams.us.playerIds,
+            demPlayers: game.teams.dem.playerIds,
+            rounds: nonterminalRounds.slice(0, roundIndex + 1),
+          };
+          const snapshot = getModelProbabilitySnapshotForState(
+            stateForRound,
+            evaluationRuntime,
+            null,
+            history,
+          );
+          labels.push(game.winner === 'us' ? 1 : 0);
+          probabilities.push(snapshot.modelProbUs);
+          weights.push(1 / libraryIds.length);
+        });
+      });
+    }
+    libraryIds.forEach(libraryId => {
+      const history = priorByLibrary.get(libraryId) || [];
+      priorByLibrary.set(libraryId, [...history, savedGame(game)]);
+    });
+  });
+
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const weightedMean = values => values.reduce(
+    (sum, value, index) => sum + (value * weights[index]),
+    0,
+  ) / totalWeight;
+  const logLoss = weightedMean(probabilities.map((probability, index) => {
+    const clipped = Math.min(1 - 1e-12, Math.max(1e-12, probability));
+    return -(labels[index] * Math.log(clipped) + (1 - labels[index]) * Math.log(1 - clipped));
+  }));
+  const brierScore = weightedMean(probabilities.map(
+    (probability, index) => (probability - labels[index]) ** 2,
+  ));
+  const accuracy = weightedMean(probabilities.map(
+    (probability, index) => Number((probability >= 0.5) === (labels[index] === 1)),
+  ));
+
+  assert.ok(Math.abs(logLoss - expected.logLoss) < 5e-4, `${logLoss} vs ${expected.logLoss}`);
+  assert.ok(Math.abs(brierScore - expected.brierScore) < 5e-4, `${brierScore} vs ${expected.brierScore}`);
+  assert.ok(Math.abs(accuracy - expected.accuracy) < 5e-4, `${accuracy} vs ${expected.accuracy}`);
+});
+
+test('checked-in runtime v2 matches the gated all-data deployment refit when private reports are available', t => {
+  const generatedRuntimePath = path.join(
+    repoRoot,
+    'Logistic Regression Model',
+    'generated',
+    'model_runtime_v2_candidate.json',
+  );
+  if (!existsSync(generatedRuntimePath)) {
+    t.skip('private gated runtime candidate is not present');
+    return;
+  }
+
+  const deployed = require('../js/model_runtime_v2.json');
+  const generated = JSON.parse(readFileSync(generatedRuntimePath, 'utf8'));
+  assert.equal(deployed.modelId, generated.modelId);
+  assert.deepEqual(deployed.featureSet, generated.featureSet);
+  assert.equal(deployed.intercept, generated.intercept);
+  assert.deepEqual(deployed.coefficients, generated.coefficients);
+  assert.deepEqual(deployed.calibration, generated.calibration);
+  assert.deepEqual(deployed.hierarchicalPlayerPrior, generated.hierarchicalPlayerPrior);
+  assert.equal(
+    deployed.metadata.normalizedInputSha256,
+    generated.metadata.normalizedInputSha256,
+  );
+  assert.equal(deployed.metadata.games, generated.metadata.games);
+  assert.equal(deployed.metadata.roundSamples, generated.metadata.roundSamples);
 });
 
 test('buildProbabilityIndex aggregates historical outcomes with priors', () => {
@@ -3667,8 +4029,9 @@ test('calculateWinProbabilityComplex keeps small leads separated by team', () =>
   assert.deepEqual(table['0|20'], { us: 31, dem: 1 });
   assert.equal(table['0|-20'], undefined);
 
-  const usLeadProb = calculateWinProbabilityComplex(usSmallLead, historicalGames);
-  const demLeadProb = calculateWinProbabilityComplex(demSmallLead, historicalGames);
+  const legacyContext = { model: LEGACY_RUNTIME_MODEL, personalization: null };
+  const usLeadProb = calculateWinProbabilityComplex(usSmallLead, historicalGames, legacyContext);
+  const demLeadProb = calculateWinProbabilityComplex(demSmallLead, historicalGames, legacyContext);
   assert.ok(usLeadProb.us > 90);
   assert.ok(demLeadProb.us < usLeadProb.us);
 });
@@ -3759,8 +4122,9 @@ test('calculateWinProbabilityComplex cache keys include game content', () => {
       },
     ];
 
-    const usFavored = calculateWinProbabilityComplex(state, historicalGamesUs);
-    const demFavored = calculateWinProbabilityComplex(state, historicalGamesDem);
+    const legacyContext = { model: LEGACY_RUNTIME_MODEL, personalization: null };
+    const usFavored = calculateWinProbabilityComplex(state, historicalGamesUs, legacyContext);
+    const demFavored = calculateWinProbabilityComplex(state, historicalGamesDem, legacyContext);
     assert.ok(usFavored.us > demFavored.us);
   } finally {
     Date.now = originalNow;
@@ -3948,23 +4312,34 @@ test('starting a rematch saves dealer-pair names when previous state only has si
 test('ensureProbabilityPersonalizationForGames stores personalization record from saved games', () => {
   resetState();
   const games = makeTrainingGames(10, 6);
-  const record = ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL, { force: true });
+  const record = ensureProbabilityPersonalizationForGames(games, LEGACY_RUNTIME_MODEL, { force: true });
   const stored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
 
   assert.equal(stored.schemaVersion, 1);
-  assert.equal(stored.modelId, FALLBACK_RUNTIME_MODEL.modelId);
+  assert.equal(stored.modelId, LEGACY_RUNTIME_MODEL.modelId);
   assert.equal(stored.gameSamples, 10);
   assert.equal(stored.roundSamples, 60);
   assert.equal(record.gamesHash, stored.gamesHash);
 });
 
+test('runtime v2 disables the legacy global personalization fit', () => {
+  resetState();
+  const record = ensureProbabilityPersonalizationForGames(
+    makeTrainingGames(10, 6),
+    FALLBACK_RUNTIME_MODEL,
+    { force: true },
+  );
+  assert.equal(record, null);
+  assert.equal(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY), null);
+});
+
 test('ensureProbabilityPersonalizationForGames does not recompute when hash is unchanged', () => {
   resetState();
   const games = makeTrainingGames(10, 6);
-  ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL, { force: true });
+  ensureProbabilityPersonalizationForGames(games, LEGACY_RUNTIME_MODEL, { force: true });
   const firstStored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
 
-  const secondRecord = ensureProbabilityPersonalizationForGames(games, FALLBACK_RUNTIME_MODEL);
+  const secondRecord = ensureProbabilityPersonalizationForGames(games, LEGACY_RUNTIME_MODEL);
   const secondStored = JSON.parse(localStorage.getItem(PROBABILITY_PERSONALIZATION_KEY));
 
   assert.equal(secondRecord.gamesHash, firstStored.gamesHash);
@@ -3987,7 +4362,7 @@ test('win probability cache key and output change when personalization parameter
   const historicalGames = [];
   const common = {
     schemaVersion: 1,
-    modelId: FALLBACK_RUNTIME_MODEL.modelId,
+    modelId: LEGACY_RUNTIME_MODEL.modelId,
     roundSamples: 120,
     gameSamples: 20,
     gamesHash: '0',
@@ -3995,11 +4370,11 @@ test('win probability cache key and output change when personalization parameter
     baseLogLoss: 0.5,
   };
   const contextA = {
-    model: FALLBACK_RUNTIME_MODEL,
+    model: LEGACY_RUNTIME_MODEL,
     personalization: { ...common, slope: 1, intercept: 0, personalizedLogLoss: 0.49 },
   };
   const contextB = {
-    model: FALLBACK_RUNTIME_MODEL,
+    model: LEGACY_RUNTIME_MODEL,
     personalization: { ...common, slope: 2, intercept: 0, personalizedLogLoss: 0.45 },
   };
 
@@ -4198,7 +4573,8 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.52";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.53";/);
+  assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);

@@ -6,7 +6,12 @@
     "build": "npm run build:js && npm run build:css",
     "build:js": "node scripts/build-js-bundle.mjs",
     "build:css": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c ./tailwind.config.cjs -i ./css/tailwind.input.css -o ./css/tailwind.css --minify",
-    "test": "node --test tests/app.test.js"
+    "test": "node --test tests/app.test.js tests/training-data.test.mjs",
+    "training:normalize:live": "node scripts/export-live-rook-training-data.mjs",
+    "training:candidate": "python3 'Logistic Regression Model/run_normalized_candidate.py'",
+    "training:replay": "python3 'Logistic Regression Model/run_engine_replay.py'",
+    "training:run": "npm run training:normalize:live && npm run training:candidate && npm run training:replay && npm run training:test",
+    "training:test": "node --test tests/training-data.test.mjs && python3 tests/training_model_test.py"
   },
   "devDependencies": {
     "tailwindcss": "3.4.17"
