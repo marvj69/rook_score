@@ -5,8 +5,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://rook-score-marvj69-marvj69s-projects.vercel.app",
 ];
 
-const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.1-flash-lite";
-const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.7-flash";
+const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-3.1-flash-lite"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
