@@ -5,7 +5,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://rook-score-marvj69-marvj69s-projects.vercel.app",
 ];
 
-const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.1-flash-lite";
+const DEFAULT_VOICE_OPENROUTER_MODEL = "thinkingmachines/inkling-small:free";
 const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
@@ -1284,7 +1284,7 @@ function shouldReplaceProviderPlanWithLocalFallback(plan) {
 }
 
 async function fetchOpenRouterPlan(payload, apiKey) {
-  const primaryModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  const primaryModel = process.env.VOICE_SCORE_OPENROUTER_MODEL || DEFAULT_VOICE_OPENROUTER_MODEL;
   const fallbackModels = getOpenRouterFallbackModels(primaryModel);
   let response;
   try {

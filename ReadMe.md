@@ -215,6 +215,7 @@ FIREBASE_MESSAGING_SENDER_ID
 FIREBASE_APP_ID
 OPENROUTER_API_KEY
 OPENROUTER_MODEL
+VOICE_SCORE_OPENROUTER_MODEL
 OPENROUTER_FALLBACK_MODELS
 OPENROUTER_SITE_URL
 OPENROUTER_APP_TITLE
@@ -227,7 +228,7 @@ BUG_REPORT_ALLOWED_ORIGINS
 
 The in-app bug report endpoint sends through Resend. `BUG_REPORT_TO_EMAIL` defaults to `heinonenmh@gmail.com`, and `BUG_REPORT_FROM_EMAIL` defaults to `Rook Score <onboarding@resend.dev>`. The Resend onboarding sender is suitable while testing with the email address associated with the Resend account. For general production delivery, verify a sending domain in Resend and set `BUG_REPORT_FROM_EMAIL` to an address on that domain.
 
-Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `VOICE_SCORE_OPENROUTER_MODEL` is optional; the voice command planner defaults to `thinkingmachines/inkling-small:free` with low reasoning effort. The paper-game photo endpoint continues to use `OPENROUTER_MODEL`, which defaults to `google/gemini-3.1-flash-lite`. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
 `VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
 
 Enabling Experimental Features opens a one-time, device-local onboarding dialog. Continuing requests microphone permission and immediately stops the permission-check stream without recording. Optional model-improvement consent is stored separately from the Experimental Features setting and defaults to off. Its Settings control is visible only while Experimental Features is enabled, and submissions require both settings to be on.

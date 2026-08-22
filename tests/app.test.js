@@ -2618,13 +2618,13 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
 
 test('voice command endpoint accepts raw audio for multimodal planning', async () => {
   const originalApiKey = process.env.OPENROUTER_API_KEY;
-  const originalModel = process.env.OPENROUTER_MODEL;
+  const originalVoiceModel = process.env.VOICE_SCORE_OPENROUTER_MODEL;
   const originalFallbackModels = process.env.OPENROUTER_FALLBACK_MODELS;
   const originalFetch = global.fetch;
   let requestBody = null;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
+  process.env.VOICE_SCORE_OPENROUTER_MODEL = 'thinkingmachines/inkling-small:free';
   process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
   global.fetch = async (_url, options) => {
     requestBody = JSON.parse(options.body);
@@ -2662,15 +2662,15 @@ test('voice command endpoint accepts raw audio for multimodal planning', async (
   } finally {
     if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalApiKey;
-    if (originalModel === undefined) delete process.env.OPENROUTER_MODEL;
-    else process.env.OPENROUTER_MODEL = originalModel;
+    if (originalVoiceModel === undefined) delete process.env.VOICE_SCORE_OPENROUTER_MODEL;
+    else process.env.VOICE_SCORE_OPENROUTER_MODEL = originalVoiceModel;
     if (originalFallbackModels === undefined) delete process.env.OPENROUTER_FALLBACK_MODELS;
     else process.env.OPENROUTER_FALLBACK_MODELS = originalFallbackModels;
     global.fetch = originalFetch;
   }
 
   assert.equal(response.statusCode, 200);
-  assert.equal(requestBody.model, 'google/gemini-3.1-flash-lite');
+  assert.equal(requestBody.model, 'thinkingmachines/inkling-small:free');
   assert.deepEqual(requestBody.reasoning, { effort: 'low' });
   assert.equal(requestBody.messages[1].role, 'user');
   assert.equal(Array.isArray(requestBody.messages[1].content), true);
@@ -2733,6 +2733,7 @@ test('voice command endpoint accepts multipart audio while preserving planner co
   }
 
   assert.equal(response.statusCode, 200);
+  assert.equal(requestBody.model, 'thinkingmachines/inkling-small:free');
   assert.match(requestBody.messages[1].content[0].text, /"roundNumber":3/);
   assert.equal(requestBody.messages[1].content[1].input_audio.data, audioBuffer.toString('base64'));
   assert.equal(requestBody.messages[1].content[1].input_audio.format, 'm4a');
@@ -2828,13 +2829,13 @@ test('voice command endpoint uses local fallback without OpenRouter in local dev
 
 test('voice command endpoint requests structured OpenRouter action plans', async () => {
   const originalApiKey = process.env.OPENROUTER_API_KEY;
-  const originalModel = process.env.OPENROUTER_MODEL;
+  const originalVoiceModel = process.env.VOICE_SCORE_OPENROUTER_MODEL;
   const originalFallbackModels = process.env.OPENROUTER_FALLBACK_MODELS;
   const originalFetch = global.fetch;
   let fetchCalled = false;
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
+  process.env.VOICE_SCORE_OPENROUTER_MODEL = 'thinkingmachines/inkling-small:free';
   process.env.OPENROUTER_FALLBACK_MODELS = 'google/gemini-2.5-flash';
   global.fetch = async (url, options) => {
     fetchCalled = true;
@@ -2842,7 +2843,7 @@ test('voice command endpoint requests structured OpenRouter action plans', async
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'Bearer test-openrouter-key');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'google/gemini-3.1-flash-lite');
+    assert.equal(body.model, 'thinkingmachines/inkling-small:free');
     assert.deepEqual(body.models, ['google/gemini-2.5-flash']);
     assert.deepEqual(body.reasoning, { effort: 'low' });
     assert.deepEqual(body.response_format, { type: 'json_object' });
@@ -2887,10 +2888,10 @@ test('voice command endpoint requests structured OpenRouter action plans', async
     } else {
       process.env.OPENROUTER_API_KEY = originalApiKey;
     }
-    if (originalModel === undefined) {
-      delete process.env.OPENROUTER_MODEL;
+    if (originalVoiceModel === undefined) {
+      delete process.env.VOICE_SCORE_OPENROUTER_MODEL;
     } else {
-      process.env.OPENROUTER_MODEL = originalModel;
+      process.env.VOICE_SCORE_OPENROUTER_MODEL = originalVoiceModel;
     }
     if (originalFallbackModels === undefined) {
       delete process.env.OPENROUTER_FALLBACK_MODELS;
@@ -2910,7 +2911,7 @@ test('voice command endpoint requests structured OpenRouter action plans', async
       requiresConfirmation: false,
       heardText: 'open settings',
       actions: [{ type: 'openModal', target: 'settings' }],
-      plannerModel: 'google/gemini-3.1-flash-lite',
+      plannerModel: 'thinkingmachines/inkling-small:free',
       plannerRevision: 'multipart-audio-v6',
     },
   });
