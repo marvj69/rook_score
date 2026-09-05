@@ -196,7 +196,11 @@ Rook Score! is a PWA, offering:
 ## 🔧 Development
 
 ### Prerequisites
-A modern web browser. No complex build steps are required for local development of this single `index.html` file.
+A modern web browser and Node.js 20 or newer for building and testing changes.
+
+Run `npm ci`, `npm run build`, and `npm test` before publishing. The build minifies the core and optional voice bundles while preserving the global handlers used by HTML and Firebase. Edit `js/modules/`, then commit the generated `js/app.bundle.js`, `js/voice-score.bundle.js`, and any updated CSS with the source changes. Runtime changes also need a new service-worker cache name.
+
+The tests exercise both source modules and production bundles, including timer lifecycle, layout scheduling, lazy voice integration, download-size budgets, and the Pages offline asset list. Pages rebuilds and verifies the committed assets before deployment.
 
 ### Running Locally
 1.  Clone or download this repository.

@@ -6,6 +6,8 @@ const CURRENT_GAME_TIMER_TICK_MS = 1000;
 const CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 * 1000;
 let currentGameTimerLifecycleInitialized = false;
 let currentGameTimerLastCheckpointAt = 0;
+let currentGameTimerInterval = null;
+let currentGameTimerPageHidden = false;
 
 function clampDurationMs(value, cap = Number.MAX_SAFE_INTEGER) {
   const num = Number(value);
@@ -111,13 +113,15 @@ function ensureCurrentGameTimerStarted(nowTs = Date.now()) {
   state.timerLastSavedAt = now;
   currentGameTimerLastCheckpointAt = now;
   updateCurrentGameTimerDisplay(now);
+  syncCurrentGameTimerInterval();
   return true;
 }
 
 function updateCurrentGameTimerDisplay(nowTs = Date.now()) {
   const timerValue = document.getElementById("currentGameTimerValue");
   if (!timerValue) return;
-  timerValue.textContent = formatLiveGameDuration(getCurrentGameTime(state, nowTs));
+  const displayTime = formatLiveGameDuration(getCurrentGameTime(state, nowTs));
+  if (timerValue.textContent !== displayTime) timerValue.textContent = displayTime;
 }
 
 function checkpointCurrentGameTimer(nowTs = Date.now()) {
@@ -131,19 +135,16 @@ function checkpointCurrentGameTimer(nowTs = Date.now()) {
   return true;
 }
 
-function initializeCurrentGameTimer() {
-  if (currentGameTimerLifecycleInitialized) return;
-  currentGameTimerLifecycleInitialized = true;
-  currentGameTimerLastCheckpointAt = Date.now();
-
-  document.addEventListener("visibilitychange", () => {
-    checkpointCurrentGameTimer();
-  });
-  window.addEventListener("pagehide", () => checkpointCurrentGameTimer());
-  window.addEventListener("pageshow", () => checkpointCurrentGameTimer());
-
-  setInterval(() => {
-    if (document.hidden) return;
+function syncCurrentGameTimerInterval() {
+  const needsTicks = currentGameTimerLifecycleInitialized
+    && !document.hidden && !currentGameTimerPageHidden && shouldRunCurrentGameTimer(state);
+  if (!needsTicks) {
+    if (currentGameTimerInterval !== null) clearInterval(currentGameTimerInterval);
+    currentGameTimerInterval = null;
+    return;
+  }
+  if (currentGameTimerInterval !== null) return;
+  currentGameTimerInterval = setInterval(() => {
     const now = Date.now();
     updateCurrentGameTimerDisplay(now);
     if (shouldRunCurrentGameTimer(state)
@@ -152,6 +153,29 @@ function initializeCurrentGameTimer() {
       currentGameTimerLastCheckpointAt = now;
     }
   }, CURRENT_GAME_TIMER_TICK_MS);
+}
+
+function initializeCurrentGameTimer() {
+  if (currentGameTimerLifecycleInitialized) return;
+  currentGameTimerLifecycleInitialized = true;
+  currentGameTimerLastCheckpointAt = Date.now();
+
+  // Stop display work while hidden; the saved time anchor continues counting.
+  document.addEventListener("visibilitychange", () => {
+    checkpointCurrentGameTimer();
+    syncCurrentGameTimerInterval();
+  });
+  window.addEventListener("pagehide", () => {
+    currentGameTimerPageHidden = true;
+    checkpointCurrentGameTimer();
+    syncCurrentGameTimerInterval();
+  });
+  window.addEventListener("pageshow", () => {
+    currentGameTimerPageHidden = false;
+    checkpointCurrentGameTimer();
+    syncCurrentGameTimerInterval();
+  });
+  syncCurrentGameTimerInterval();
 }
 
 function updateState(newState) {
@@ -194,6 +218,7 @@ function updateState(newState) {
   }
 
   state = { ...state, ...nextState };
+  syncCurrentGameTimerInterval();
   scheduleRender();
 }
 function resetGame() {

@@ -1072,6 +1072,21 @@ function calculateWinProbabilityComplex(state, historicalGames, probabilityConte
   const currentDiff = lastTotals.us - lastTotals.dem;
 
   const games = Array.isArray(historicalGames) ? historicalGames : [];
+  const context = probabilityContext || { model: getActiveRuntimeModel(), personalization: null };
+  const modelSnapshot = getModelProbabilitySnapshotForState(
+    state,
+    context.model,
+    context.personalization,
+    games,
+  );
+  const modelProbUs = modelSnapshot.modelProbUs;
+
+  // Runtime v2 uses the state model and player prior, so do not scan every
+  // historical round to build the unused legacy empirical table.
+  if (context.model?.metadata?.empiricalBlendEnabled === false) {
+    return toDisplayProbabilityPercents(modelProbUs);
+  }
+
   const probCacheKey = getProbabilityCacheKey(games);
   if (!PROB_CACHE.has(probCacheKey)) {
     PROB_CACHE.set(probCacheKey, buildProbabilityIndex(games));
@@ -1082,19 +1097,6 @@ function calculateWinProbabilityComplex(state, historicalGames, probabilityConte
   const counts = table[empiricalKey] || { us: 1, dem: 1 };
   const empiricalProbUs = counts.us / (counts.us + counts.dem);
   const observationsInBucket = (counts.us - 1) + (counts.dem - 1);
-
-  const context = probabilityContext || { model: getActiveRuntimeModel(), personalization: null };
-  const modelSnapshot = getModelProbabilitySnapshotForState(
-    state,
-    context.model,
-    context.personalization,
-    games,
-  );
-  const modelProbUs = modelSnapshot.modelProbUs;
-
-  if (context.model?.metadata?.empiricalBlendEnabled === false) {
-    return toDisplayProbabilityPercents(modelProbUs);
-  }
 
   const K_CONFIDENCE_THRESHOLD = 30;
   const beta = Math.min(1, Math.log(observationsInBucket + 1) / Math.log(K_CONFIDENCE_THRESHOLD + 1));

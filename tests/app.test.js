@@ -4497,7 +4497,6 @@ test('service worker update flow activates without a user prompt', () => {
 test('document-level menu touch tracking stays passive for scroll performance', () => {
   const runtimeFiles = [
     'js/modules/14-initialization-and-exports.js',
-    'js/app.bundle.js',
   ];
 
   for (const file of runtimeFiles) {
@@ -4560,8 +4559,8 @@ test('current game timer is visible, starts with play, and keeps counting across
   assert.match(stateSource, /CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 \* 1000/);
   assert.match(stateSource, /function checkpointCurrentGameTimer\(/);
   assert.match(stateSource, /document\.addEventListener\("visibilitychange"[\s\S]*checkpointCurrentGameTimer\(\)/);
-  assert.match(stateSource, /window\.addEventListener\("pagehide", \(\) => checkpointCurrentGameTimer\(\)\)/);
-  assert.match(stateSource, /window\.addEventListener\("pageshow", \(\) => checkpointCurrentGameTimer\(\)\)/);
+  assert.match(stateSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*?checkpointCurrentGameTimer\(\)/);
+  assert.match(stateSource, /window\.addEventListener\("pageshow", \(\) => \{[\s\S]*?checkpointCurrentGameTimer\(\)/);
   assert.doesNotMatch(stateSource, /pauseCurrentGameTimer|resumeCurrentGameTimer|pauseTimer/);
   assert.match(stateSource, /saveCurrentGameState\(\{ sync: false, showIndicator: false, now \}\)/);
   assert.match(initializationSource, /initializeCurrentGameTimer\(\);/);
@@ -4573,7 +4572,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.53";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.54";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);

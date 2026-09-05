@@ -4,6 +4,7 @@
 const IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS = "ios-standalone-safe-area-fallback";
 const APP_CONTENT_OVERFLOWS_CLASS = "app-content-overflows";
 const IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX = 44;
+let viewportCompatibilitySyncScheduled = false;
 
 function getComputedSafeAreaInsetTop() {
   if (typeof document === "undefined" || !document.body || typeof getComputedStyle !== "function") return 0;
@@ -35,13 +36,13 @@ function shouldApplyStandaloneSafeAreaFallback({ isIOS, isStandalone, safeAreaIn
   return Boolean(isIOS && isStandalone && Number(safeAreaInsetTop) < 1);
 }
 
-function applyStandaloneSafeAreaFallback() {
+function applyStandaloneSafeAreaFallback(safeAreaInsetTop = getComputedSafeAreaInsetTop()) {
   const body = document.getElementById("bodyRoot") || document.body;
   if (!body) return false;
   const needsFallback = shouldApplyStandaloneSafeAreaFallback({
     isIOS: isProbablyIOSDevice(),
     isStandalone: isStandaloneDisplayMode(),
-    safeAreaInsetTop: getComputedSafeAreaInsetTop(),
+    safeAreaInsetTop,
   });
   body.classList.toggle(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS, needsFallback);
   return needsFallback;
@@ -63,26 +64,33 @@ function getViewportHeight() {
   return Number(document.documentElement && document.documentElement.clientHeight) || 0;
 }
 
-function syncAppViewportOverflowClass() {
+function syncAppViewportOverflowClass(measuredSafeAreaInsetTop = getComputedSafeAreaInsetTop()) {
   const body = document.getElementById("bodyRoot") || document.body;
   const app = document.getElementById("app");
   if (!body || !app) return false;
   const safeAreaInsetTop = body.classList.contains(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS)
     ? IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX
-    : getComputedSafeAreaInsetTop();
+    : measuredSafeAreaInsetTop;
   const shouldScroll = shouldEnableAppViewportScroll(app.scrollHeight, getViewportHeight(), safeAreaInsetTop);
   body.classList.toggle(APP_CONTENT_OVERFLOWS_CLASS, shouldScroll);
   return shouldScroll;
 }
 
 function syncViewportCompatibilityClasses() {
-  applyStandaloneSafeAreaFallback();
-  syncAppViewportOverflowClass();
+  // Read the inset once: each probe insertion/computed-style read can force layout.
+  const safeAreaInsetTop = getComputedSafeAreaInsetTop();
+  applyStandaloneSafeAreaFallback(safeAreaInsetTop);
+  syncAppViewportOverflowClass(safeAreaInsetTop);
 }
 
 function scheduleViewportCompatibilitySync() {
+  if (viewportCompatibilitySyncScheduled) return;
+  viewportCompatibilitySyncScheduled = true;
   const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
-  schedule(syncViewportCompatibilityClasses);
+  schedule(() => {
+    viewportCompatibilitySyncScheduled = false;
+    syncViewportCompatibilityClasses();
+  });
 }
 
 function enforceDarkMode() {

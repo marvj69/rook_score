@@ -74,13 +74,18 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const labelDemDisplay = escapeHtmlValue(labelDem || "Dem");
   const leadLabelDisplay = scoreDiff > 0 ? labelUsDisplay : labelDemDisplay;
 
-  // Get the probability table for complex analysis
+  const effectiveModel = probabilityContext?.model || getActiveRuntimeModel();
+  const usesEmpiricalBlend = effectiveModel?.metadata?.empiricalBlendEnabled !== false;
+  // Only legacy models use the historical probability table.
   const games = Array.isArray(historicalGames) ? historicalGames : [];
-  const cacheKey = getProbabilityCacheKey(games);
-  if (!PROB_CACHE.has(cacheKey)) {
-    PROB_CACHE.set(cacheKey, buildProbabilityIndex(games));
+  let table = {};
+  if (usesEmpiricalBlend) {
+    const cacheKey = getProbabilityCacheKey(games);
+    if (!PROB_CACHE.has(cacheKey)) {
+      PROB_CACHE.set(cacheKey, buildProbabilityIndex(games));
+    }
+    table = PROB_CACHE.get(cacheKey);
   }
-  const table = PROB_CACHE.get(cacheKey);
 
   // Calculate the bucketed score and key for this situation
   const roundIndex = Math.max(0, roundsPlayed - 1);
@@ -101,8 +106,6 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   const baseModelProbUs = snapshot.baseModelProbUs;
   const personalizationRecord = snapshot.personalizationRecord;
   const personalizationActive = snapshot.personalizationActive;
-  const effectiveModel = probabilityContext?.model || getActiveRuntimeModel();
-  const usesEmpiricalBlend = effectiveModel?.metadata?.empiricalBlendEnabled !== false;
   const historicalContributes = usesEmpiricalBlend && beta > 0;
   const modelContributes = !usesEmpiricalBlend || beta < 1;
   const personalizationContributes = modelContributes && personalizationActive;
