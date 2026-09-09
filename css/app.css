@@ -214,15 +214,6 @@ html.dark .history-game-timer__value {
   color: rgba(248, 250, 252, 0.88);
 }
 
-/* Keep timer actions quiet, readable, and tappable in the history header. */
-.game-timer-controls { margin-top: 0.35rem; font-size: 0.72rem; line-height: 1.45; color: #475569; text-transform: none; letter-spacing: normal; }
-.game-timer-controls button { min-height: 44px; padding: 0.45rem 0.55rem; border: 1px solid currentColor; border-radius: 0.5rem; font-weight: 700; margin: 0.25rem 0.25rem 0.25rem 0; }
-.game-timer-controls button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 3px; }
-.game-timer-controls [hidden] { display: none; }
-.game-timer-notice { max-width: 24rem; }
-.game-timer-summary { margin-bottom: 1rem; }
-html.dark .game-timer-controls { color: #cbd5e1; }
-
 /* ── Version Badge ── */
 .version-badge {
   position: fixed;

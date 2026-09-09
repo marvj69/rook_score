@@ -43,7 +43,7 @@ function getCurrentGameTimerActivityAt(gameState = state) {
 }
 
 function shouldRunCurrentGameTimer(gameState = state) {
-  return hasStartedCurrentGameTimer(gameState) && !gameState?.gameOver && !gameState?.timerPaused;
+  return hasStartedCurrentGameTimer(gameState) && !gameState?.gameOver;
 }
 
 function isCurrentGameTimerIdle(gameState = state, nowTs = Date.now()) {
@@ -78,7 +78,7 @@ function buildCurrentGameTimerCheckpoint(gameState = state, nowTs = Date.now()) 
     ...gameState,
     timerStarted: hasStartedCurrentGameTimer(gameState),
     timerLastActivityAt: clockMovedBack ? now : getCurrentGameTimerActivityAt(gameState),
-    timerPaused: Boolean(gameState?.timerPaused),
+    timerPaused: false,
     accumulatedTime: getCurrentGameTime(gameState, now),
     timerSkippedMs: getCurrentGameSkippedTime(gameState, now),
     startTime: shouldRunCurrentGameTimer(gameState) ? now : null,
@@ -87,6 +87,13 @@ function buildCurrentGameTimerCheckpoint(gameState = state, nowTs = Date.now()) 
 }
 
 function normalizeLoadedGameTimerState(gameState, nowTs = Date.now()) {
+  // Retired manual-pause snapshots resume from now without counting the break.
+  if (gameState?.timerPaused) {
+    return buildCurrentGameTimerCheckpoint({
+      ...gameState, timerPaused: false, startTime: null,
+      timerLastActivityAt: nowTs,
+    }, nowTs);
+  }
   // Old hidden snapshots had no startTime. Recover from their checkpoint, with
   // the same idle bound; historical accumulated totals are never guessed away.
   const resumeAnchors = [gameState?.startTime, gameState?.timerLastSavedAt]
@@ -126,52 +133,11 @@ function recordCurrentGameTimerActivity() {
   saveCurrentGameState({ sync: false, showIndicator: false });
 }
 
-function toggleCurrentGameTimer() {
-  if (state.gameOver || !hasStartedCurrentGameTimer(state)) return;
-  const now = Date.now();
-  if (state.timerPaused || isCurrentGameTimerIdle(state, now)) {
-    ensureCurrentGameTimerStarted(now);
-  } else {
-    Object.assign(state, buildCurrentGameTimerCheckpoint(state, now), { timerPaused: true, startTime: null });
-  }
-  saveCurrentGameState({ showIndicator: false, now });
-  syncCurrentGameTimerInterval();
-  scheduleRender();
-}
-
-function includeCurrentGameSkippedTime() {
-  const now = Date.now();
-  const checkpoint = buildCurrentGameTimerActivity(state, now);
-  checkpoint.accumulatedTime = clampDurationMs(checkpoint.accumulatedTime + checkpoint.timerSkippedMs);
-  checkpoint.timerSkippedMs = 0;
-  Object.assign(state, checkpoint);
-  saveCurrentGameState({ showIndicator: false, now });
-  syncCurrentGameTimerInterval();
-  scheduleRender();
-}
-
 function updateCurrentGameTimerDisplay(nowTs = Date.now()) {
   const timerValue = document.getElementById("currentGameTimerValue");
   if (!timerValue) return;
   const displayTime = formatLiveGameDuration(getCurrentGameTime(state, nowTs));
   if (timerValue.textContent !== displayTime) timerValue.textContent = displayTime;
-  const control = document.getElementById("currentGameTimerToggle");
-  const paused = state.timerPaused || isCurrentGameTimerIdle(state, nowTs);
-  if (control) control.textContent = paused ? "Resume timer" : "Pause timer";
-  const notice = document.getElementById("currentGameTimerNotice");
-  if (notice) {
-    const message = state.gameOver ? "Final game time."
-      : !hasStartedCurrentGameTimer(state) ? "Starts with your first bid."
-      : state.timerPaused ? "Timer paused. Scoring resumes it."
-      : isCurrentGameTimerIdle(state, nowTs) ? "Auto-paused after 20 minutes without scoring."
-      : "Auto-pauses after 20 minutes without scoring.";
-    if (notice.textContent !== message) notice.textContent = message;
-  }
-  const skipped = getCurrentGameSkippedTime(state, nowTs);
-  const review = document.getElementById("currentGameTimerReview");
-  if (review) review.hidden = skipped < 1000;
-  const skippedValue = document.getElementById("currentGameTimerSkippedValue");
-  if (skippedValue) skippedValue.textContent = formatLiveGameDuration(skipped);
 }
 
 function checkpointCurrentGameTimer(nowTs = Date.now()) {

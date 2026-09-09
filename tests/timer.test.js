@@ -56,48 +56,27 @@ test('no idle time is skipped before the exact boundary; play can continue for d
   assert.equal(current.timerSkippedMs, 0);
 });
 
-test('scoring after an overnight gap resumes without counting the gap, and restoration is idempotent', () => {
+test('scoring after an overnight gap resumes without counting the gap', () => {
   const { c, at } = harness();
   c.state = game();
   at(T + 12 * 60 * MIN);
   c.recordCurrentGameTimerActivity();
   assert.equal(c.state.accumulatedTime, 23 * MIN);
-  assert.equal(c.state.timerSkippedMs, 700 * MIN);
   at(T + 12 * 60 * MIN + MIN);
-  c.includeCurrentGameSkippedTime();
-  assert.equal(c.state.accumulatedTime, 724 * MIN);
-  assert.equal(c.state.timerSkippedMs, 0);
-  c.includeCurrentGameSkippedTime();
-  assert.equal(c.state.accumulatedTime, 724 * MIN);
-});
-
-test('manual pause survives reload and does not create recoverable automatic idle time', () => {
-  const { c, at } = harness();
-  c.state = game();
-  at(T + 2 * MIN);
-  c.toggleCurrentGameTimer();
-  assert.equal(c.state.timerPaused, true);
+  assert.equal(c.getCurrentGameTime(c.state), 24 * MIN);
   at(T + 24 * 60 * MIN);
-  c.state = c.normalizeLoadedGameTimerState(c.state, T + 24 * 60 * MIN);
-  assert.equal(c.state.accumulatedTime, 5 * MIN);
-  assert.equal(c.state.timerSkippedMs, 0);
-  assert.equal(c.state.startTime, null);
-  c.recordCurrentGameTimerActivity();
-  assert.equal(c.state.timerPaused, false);
-  assert.equal(c.getCurrentGameTime(c.state, T + 24 * 60 * MIN + MIN), 6 * MIN);
-});
-
-test('explicit resume preserves skipped time, including multiple idle episodes', () => {
-  const { c, at } = harness();
-  c.state = game();
-  at(T + 60 * MIN);
-  c.toggleCurrentGameTimer();
-  assert.equal(c.state.accumulatedTime, 23 * MIN);
-  assert.equal(c.state.timerSkippedMs, 40 * MIN);
-  at(T + 120 * MIN);
   c.recordCurrentGameTimerActivity();
   assert.equal(c.state.accumulatedTime, 43 * MIN);
-  assert.equal(c.state.timerSkippedMs, 80 * MIN);
+});
+
+test('retired manual-pause snapshots migrate without counting the break or getting stuck', () => {
+  const { c } = harness();
+  const resumed = c.normalizeLoadedGameTimerState(game({
+    timerPaused: true, startTime: null, accumulatedTime: 5 * MIN,
+  }), T + 24 * 60 * MIN);
+  assert.equal(resumed.accumulatedTime, 5 * MIN);
+  assert.equal(resumed.timerPaused, false);
+  assert.equal(c.getCurrentGameTime(resumed, T + 24 * 60 * MIN + MIN), 6 * MIN);
 });
 
 test('page lifecycle never grants activity, and repeated reloads never double count', () => {
@@ -119,18 +98,15 @@ test('page lifecycle never grants activity, and repeated reloads never double co
   assert.equal(c.state.timerSkippedMs, 160 * MIN);
 });
 
-test('unstarted and completed games never restart; completed skipped time can be restored before saving', () => {
-  const { c, at } = harness();
+test('unstarted and completed games never restart', () => {
+  const { c } = harness();
   const fresh = c.normalizeLoadedGameTimerState({ rounds: [], accumulatedTime: 0 }, T);
   assert.equal(fresh.timerStarted, false);
   assert.equal(fresh.startTime, null);
-  c.state = game({ gameOver: true, startTime: null, timerSkippedMs: 60 * MIN });
-  at(T + 24 * 60 * MIN);
-  c.includeCurrentGameSkippedTime();
-  assert.equal(c.state.accumulatedTime, 63 * MIN);
-  assert.equal(c.state.startTime, null);
-  assert.equal(c.state.gameOver, true);
-  assert.equal(c.getCurrentGameTime(c.state, T + 48 * 60 * MIN), 63 * MIN);
+  const completed = c.normalizeLoadedGameTimerState(game({ gameOver: true, startTime: null }), T + 24 * 60 * MIN);
+  assert.equal(completed.accumulatedTime, 3 * MIN);
+  assert.equal(completed.startTime, null);
+  assert.equal(c.getCurrentGameTime(completed, T + 48 * 60 * MIN), 3 * MIN);
 });
 
 test('migration, malformed values and clock changes cannot inflate a segment without bound', () => {
