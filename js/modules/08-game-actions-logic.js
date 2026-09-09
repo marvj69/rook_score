@@ -93,7 +93,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   // Get current state values
   const { biddingTeam, bidAmount, rounds, usTeamName, demTeamName } = state;
   if (!biddingTeam || !bidAmount) return;
-  if (!rounds.length) ensureCurrentGameTimerStarted();
+  ensureCurrentGameTimerStarted();
   const numericBid = Number(bidAmount);
   const lastTotals = getLastRunningTotals();
 
@@ -160,7 +160,7 @@ victoryMethod  = "Set Other Team";
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
   if (timerRunning && gameFinished) {
-    finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
+    finalAccumulated = getCurrentGameTime(state);
   }
 
   updateState({
@@ -203,6 +203,7 @@ function handleTeamClick(team) {
   if (timerJustStarted) saveCurrentGameState({ showIndicator: false });
 }
 function handleBidSelect(bid) {
+  recordCurrentGameTimerActivity();
   closeScoreKeypad(true);
   if (bid === "other") {
     updateState({ showCustomBid: true, bidAmount: "", customBidValue: ephemeralCustomBid }); // Keep current custom bid if switching back
@@ -233,6 +234,7 @@ function applyInAppNumericKey(currentValue, key, maxLength = 3) {
 }
 
 function setCustomBidInputValue(value) {
+  recordCurrentGameTimerActivity();
   const valStr = String(value ?? "").trim();
   ephemeralCustomBid = valStr;
   const isValidBid = validateBid(valStr) === "" && !BLOCKED_BIDS.has(Number(valStr));
@@ -282,6 +284,7 @@ function closeScoreKeypad(immediate = false) {
 }
 
 function handleScoreKeypadInput(target, key) {
+  recordCurrentGameTimerActivity();
   if (target === "bid") {
     setCustomBidInputValue(applyInAppNumericKey(ephemeralCustomBid || state.customBidValue, key));
     return;
@@ -302,6 +305,7 @@ function handleScoreKeypadInput(target, key) {
 }
 
 function handleBiddingPointsToggle(isBiddingTeamPoints) {
+  recordCurrentGameTimerActivity();
   ephemeralPoints = ""; // Clear ephemeral points input
   updateState({ enterBidderPoints: isBiddingTeamPoints });
 }
@@ -391,7 +395,7 @@ function commitRoundScore({ biddingTeam, bidAmount, pointsVal, enterBidderPoints
   const numericBid = Number(bidAmount);
   const numericPoints = Number(pointsVal);
   const isFirstRound = rounds.length === 0;
-  if (isFirstRound) ensureCurrentGameTimerStarted();
+  ensureCurrentGameTimerStarted();
 
   const lastTotals = getLastRunningTotals();
   const roundOutcome = calculateRoundPointsOutcome({
@@ -440,7 +444,7 @@ victoryMethod  = "Set Other Team";
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
   if (timerRunning && gameFinished) {
-    finalAccumulated = calculateSafeTimeAccumulation(finalAccumulated, state.startTime);
+    finalAccumulated = getCurrentGameTime(state);
   }
 
   updateState({
@@ -548,6 +552,7 @@ function handleFormSubmit(e, skipZeroCheck = false) {
 }
 function handleUndo() {
   if (!state.rounds.length) return;
+  recordCurrentGameTimerActivity();
   const wasGameOver = state.gameOver;
   const priorWinner = state.winner;
   const teamSnapshot = {
@@ -570,11 +575,16 @@ function handleUndo() {
       nextState.timerStarted = false;
       nextState.accumulatedTime = 0;
       nextState.timerLastSavedAt = null;
+      nextState.timerLastActivityAt = null;
+      nextState.timerPaused = false;
+      nextState.timerSkippedMs = 0;
   } else if (wasGameOver) {
       const resumedAt = Date.now();
       nextState.timerStarted = true;
       nextState.startTime = resumedAt;
       nextState.timerLastSavedAt = resumedAt;
+      nextState.timerLastActivityAt = resumedAt;
+      nextState.timerPaused = false;
   }
   if (wasGameOver && priorWinner) {
     const teams = getTeamsObject();
@@ -586,6 +596,7 @@ function handleUndo() {
 }
 function handleRedo() {
   if (!state.undoneRounds.length) return;
+  recordCurrentGameTimerActivity();
   const redoRound = state.undoneRounds[state.undoneRounds.length - 1];
   const newRounds = [...state.rounds, redoRound];
   const newUndoneRounds = state.undoneRounds.slice(0, -1);
@@ -623,6 +634,8 @@ function handleRedo() {
       timerUpdates.timerStarted = true;
       timerUpdates.startTime = resumedAt;
       timerUpdates.timerLastSavedAt = resumedAt;
+      timerUpdates.timerLastActivityAt = resumedAt;
+      timerUpdates.timerPaused = false;
   }
   updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam, ...timerUpdates });
   if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
@@ -870,6 +883,7 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
       startingTotals: sanitizeTotals(state.startingTotals),
       winner: state.winner, victoryMethod: state.victoryMethod,
       timestamp: new Date().toISOString(), durationMs: finalAccumulated,
+      timerSkippedMs: getCurrentGameSkippedTime(state),
       dealers: Array.isArray(state.dealers) ? [...state.dealers] : [],
       misdealCount: state.misdealCount || 0,
       misdealDealers: normalizeMisdealDealers(state.misdealDealers),
@@ -984,6 +998,7 @@ async function freezeCurrentGame() {
       timestamp: frozenAt,
       frozenAt,
       accumulatedTime: finalAccumulated,
+      timerSkippedMs: getCurrentGameSkippedTime(state),
       // Store necessary state to resume
       biddingTeam: state.biddingTeam, bidAmount: state.bidAmount,
       customBidValue: state.customBidValue, showCustomBid: state.showCustomBid,
@@ -1041,6 +1056,9 @@ function loadFreezerGame(index) {
           timerStarted: true,
           startTime: resumedAt, // Restart timer
           timerLastSavedAt: resumedAt,
+          timerLastActivityAt: resumedAt,
+          timerPaused: false,
+          timerSkippedMs: clampDurationMs(chosen.timerSkippedMs),
           showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],

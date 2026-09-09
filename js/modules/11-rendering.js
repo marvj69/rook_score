@@ -50,6 +50,17 @@ function renderCurrentGameTimer() {
     </div>`;
 }
 
+function renderCurrentGameTimerControls() {
+  return `<div class="game-timer-controls">
+      <button id="currentGameTimerToggle" type="button" onclick="toggleCurrentGameTimer()" ${!hasStartedCurrentGameTimer(state) || state.gameOver ? 'hidden' : ''}>Pause timer</button>
+      <p id="currentGameTimerNotice" class="game-timer-notice" role="status"></p>
+      <div id="currentGameTimerReview" hidden>
+        <span><span id="currentGameTimerSkippedValue"></span> skipped.</span>
+        <button type="button" onclick="includeCurrentGameSkippedTime()">Include skipped time</button>
+      </div>
+    </div>`;
+}
+
 function renderApp() {
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
   const scorePreview = getRoundScorePreview();
@@ -430,6 +441,7 @@ function commitHistoryEdit(idx, field, rawValue) {
     }
   }
 
+  recordCurrentGameTimerActivity();
   const updatedRounds = rounds.map((round) => ({ ...round }));
   const baseTotals = getBaseTotals();
   if (field === "bid") {
@@ -470,6 +482,8 @@ function commitHistoryEdit(idx, field, rawValue) {
     nextState.timerStarted = true;
     nextState.startTime = resumedAt;
     nextState.timerLastSavedAt = resumedAt;
+    nextState.timerLastActivityAt = resumedAt;
+    nextState.timerPaused = false;
   }
 
   const priorWinner = state.winner;
@@ -512,7 +526,9 @@ function renderHistoryCard() {
   const labelDemDisplay = escapeHtmlValue(labelDem);
   const labelUsAttr = escapeAttribute(labelUs);
   const labelDemAttr = escapeAttribute(labelDem);
-  if (!rounds.length) return ""; // Don't render if no history
+  if (!rounds.length) return hasStartedCurrentGameTimer(state)
+    ? `<div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl p-4">${renderCurrentGameTimer()}${renderCurrentGameTimerControls()}</div>`
+    : "";
 
   // Check if we should show the probability dropdown button
   const showProbabilityButton = state.showWinProbability && !state.gameOver && rounds.length > 0;
@@ -544,6 +560,7 @@ function renderHistoryCard() {
     labelDem,
     showProbabilityButton ? 1 : 0,
     state.gameOver ? 1 : 0,
+    hasStartedCurrentGameTimer(state) ? 1 : 0,
     historyEditKey,
   ].join("|");
 
@@ -562,6 +579,7 @@ function renderHistoryCard() {
             <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>
           </p>
         </div>
+        ${renderCurrentGameTimerControls()}
         <div class="grid grid-cols-3 gap-2 mt-3 font-medium text-gray-600 dark:text-white text-sm sm:text-base">
           <div class="text-left truncate">${labelUsDisplay}</div>
           <div class="text-center">Bid</div>
@@ -630,6 +648,10 @@ function renderGameOverOverlay() {
           <h2 id="gameOverTitle" class="text-4xl font-black mb-2 animate-fadeIn text-gray-800 dark:text-white" style="text-shadow: 0 4px 0 rgba(0,0,0,0.15);">Game Over!</h2>
           <p class="text-2xl font-extrabold mb-1 animate-fadeIn text-gray-700 dark:text-white" style="text-shadow: 0 2px 0 rgba(0,0,0,0.1);">${winnerDisplay} Wins!</p>
           <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400 font-semibold">(${victoryMethodDisplay})</p>
+          ${getCurrentGameSkippedTime(state) >= 1000 ? `<div class="game-timer-controls game-timer-summary">
+            <p>${formatLiveGameDuration(getCurrentGameSkippedTime(state))} of idle time was skipped.</p>
+            <button type="button" onclick="includeCurrentGameSkippedTime()">Include skipped time before saving</button>
+          </div>` : ''}
           <div class="flex space-x-3 justify-center flex-wrap gap-2">
             <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
             <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
@@ -717,7 +739,7 @@ function renderReadOnlyGameDetails(game) {
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-end">
           <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${durationMs ? formatDuration(durationMs) : "N/A"}</span>
+          <span class="text-sm text-gray-700 dark:text-gray-300">${durationMs ? formatDuration(durationMs) : "N/A"}${game.timerSkippedMs >= 1000 ? ` (${formatDuration(game.timerSkippedMs)} idle time excluded)` : ""}</span>
         </div>
       </div>
       <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm"> <!-- Reduced padding -->

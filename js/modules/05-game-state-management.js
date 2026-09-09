@@ -1,7 +1,7 @@
 "use strict";
 
 // --- Game State Management ---
-const MAX_LEGACY_TIMER_RECOVERY_MS = 2 * 60 * 60 * 1000;
+const CURRENT_GAME_TIMER_IDLE_MS = 20 * 60 * 1000;
 const CURRENT_GAME_TIMER_TICK_MS = 1000;
 const CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 * 1000;
 let currentGameTimerLifecycleInitialized = false;
@@ -36,85 +36,118 @@ function hasStartedCurrentGameTimer(gameState = state) {
   return Boolean(gameState?.timerStarted) || hasRounds || isStartTimestampActive(gameState?.startTime);
 }
 
+// Activity is explicit game input, never a tick, render, sync, or page event.
+function getCurrentGameTimerActivityAt(gameState = state) {
+  return [gameState?.timerLastActivityAt, gameState?.timerLastSavedAt, gameState?.startTime]
+    .find(isStartTimestampActive) || null;
+}
+
 function shouldRunCurrentGameTimer(gameState = state) {
-  return hasStartedCurrentGameTimer(gameState) && !gameState?.gameOver;
+  return hasStartedCurrentGameTimer(gameState) && !gameState?.gameOver && !gameState?.timerPaused;
+}
+
+function isCurrentGameTimerIdle(gameState = state, nowTs = Date.now()) {
+  const activityAt = getCurrentGameTimerActivityAt(gameState);
+  return shouldRunCurrentGameTimer(gameState) && activityAt !== null
+    && nowTs >= Number(activityAt) + CURRENT_GAME_TIMER_IDLE_MS;
 }
 
 function getCurrentGameTime(gameState = state, nowTs = Date.now()) {
   const base = clampDurationMs(gameState?.accumulatedTime);
-  if (!shouldRunCurrentGameTimer(gameState) || !isStartTimestampActive(gameState?.startTime)) {
-    return base;
-  }
-  return calculateSafeTimeAccumulation(base, gameState.startTime, nowTs);
+  if (!shouldRunCurrentGameTimer(gameState) || !isStartTimestampActive(gameState?.startTime)) return base;
+  const activityAt = getCurrentGameTimerActivityAt(gameState);
+  const stopAt = Number(activityAt) + CURRENT_GAME_TIMER_IDLE_MS;
+  return calculateSafeTimeAccumulation(base, gameState.startTime, Math.min(nowTs, stopAt));
+}
+
+function getCurrentGameSkippedTime(gameState = state, nowTs = Date.now()) {
+  const base = clampDurationMs(gameState?.timerSkippedMs);
+  if (!shouldRunCurrentGameTimer(gameState) || !isStartTimestampActive(gameState?.startTime)) return base;
+  const stopAt = Number(getCurrentGameTimerActivityAt(gameState)) + CURRENT_GAME_TIMER_IDLE_MS;
+  return calculateSafeTimeAccumulation(base, Math.max(Number(gameState.startTime), stopAt), nowTs);
 }
 
 function buildCurrentGameTimerCheckpoint(gameState = state, nowTs = Date.now()) {
   const parsedNow = Number(nowTs);
   const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
-  const timerStarted = hasStartedCurrentGameTimer(gameState);
-  const accumulatedTime = getCurrentGameTime(gameState, now);
-  const keepRunning = timerStarted && !gameState?.gameOver;
-
+  // Rebase future timestamps after a backwards clock change. Do not count that
+  // discontinuity or move a segment backwards and count it twice on the next save.
+  const clockMovedBack = Number(gameState?.startTime) > now
+    || Number(getCurrentGameTimerActivityAt(gameState)) > now;
   return {
     ...gameState,
-    timerStarted,
-    accumulatedTime,
-    startTime: keepRunning ? now : null,
+    timerStarted: hasStartedCurrentGameTimer(gameState),
+    timerLastActivityAt: clockMovedBack ? now : getCurrentGameTimerActivityAt(gameState),
+    timerPaused: Boolean(gameState?.timerPaused),
+    accumulatedTime: getCurrentGameTime(gameState, now),
+    timerSkippedMs: getCurrentGameSkippedTime(gameState, now),
+    startTime: shouldRunCurrentGameTimer(gameState) ? now : null,
     timerLastSavedAt: now,
   };
 }
 
 function normalizeLoadedGameTimerState(gameState, nowTs = Date.now()) {
-  const parsedNow = Number(nowTs);
-  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
-  const hasRounds = Array.isArray(gameState?.rounds) && gameState.rounds.length > 0;
-  const timerStarted = Boolean(gameState?.timerStarted)
-    || hasRounds
-    || isStartTimestampActive(gameState?.startTime);
-  let accumulatedTime = clampDurationMs(gameState?.accumulatedTime);
-  const startTime = Number(gameState?.startTime);
-  const timerLastSavedAt = Number(gameState?.timerLastSavedAt);
-  const hasModernTimerSnapshot = isStartTimestampActive(timerLastSavedAt);
-
-  if (timerStarted && !gameState?.gameOver) {
-    if (hasModernTimerSnapshot) {
-      // Modern snapshots checkpoint the accumulated time and keep an active
-      // segment anchor. Older builds sometimes cleared startTime while the app
-      // was hidden, so timerLastSavedAt is also a valid recovery anchor.
-      const resumeAnchors = [startTime, timerLastSavedAt]
-        .filter(anchor => isStartTimestampActive(anchor) && anchor <= now);
-      const resumeAnchor = resumeAnchors.length ? Math.max(...resumeAnchors) : null;
-      accumulatedTime = calculateSafeTimeAccumulation(accumulatedTime, resumeAnchor, now);
-    } else if (isStartTimestampActive(startTime)) {
-      const legacyElapsed = Math.max(0, now - startTime);
-      accumulatedTime = clampDurationMs(
-        accumulatedTime + Math.min(legacyElapsed, MAX_LEGACY_TIMER_RECOVERY_MS),
-      );
-    }
-  }
-
-  return {
+  // Old hidden snapshots had no startTime. Recover from their checkpoint, with
+  // the same idle bound; historical accumulated totals are never guessed away.
+  const resumeAnchors = [gameState?.startTime, gameState?.timerLastSavedAt]
+    .filter(isStartTimestampActive).map(Number);
+  const resumeAnchor = resumeAnchors.length ? Math.max(...resumeAnchors) : null;
+  return buildCurrentGameTimerCheckpoint({
     ...gameState,
-    timerStarted,
-    accumulatedTime,
-    startTime: timerStarted && !gameState?.gameOver ? now : null,
-    timerLastSavedAt: now,
+    startTime: shouldRunCurrentGameTimer(gameState)
+      ? resumeAnchor
+      : null,
+  }, nowTs);
+}
+
+function buildCurrentGameTimerActivity(gameState = state, nowTs = Date.now()) {
+  const checkpoint = buildCurrentGameTimerCheckpoint(gameState, nowTs);
+  if (gameState?.gameOver) return checkpoint;
+  return {
+    ...checkpoint,
+    timerStarted: true,
+    timerPaused: false,
+    timerLastActivityAt: checkpoint.timerLastSavedAt,
+    startTime: checkpoint.timerLastSavedAt,
   };
 }
 
 function ensureCurrentGameTimerStarted(nowTs = Date.now()) {
   if (state.gameOver) return false;
-  const parsedNow = Number(nowTs);
-  const now = Number.isFinite(parsedNow) && parsedNow > 0 ? parsedNow : Date.now();
-  if (state.timerStarted && isStartTimestampActive(state.startTime)) return false;
-
-  state.timerStarted = true;
-  state.startTime = now;
-  state.timerLastSavedAt = now;
-  currentGameTimerLastCheckpointAt = now;
-  updateCurrentGameTimerDisplay(now);
+  Object.assign(state, buildCurrentGameTimerActivity(state, nowTs));
+  updateCurrentGameTimerDisplay(nowTs);
   syncCurrentGameTimerInterval();
   return true;
+}
+
+function recordCurrentGameTimerActivity() {
+  if (!hasStartedCurrentGameTimer(state) || state.gameOver) return;
+  ensureCurrentGameTimerStarted();
+  saveCurrentGameState({ sync: false, showIndicator: false });
+}
+
+function toggleCurrentGameTimer() {
+  if (state.gameOver || !hasStartedCurrentGameTimer(state)) return;
+  const now = Date.now();
+  if (state.timerPaused || isCurrentGameTimerIdle(state, now)) {
+    ensureCurrentGameTimerStarted(now);
+  } else {
+    Object.assign(state, buildCurrentGameTimerCheckpoint(state, now), { timerPaused: true, startTime: null });
+  }
+  saveCurrentGameState({ showIndicator: false, now });
+  syncCurrentGameTimerInterval();
+  scheduleRender();
+}
+
+function includeCurrentGameSkippedTime() {
+  const now = Date.now();
+  const checkpoint = buildCurrentGameTimerActivity(state, now);
+  checkpoint.accumulatedTime = clampDurationMs(checkpoint.accumulatedTime + checkpoint.timerSkippedMs);
+  checkpoint.timerSkippedMs = 0;
+  Object.assign(state, checkpoint);
+  saveCurrentGameState({ showIndicator: false, now });
+  syncCurrentGameTimerInterval();
+  scheduleRender();
 }
 
 function updateCurrentGameTimerDisplay(nowTs = Date.now()) {
@@ -122,6 +155,23 @@ function updateCurrentGameTimerDisplay(nowTs = Date.now()) {
   if (!timerValue) return;
   const displayTime = formatLiveGameDuration(getCurrentGameTime(state, nowTs));
   if (timerValue.textContent !== displayTime) timerValue.textContent = displayTime;
+  const control = document.getElementById("currentGameTimerToggle");
+  const paused = state.timerPaused || isCurrentGameTimerIdle(state, nowTs);
+  if (control) control.textContent = paused ? "Resume timer" : "Pause timer";
+  const notice = document.getElementById("currentGameTimerNotice");
+  if (notice) {
+    const message = state.gameOver ? "Final game time."
+      : !hasStartedCurrentGameTimer(state) ? "Starts with your first bid."
+      : state.timerPaused ? "Timer paused. Scoring resumes it."
+      : isCurrentGameTimerIdle(state, nowTs) ? "Auto-paused after 20 minutes without scoring."
+      : "Auto-pauses after 20 minutes without scoring.";
+    if (notice.textContent !== message) notice.textContent = message;
+  }
+  const skipped = getCurrentGameSkippedTime(state, nowTs);
+  const review = document.getElementById("currentGameTimerReview");
+  if (review) review.hidden = skipped < 1000;
+  const skippedValue = document.getElementById("currentGameTimerSkippedValue");
+  if (skippedValue) skippedValue.textContent = formatLiveGameDuration(skipped);
 }
 
 function checkpointCurrentGameTimer(nowTs = Date.now()) {
@@ -160,7 +210,7 @@ function initializeCurrentGameTimer() {
   currentGameTimerLifecycleInitialized = true;
   currentGameTimerLastCheckpointAt = Date.now();
 
-  // Stop display work while hidden; the saved time anchor continues counting.
+  // Hidden pages need no ticks. Recovery uses the same activity deadline.
   document.addEventListener("visibilitychange", () => {
     checkpointCurrentGameTimer();
     syncCurrentGameTimerInterval();
@@ -303,6 +353,9 @@ function saveCurrentGameState({
     state.accumulatedTime = snapshot.accumulatedTime;
     state.startTime = snapshot.startTime;
     state.timerLastSavedAt = snapshot.timerLastSavedAt;
+    state.timerLastActivityAt = snapshot.timerLastActivityAt;
+    state.timerSkippedMs = snapshot.timerSkippedMs;
+    state.timerPaused = snapshot.timerPaused;
     currentGameTimerLastCheckpointAt = snapshot.timerLastSavedAt;
     setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
     if (showIndicator) showSaveIndicator();

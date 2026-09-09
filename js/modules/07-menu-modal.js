@@ -459,6 +459,9 @@ function handleResumeGameSubmit(event) {
     timerStarted: false,
     accumulatedTime: 0,
     timerLastSavedAt: null,
+    timerLastActivityAt: null,
+    timerPaused: false,
+    timerSkippedMs: 0,
     pendingPenalty: null,
     savedScoreInputStates: { us: null, dem: null },
   };

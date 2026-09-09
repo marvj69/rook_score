@@ -9,7 +9,7 @@
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
 *   **Voice Score Entry:** Enable Experimental Features to complete the microphone-permission onboarding and show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
-*   **Live Game Timer:** Shows the current game's elapsed time, keeps counting through screen locks, app switching, and reloads, and pauses only when a game is frozen or completed.
+*   **Live Game Timer:** Counts through normal hands, screen locks, and reloads; auto-pauses after 20 minutes without scoring input. Scoring resumes it automatically. Pause/Resume handles planned breaks, and Include skipped time restores unusually long hands before saving. Frozen and completed games stay stopped.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
 *   **Undo/Redo Functionality:** Easily correct mistakes in score entry.
 *   **Game Management:**
@@ -311,3 +311,13 @@ Mark Heinonen
 
 ---
 Enjoy keeping score for your Rook games!
+
+## Game timer behavior
+
+The timer starts on the first bid/team selection, score, or misdeal. Each scoring action grants another 20 minutes of counting time; checkpoints, navigation, cloud sync, and page visibility do not renew that deadline. This deliberately allows a normal hand away from the screen while bounding unattended inflation to at most 20 minutes after the last action. There is no limit on total game length.
+
+- Timer controls in History let players pause for a break or resume without changing a score. Scoring also resumes a paused timer. Deliberately paused time is excluded.
+- After automatic pausing, excess time is retained separately. “Include skipped time” adds all automatically skipped intervals for this game exactly once and resumes counting. The game-over dialog also offers this correction before Save or Rematch.
+- Reload, offline recovery, and export/import use the original activity deadline. Frozen games preserve counted and skipped time and get a fresh deadline when explicitly loaded. Undoing a win resumes from now; undoing all rounds resets the timer.
+- Older active snapshots use their last saved timestamp (or start timestamp) as the best available activity evidence. Existing accumulated and completed-game durations are preserved: prior inflation cannot be distinguished reliably from actual play.
+- A forward device-clock jump is bounded by the same grace period and can be reviewed as skipped time; a backward jump rebases timestamps without subtracting counted time. Cross-device games retain the existing snapshot sync model, not a shared stopwatch with concurrent score merging.

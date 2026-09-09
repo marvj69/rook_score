@@ -782,7 +782,7 @@ test('current game timer checkpoints count background time exactly once', () => 
   assert.equal(foregroundCheckpoint.startTime, startedAt + 380_000);
 });
 
-test('loaded game timers include elapsed time while the app was hidden or closed', () => {
+test('loaded game timers bound away time and preserve the original activity deadline', () => {
   const savedAt = new Date('2026-01-01T12:00:00.000Z').valueOf();
   const reopenedAt = savedAt + (45 * 60_000);
   const modernSnapshot = {
@@ -795,22 +795,22 @@ test('loaded game timers include elapsed time while the app was hidden or closed
   };
 
   const resumed = normalizeLoadedGameTimerState(modernSnapshot, reopenedAt);
-  assert.equal(resumed.accumulatedTime, 180_000 + (45 * 60_000));
+  assert.equal(resumed.accumulatedTime, 180_000 + (20 * 60_000));
   assert.equal(resumed.startTime, reopenedAt);
   assert.equal(resumed.timerStarted, true);
   assert.equal(hasStartedCurrentGameTimer(resumed), true);
   assert.equal(shouldRunCurrentGameTimer(resumed), true);
-  assert.equal(getCurrentGameTime(resumed, reopenedAt + 20_000), 180_000 + (45 * 60_000) + 20_000);
+  assert.equal(getCurrentGameTime(resumed, reopenedAt + 20_000), 180_000 + (20 * 60_000));
 
   const oldHiddenSnapshot = normalizeLoadedGameTimerState({
     ...modernSnapshot,
     startTime: null,
   }, reopenedAt);
-  assert.equal(oldHiddenSnapshot.accumulatedTime, 180_000 + (45 * 60_000));
+  assert.equal(oldHiddenSnapshot.accumulatedTime, 180_000 + (20 * 60_000));
   assert.equal(oldHiddenSnapshot.startTime, reopenedAt);
 
   const checkpointedAgain = normalizeLoadedGameTimerState(resumed, reopenedAt + 20_000);
-  assert.equal(checkpointedAgain.accumulatedTime, 180_000 + (45 * 60_000) + 20_000);
+  assert.equal(checkpointedAgain.accumulatedTime, 180_000 + (20 * 60_000));
 
   const completed = normalizeLoadedGameTimerState({
     ...modernSnapshot,
@@ -821,7 +821,7 @@ test('loaded game timers include elapsed time while the app was hidden or closed
   assert.equal(shouldRunCurrentGameTimer(completed), false);
 });
 
-test('legacy timer recovery remains bounded while modern play time is uncapped', () => {
+test('legacy timer recovery uses the same idle bound', () => {
   const now = new Date('2026-01-01T12:00:00.000Z').valueOf();
   const legacy = normalizeLoadedGameTimerState({
     rounds: [{ bidAmount: 120 }],
@@ -830,7 +830,7 @@ test('legacy timer recovery remains bounded while modern play time is uncapped',
     startTime: now - (5 * 60 * 60 * 1000),
   }, now);
 
-  assert.equal(legacy.accumulatedTime, 60_000 + (2 * 60 * 60 * 1000));
+  assert.equal(legacy.accumulatedTime, 60_000 + (20 * 60_000));
   assert.equal(legacy.startTime, now);
 });
 
@@ -4572,7 +4572,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.54";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.55";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
