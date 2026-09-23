@@ -4508,7 +4508,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.62";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.63";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
@@ -4930,7 +4930,8 @@ test('liquid glass only animates blurred viewport layers on large fine-pointer s
 test('old installed app compatibility classes are scoped to safe area and overflow fixes', () => {
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
 
-  assert.match(css, /--safe-area-inset-top-effective:\s*env\(safe-area-inset-top,\s*0px\)/);
+  assert.match(css, /--top-edge-clearance:\s*min\(env\(safe-area-inset-top,\s*0px\),\s*16px\)/);
+  assert.match(css, /--safe-area-inset-top-effective:\s*calc\(env\(safe-area-inset-top,\s*0px\)\s*\+\s*var\(--top-edge-clearance\)\)/);
   assert.match(css, /body\.ios-standalone-safe-area-fallback\s*\{/);
   assert.match(css, /--safe-area-inset-top-effective:\s*44px/);
   assert.match(css, /body\.app-content-overflows main#app\s*\{/);

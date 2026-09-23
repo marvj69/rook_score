@@ -1,5 +1,9 @@
 :root {
-  --safe-area-inset-top-effective: env(safe-area-inset-top, 0px);
+  /* iOS 26+ draws a soft blur ("scroll edge effect") under the status bar that
+     reaches ~16px past the safe area. Keep content below it whenever there is a
+     top inset; min() collapses the extra space to 0 where there's no inset. */
+  --top-edge-clearance: min(env(safe-area-inset-top, 0px), 16px);
+  --safe-area-inset-top-effective: calc(env(safe-area-inset-top, 0px) + var(--top-edge-clearance));
   --safe-area-inset-bottom-effective: env(safe-area-inset-bottom, 0px);
   --primary-color: #4f8cff;
   --accent-color: #ff5c5c;
