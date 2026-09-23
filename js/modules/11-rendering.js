@@ -647,22 +647,23 @@ function renderGameOverOverlay() {
     </div>`;
 }
 // (renderReadOnlyGameDetails, renderSavedGames, renderFreezerGames, renderStatisticsContent, renderTeamStatsTable - these remain substantial and are called by modal openers)
-function renderReadOnlyGameDetails(game) {
+function renderReadOnlyGameDetails(game, originalIndex = null) {
   const { rounds, timestamp, usTeamName, demTeamName, durationMs, winner, finalScore, victoryMethod } = game;
   const usDisp = getGameTeamDisplay(game, "us") || usTeamName || "Us";
   const demDisp = getGameTeamDisplay(game, "dem") || demTeamName || "Dem";
-  const usDisplay = escapeHtmlValue(usDisp);
-  const demDisplay = escapeHtmlValue(demDisp);
   const finalTotals = sanitizeTotals(finalScore);
   const usScore = finalTotals.us, demScore = finalTotals.dem;
   const usWinner = winner === "us", demWinner = winner === "dem";
-  const dateStr = new Date(timestamp).toLocaleString([], { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
-  const dateDisplay = escapeHtmlValue(dateStr);
-  const victoryMethodDisplay = escapeHtmlValue(victoryMethod);
+  const hasWinner = usWinner || demWinner;
+  const date = timestamp ? new Date(timestamp) : null;
+  const dateStr = date && !Number.isNaN(date.getTime())
+    ? date.toLocaleString([], { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : "Unknown date";
+  const roundList = Array.isArray(rounds) ? rounds : [];
+  const roundsCount = roundList.length;
+  const margin = Math.abs(usScore - demScore);
 
-  const roundsCount = Array.isArray(rounds) ? rounds.length : 0;
-  const roundsLabel = roundsCount === 1 ? "1 Round" : `${roundsCount} Rounds`;
-  const bidSummary = (rounds || []).reduce((summary, round) => {
+  const bidSummary = roundList.reduce((summary, round) => {
     const bidSide = typeof round.biddingTeam === "string" ? round.biddingTeam.trim().toLowerCase() : "";
     const bidAmount = Number(round.bidAmount);
     if ((bidSide !== "us" && bidSide !== "dem") || !Number.isFinite(bidAmount) || bidAmount <= 0) return summary;
@@ -672,67 +673,98 @@ function renderReadOnlyGameDetails(game) {
     else summary.sets++;
     return summary;
   }, { attempts: 0, made: 0, sets: 0 });
-  const bidMakeText = bidSummary.attempts
-    ? `${bidSummary.made}/${bidSummary.attempts} (${((bidSummary.made / bidSummary.attempts) * 100).toFixed(1)}%)`
-    : "N/A";
+  const bidMakeValue = bidSummary.attempts ? `${bidSummary.made}/${bidSummary.attempts}` : "N/A";
+  const bidMakeSub = bidSummary.attempts ? `${Math.round((bidSummary.made / bidSummary.attempts) * 100)}% made` : "no bids";
 
-  const roundHtml = (rounds || []).map((r) => {
-      const runningTotals = sanitizeTotals(r.runningTotals);
-      const bidTeam = r.biddingTeam === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
-      const bidTeamDisplay = escapeHtmlValue(bidTeam);
-      const arrow = r.biddingTeam === "us" ? "←" : "→";
-      const bidDisplay = `${escapeHtmlValue(r.bidAmount)} ${arrow}`;
+  const renderTeam = (side, name, score, isWinner) => `
+    <div class="gd-team gd-team--${side}${isWinner ? " is-winner" : ""}${hasWinner && !isWinner ? " is-dim" : ""}">
+      <span class="gd-team__badge">${isWinner ? `${LIBRARY_ICONS.trophy}Winner` : "&nbsp;"}</span>
+      <span class="gd-team__name">${escapeHtmlValue(name)}</span>
+      <span class="gd-team__score">${escapeHtmlValue(String(score))}</span>
+    </div>`;
+
+  const renderStat = (label, value, sub = "") => `
+    <div class="gd-stat">
+      <dt class="gd-stat__label">${escapeHtmlValue(label)}</dt>
+      <dd class="gd-stat__value">${escapeHtmlValue(value)}</dd>
+      ${sub ? `<dd class="gd-stat__sub">${escapeHtmlValue(sub)}</dd>` : ""}
+    </div>`;
+
+  const formatDelta = (value) => (value > 0 ? `+${value}` : value < 0 ? `−${Math.abs(value)}` : "0");
+  let previousTotals = sanitizeTotals(game.startingTotals);
+  const roundHtml = roundList.map((r, i) => {
+    const runningTotals = sanitizeTotals(r.runningTotals);
+    const usDelta = runningTotals.us - previousTotals.us;
+    const demDelta = runningTotals.dem - previousTotals.dem;
+    previousTotals = runningTotals;
+    const bidSide = typeof r.biddingTeam === "string" ? r.biddingTeam.trim().toLowerCase() : "";
+    const bidAmount = Number(r.bidAmount);
+    const hasBid = (bidSide === "us" || bidSide === "dem") && Number.isFinite(bidAmount) && bidAmount > 0;
+    const bidderPoints = Number(bidSide === "us" ? r.usPoints : r.demPoints);
+    const wasSet = hasBid && !(Number.isFinite(bidderPoints) && bidderPoints >= bidAmount);
+    const bidTeamName = bidSide === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
+    const bidLabel = hasBid
+      ? `${escapeHtmlValue(bidTeamName)} bid ${escapeHtmlValue(String(bidAmount))}${wasSet ? " and were set" : " and made it"}`
+      : "No bid recorded";
+    const totalCell = (side, total, delta) => {
+      const isSetSide = wasSet && bidSide === side;
       return `
-      <div class="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-xl dark:bg-gray-700 text-sm sm:text-base mb-2">
-        <div class="text-left font-medium col-span-1 ${r.biddingTeam === "us" && r.usPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${runningTotals.us}</div>
-        <div class="text-center text-gray-600 dark:text-gray-300 text-xs sm:text-sm col-span-3">
-          <span class="bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full">${bidTeamDisplay} bid ${bidDisplay}</span>
-        </div>
-        <div class="text-right font-medium col-span-1 ${r.biddingTeam === "dem" && r.demPoints < r.bidAmount ? 'text-red-500' : 'text-gray-800 dark:text-white'}">${runningTotals.dem}</div>
-      </div>`;
+        <span class="gd-round__total gd-round__total--${side}${isSetSide ? " is-set" : ""}">
+          <span class="gd-round__running">${escapeHtmlValue(String(total))}</span>
+          <span class="gd-round__delta">${escapeHtmlValue(formatDelta(delta))}</span>
+        </span>`;
+    };
+    return `
+      <li class="gd-round${wasSet ? " is-set" : ""}" aria-label="${escapeAttribute(`Round ${i + 1}: ${bidLabel}. ${usDisp} ${runningTotals.us}, ${demDisp} ${runningTotals.dem}`)}">
+        ${totalCell("us", runningTotals.us, usDelta)}
+        <span class="gd-round__mid">
+          <span class="gd-round__num">R${i + 1}</span>
+          ${hasBid ? `
+            <span class="gd-round__bid gd-round__bid--${bidSide}">
+              ${bidSide === "us" ? '<span class="gd-round__arrow" aria-hidden="true">&larr;</span>' : ""}
+              <span>${escapeHtmlValue(String(bidAmount))}</span>
+              ${wasSet ? '<span class="gd-round__set">Set</span>' : '<span class="gd-round__made" aria-hidden="true">&#10003;</span>'}
+              ${bidSide === "dem" ? '<span class="gd-round__arrow" aria-hidden="true">&rarr;</span>' : ""}
+            </span>` : '<span class="gd-round__bid gd-round__bid--none">&mdash;</span>'}
+        </span>
+        ${totalCell("dem", runningTotals.dem, demDelta)}
+      </li>`;
   }).join("");
 
+  const deleteButton = Number.isInteger(originalIndex)
+    ? `<button type="button" class="gd-action gd-action--danger" onclick="deleteViewedSavedGame(${originalIndex})">${LIBRARY_ICONS.trash}<span>Delete</span></button>`
+    : "";
+
   return `
-    <div class="space-y-4"> <!-- Reduced vertical spacing -->
-      <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 shadow-sm"> <!-- Reduced padding -->
-        <div class="flex flex-col sm:flex-row justify-between items-center mb-2"> <!-- Reduced margin -->
-          <h4 class="text-xl font-bold text-gray-800 dark:text-white text-center sm:text-left">${usDisplay} vs ${demDisplay}</h4>
-          <span class="bg-blue-100 text-blue-800 text-xs font-medium px-3 py-1 rounded-full dark:bg-blue-900 dark:text-blue-300">${dateDisplay}</span>
-        </div>
-        <div class="flex justify-around items-center text-center">
-          <div class="${usWinner ? 'text-green-500 dark:text-green-400' : 'text-gray-800 dark:text-white'}">
-            <div class="text-sm">${usDisplay}</div><div class="text-2xl font-bold">${usScore}</div>
-            ${usWinner ? '<div class="text-xs font-medium">WINNER</div>' : ''}
-          </div>
-          <div class="text-gray-400 dark:text-gray-500 text-lg">vs</div>
-          <div class="${demWinner ? 'text-green-500 dark:text-green-400' : 'text-gray-800 dark:text-white'}">
-            <div class="text-sm">${demDisplay}</div><div class="text-2xl font-bold">${demScore}</div>
-            ${demWinner ? '<div class="text-xs font-medium">WINNER</div>' : ''}
-          </div>
-        </div>
-        ${victoryMethod ? `<p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-1">(${victoryMethodDisplay})</p>` : ''}
+    <section class="gd-hero" aria-label="Final score">
+      <p class="gd-hero__date">${LIBRARY_ICONS.clock}<span>${escapeHtmlValue(dateStr)}</span></p>
+      <div class="gd-scoreboard">
+        ${renderTeam("us", usDisp, usScore, usWinner)}
+        <span class="gd-scoreboard__vs" aria-hidden="true">vs</span>
+        ${renderTeam("dem", demDisp, demScore, demWinner)}
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-1">
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Bids Made</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${bidMakeText}</span>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-center">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Sets</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${bidSummary.sets}</span>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-2 shadow-sm flex flex-col items-start sm:items-end">
-          <span class="text-xs font-semibold text-gray-800 dark:text-white">Duration</span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">${durationMs ? formatDuration(durationMs) : "N/A"}</span>
-        </div>
+      ${victoryMethod || (hasWinner && margin) ? `
+        <div class="gd-hero__chips">
+          ${victoryMethod ? `<span class="game-chip game-chip--method">${escapeHtmlValue(victoryMethod)}</span>` : ""}
+          ${hasWinner && margin ? `<span class="game-chip">Won by ${escapeHtmlValue(String(margin))}</span>` : ""}
+        </div>` : ""}
+    </section>
+    <dl class="gd-stats">
+      ${renderStat("Rounds", String(roundsCount))}
+      ${renderStat("Bids made", bidMakeValue, bidMakeSub)}
+      ${renderStat("Sets", String(bidSummary.sets))}
+      ${renderStat("Duration", durationMs ? formatDuration(durationMs) : "N/A")}
+    </dl>
+    <section class="gd-rounds" aria-label="Round history">
+      <div class="gd-rounds__head">
+        <span class="gd-rounds__team gd-rounds__team--us"><span class="game-card__dot" aria-hidden="true"></span><span>${escapeHtmlValue(usDisp)}</span></span>
+        <span class="gd-rounds__title">Bid</span>
+        <span class="gd-rounds__team gd-rounds__team--dem"><span>${escapeHtmlValue(demDisp)}</span><span class="game-card__dot" aria-hidden="true"></span></span>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm"> <!-- Reduced padding -->
-        <div class="flex items-center justify-between mb-1">
-          <p class="font-semibold text-gray-800 dark:text-white">Round History</p>
-          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">${roundsLabel}</span>
-        </div>
-        <div class="space-y-2 max-h-60 overflow-y-auto rounded-xl pr-1 no-scrollbar">${roundHtml || '<p class="text-gray-500">No rounds.</p>'}</div>
-      </div>
-      <div class="flex justify-center"><button type="button" onclick="closeViewSavedGameModal()" class="px-4 py-2 bg-gray-100 text-gray-800 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition-colors threed">Close</button></div>
+      ${roundHtml ? `<ol class="gd-rounds__list">${roundHtml}</ol>` : '<p class="gd-rounds__empty">No rounds were recorded for this game.</p>'}
+    </section>
+    <div class="gd-actions">
+      ${deleteButton}
+      <button type="button" class="gd-action gd-action--primary" onclick="closeViewSavedGameModal()">Done</button>
     </div>`;
 }

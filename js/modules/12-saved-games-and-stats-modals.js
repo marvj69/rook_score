@@ -9,27 +9,33 @@ function clearStatisticsCache() {
   STATS_RESULT_CACHE.value = null;
 }
 
+const LIBRARY_ICONS = {
+  trophy: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8m-4-4v4m-6-9a6 6 0 0012 0V4H6v8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6H4a2 2 0 002 4m12-4h2a2 2 0 01-2 4"/></svg>',
+  trash: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6m4-6v6M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>',
+  chevron: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>',
+  play: '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 001.5.86l10.5-6.5a1 1 0 000-1.72L9.5 4.64A1 1 0 008 5.5z"/></svg>',
+  snowflake: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2v20M4.9 6.5l14.2 11M4.9 17.5l14.2-11M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></svg>',
+  clock: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+};
+const LIBRARY_ANIMATED_CARD_LIMIT = 8;
+
 function switchGamesTab(tabType) {
-  const completedTab = document.getElementById('completedGamesTab');
-  const freezerTab = document.getElementById('freezerGamesTab');
-  const completedSection = document.getElementById('completedGamesSection');
-  const freezerSection = document.getElementById('freezerGamesSection');
-
-  const activeClasses = ['border-blue-600', 'text-blue-600', 'dark:text-blue-400', 'dark:border-blue-400'];
-  const inactiveClasses = ['border-transparent', 'text-gray-500', 'dark:text-gray-400'];
-
-  if (tabType === 'completed') {
-      completedTab.classList.add(...activeClasses); completedTab.classList.remove(...inactiveClasses);
-      freezerTab.classList.add(...inactiveClasses); freezerTab.classList.remove(...activeClasses);
-      completedSection.classList.remove('hidden'); freezerSection.classList.add('hidden');
-  } else {
-      freezerTab.classList.add(...activeClasses); freezerTab.classList.remove(...inactiveClasses);
-      completedTab.classList.add(...inactiveClasses); completedTab.classList.remove(...activeClasses);
-      freezerSection.classList.remove('hidden'); completedSection.classList.add('hidden');
-  }
+  const isFreezer = tabType === 'freezer';
+  const tabs = { completed: document.getElementById('completedGamesTab'), freezer: document.getElementById('freezerGamesTab') };
+  Object.entries(tabs).forEach(([key, tab]) => {
+    if (!tab) return;
+    const active = (key === 'freezer') === isFreezer;
+    tab.setAttribute('aria-selected', String(active));
+    tab.setAttribute('aria-pressed', String(active));
+  });
+  tabs.completed?.closest('.library-segmented')?.setAttribute('data-active', isFreezer ? 'freezer' : 'completed');
+  document.getElementById('completedGamesSection')?.classList.toggle('hidden', isFreezer);
+  document.getElementById('freezerGamesSection')?.classList.toggle('hidden', !isFreezer);
   document.getElementById('gameSearchInput').value = '';
   document.getElementById('gameSortSelect').value = 'newest';
-  renderGamesWithFilter();
+  const scroller = document.getElementById('savedGamesScroll');
+  if (scroller) scroller.scrollTop = 0;
+  renderGamesWithFilter({ animate: true });
 }
 function updateGamesCount() {
   const savedGames = getLocalStorage("savedGames", []);
@@ -47,13 +53,21 @@ function filterGames() {
     renderGamesWithFilter();
   });
 }
+function clearGameSearch() {
+  const input = document.getElementById('gameSearchInput');
+  if (!input) return;
+  input.value = '';
+  renderGamesWithFilter();
+  input.focus();
+}
 function sortGames() { renderGamesWithFilter(); }
-function renderGamesWithFilter() {
+function renderGamesWithFilter({ animate = false } = {}) {
   const rawSearchValue = document.getElementById('gameSearchInput').value || '';
   const searchTerm = rawSearchValue.trim().toLowerCase();
   const displaySearch = rawSearchValue.trim();
   const sortOption = document.getElementById('gameSortSelect').value;
   const completedTabActive = !document.getElementById('completedGamesSection').classList.contains('hidden');
+  document.getElementById('gameSearchClearBtn')?.classList.toggle('hidden', !rawSearchValue);
 
   if (completedTabActive) {
     renderGamesList({
@@ -64,6 +78,7 @@ function renderGamesWithFilter() {
       searchTerm,
       displaySearch,
       sortOption,
+      animate,
       buildCard: buildSavedGameCard,
     });
   } else {
@@ -75,12 +90,13 @@ function renderGamesWithFilter() {
       searchTerm,
       displaySearch,
       sortOption,
+      animate,
       buildCard: buildFreezerGameCard,
     });
   }
 }
 
-function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, buildCard }) {
+function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, animate = false, buildCard }) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -92,101 +108,193 @@ function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchM
         const us = getGameTeamDisplay(game, 'us').toLowerCase();
         const dem = getGameTeamDisplay(game, 'dem').toLowerCase();
         const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString().toLowerCase() : '';
-        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm);
+        const when = game.timestamp ? getLibraryDateGroup(game.timestamp).label.toLowerCase() : '';
+        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm) || when.includes(normalizedTerm);
       })
     : entries;
 
   const sortedEntries = sortGamesBy(filteredEntries, sortOption);
-  const listHtml = sortedEntries.map(({ game, index }) => buildCard(game, index)).join('');
+  const groupByDate = sortOption === 'newest' || sortOption === 'oldest';
+  let lastGroupKey = null;
+  const listHtml = sortedEntries.map(({ game, index }, position) => {
+    let heading = '';
+    if (groupByDate) {
+      const group = getLibraryDateGroup(game.timestamp);
+      if (group.key !== lastGroupKey) {
+        lastGroupKey = group.key;
+        heading = `<h4 class="library-group">${escapeHtmlValue(group.label)}</h4>`;
+      }
+    }
+    return heading + buildCard(game, index, position, groupByDate);
+  }).join('');
 
   const emptyMessageEl = document.getElementById(emptyMessageId);
-  if (emptyMessageEl) emptyMessageEl.classList.toggle('hidden', sortedEntries.length > 0);
+  if (emptyMessageEl) emptyMessageEl.classList.toggle('hidden', sortedEntries.length > 0 || Boolean(normalizedTerm));
 
-  container.innerHTML = listHtml || (!normalizedTerm ? '' : `<p class="text-gray-500 col-span-full text-center">${escapeHtmlValue(emptySearchMessage)} "${escapeHtmlValue(displaySearch)}".</p>`);
+  container.classList.toggle('library-list--animate', animate);
+  container.innerHTML = listHtml || (!normalizedTerm ? '' : `
+    <div class="library-no-match">
+      <p>${escapeHtmlValue(emptySearchMessage)} <strong>“${escapeHtmlValue(displaySearch)}”</strong></p>
+      <button type="button" class="library-no-match__clear" onclick="clearGameSearch()">Clear search</button>
+    </div>`);
 }
 
-function buildSavedGameCard(game, originalIndex) {
+function getLibraryTimestamp(value) {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isNaN(parsed) ? null : new Date(parsed);
+}
+
+function getLibraryDayDiff(date, now = new Date()) {
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((startOf(now) - startOf(date)) / 86400000);
+}
+
+function getLibraryDateGroup(timestamp, now = new Date()) {
+  const date = getLibraryTimestamp(timestamp);
+  if (!date) return { key: 'unknown', label: 'Undated' };
+  const dayDiff = getLibraryDayDiff(date, now);
+  if (dayDiff <= 0) return { key: 'today', label: 'Today' };
+  if (dayDiff === 1) return { key: 'yesterday', label: 'Yesterday' };
+  if (dayDiff < 7) return { key: 'week', label: 'This Week' };
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return {
+    key: `${date.getFullYear()}-${date.getMonth()}`,
+    label: date.toLocaleDateString([], sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' }),
+  };
+}
+
+// Under a Today/Yesterday group heading the day is already shown, so only the time is needed.
+function formatLibraryWhen(timestamp, { grouped = false, now = new Date() } = {}) {
+  const date = getLibraryTimestamp(timestamp);
+  if (!date) return 'Unknown date';
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const dayDiff = getLibraryDayDiff(date, now);
+  if (dayDiff <= 1) {
+    if (grouped) return time;
+    return `${dayDiff <= 0 ? 'Today' : 'Yesterday'} · ${time}`;
+  }
+  if (dayDiff < 7) return `${date.toLocaleDateString([], { weekday: 'long' })} · ${time}`;
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const day = date.toLocaleDateString([], sameYear ? { weekday: 'short', month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  return grouped ? `${day} · ${time}` : day;
+}
+
+function formatLibraryAgo(timestamp, now = new Date()) {
+  const date = getLibraryTimestamp(timestamp);
+  if (!date) return 'a while ago';
+  const minutes = Math.max(0, Math.round((now.getTime() - date.getTime()) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const dayDiff = getLibraryDayDiff(date, now);
+  if (dayDiff === 1) return 'yesterday';
+  if (dayDiff < 7) return `${dayDiff} days ago`;
+  return `on ${formatLibraryWhen(timestamp, { now })}`;
+}
+
+function getLibraryCardStyle(position) {
+  const step = Math.min(Number(position) || 0, LIBRARY_ANIMATED_CARD_LIMIT);
+  return `style="--card-i: ${step}"`;
+}
+
+function buildLibraryTeamRow(side, name, score, { lead = false, trophy = false, dim = false, trail = false } = {}) {
+  const classes = ['game-card__team', `game-card__team--${side}`];
+  if (lead) classes.push('is-lead');
+  if (dim) classes.push('is-dim');
+  if (trail) classes.push('is-trail');
+  return `
+    <div class="${classes.join(' ')}">
+      <span class="game-card__dot" aria-hidden="true"></span>
+      <span class="game-card__name">${escapeHtmlValue(name)}</span>
+      ${trophy ? `<span class="game-card__trophy" aria-label="Winner">${LIBRARY_ICONS.trophy}</span>` : ''}
+      <span class="game-card__score">${escapeHtmlValue(String(score))}</span>
+    </div>`;
+}
+
+function buildSavedGameCard(game, originalIndex, position = 0, grouped = false) {
   const usDisplay = getGameTeamDisplay(game, 'us');
   const demDisplay = getGameTeamDisplay(game, 'dem');
-  const usDisplayText = escapeHtmlValue(usDisplay);
-  const demDisplayText = escapeHtmlValue(demDisplay);
   const finalTotals = sanitizeTotals(game.finalScore);
   const usScore = finalTotals.us;
   const demScore = finalTotals.dem;
   const usWon = game.winner === 'us';
   const demWon = game.winner === 'dem';
-  const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
-  const timestampText = escapeHtmlValue(timestamp);
-  const victoryMethodText = escapeHtmlValue(game.victoryMethod);
+  const hasWinner = usWon || demWon;
+  const when = formatLibraryWhen(game.timestamp, { grouped });
+  const roundsCount = Array.isArray(game.rounds) ? game.rounds.length : 0;
+  const margin = Math.abs(usScore - demScore);
+  const winnerName = usWon ? usDisplay : demWon ? demDisplay : '';
+  const facts = [
+    roundsCount ? `${roundsCount} rd${roundsCount === 1 ? '' : 's'}` : '',
+    game.durationMs ? formatDuration(game.durationMs) : '',
+  ].filter(Boolean).join(' · ');
+  const summary = `${usDisplay} ${usScore}, ${demDisplay} ${demScore}. ${winnerName ? `${winnerName} won. ` : ''}${formatLibraryWhen(game.timestamp)}`;
 
   return `
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="viewSavedGame(${originalIndex})">
-      ${usWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${usDisplayText}</div>` : ''}
-      ${demWon ? `<div class="absolute top-0 right-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">Winner: ${demDisplayText}</div>` : ''}
-      <div class="p-5">
-        <div class="flex justify-between items-start mb-2">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
-            <div class="text-sm text-gray-500 dark:text-gray-400">${timestampText}</div>
-          </div>
-          <div class="flex space-x-1">
-            <button onclick="viewSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 dark:text-blue-400 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="View"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
-            <button onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 dark:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
-          </div>
-        </div>
-        <div class="text-sm">
-          <span class="${usWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${usDisplayText}: ${usScore}</span> |
-          <span class="${demWon ? 'text-green-600 font-bold' : 'text-gray-700 dark:text-gray-300'}">${demDisplayText}: ${demScore}</span>
-        </div>
-        <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-          ${game.victoryMethod ? `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full dark:bg-purple-900 dark:text-purple-300">${victoryMethodText}</span>` : ''}
-          ${game.durationMs ? `<span>${formatDuration(game.durationMs)}</span>` : ''}
-        </div>
+    <article class="game-card game-card--completed" ${getLibraryCardStyle(position)}>
+      <button type="button" class="game-card__open" onclick="viewSavedGame(${originalIndex})" aria-label="${escapeAttribute(`View game details: ${summary}`)}"></button>
+      <div class="game-card__meta">
+        <span class="game-card__when">${escapeHtmlValue(when)}</span>
+        ${facts ? `<span class="game-card__facts">${escapeHtmlValue(facts)}</span>` : ''}
       </div>
-    </div>`;
+      <div class="game-card__body">
+        <div class="game-card__teams">
+          ${buildLibraryTeamRow('us', usDisplay, usScore, { lead: usWon, trophy: usWon, dim: hasWinner && !usWon })}
+          ${buildLibraryTeamRow('dem', demDisplay, demScore, { lead: demWon, trophy: demWon, dim: hasWinner && !demWon })}
+        </div>
+        <span class="game-card__chevron" aria-hidden="true">${LIBRARY_ICONS.chevron}</span>
+      </div>
+      <div class="game-card__footer">
+        <div class="game-card__chips">
+          ${game.victoryMethod ? `<span class="game-chip game-chip--method">${escapeHtmlValue(game.victoryMethod)}</span>` : ''}
+          ${hasWinner && margin ? `<span class="game-chip">Won by ${escapeHtmlValue(String(margin))}</span>` : ''}
+        </div>
+        <button type="button" onclick="deleteSavedGame(${originalIndex}); event.stopPropagation();" class="game-card__icon-btn game-card__icon-btn--danger" aria-label="${escapeAttribute(`Delete game: ${usDisplay} vs ${demDisplay}`)}">${LIBRARY_ICONS.trash}</button>
+      </div>
+    </article>`;
 }
 
-function buildFreezerGameCard(game, originalIndex) {
+function buildFreezerGameCard(game, originalIndex, position = 0) {
   const usDisplay = getGameTeamDisplay(game, 'us');
   const demDisplay = getGameTeamDisplay(game, 'dem');
-  const usDisplayText = escapeHtmlValue(usDisplay);
-  const demDisplayText = escapeHtmlValue(demDisplay);
   const finalTotals = sanitizeTotals(game.finalScore);
   const usScore = finalTotals.us;
   const demScore = finalTotals.dem;
-  const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
-  const leadInfo = usScore > demScore
-    ? `${usDisplay} leads by ${usScore - demScore}`
-    : demScore > usScore
-      ? `${demDisplay} leads by ${demScore - usScore}`
-      : 'Tied';
-  const leadInfoText = escapeHtmlValue(leadInfo);
-  const timestampText = escapeHtmlValue(timestamp);
-  const lastBidText = escapeHtmlValue(game.lastBid);
+  const usLeads = usScore > demScore;
+  const demLeads = demScore > usScore;
+  const leadInfo = usLeads || demLeads ? `Up ${Math.abs(usScore - demScore)}` : 'Tied';
+  const lastBidMatch = typeof game.lastBid === 'string' ? game.lastBid.match(/^\s*(\d+)/) : null;
+  const lastBid = lastBidMatch ? lastBidMatch[1] : game.lastBid;
+  const roundsCount = Array.isArray(game.rounds) ? game.rounds.length : 0;
+  const facts = [
+    roundsCount ? `${roundsCount} rd${roundsCount === 1 ? '' : 's'}` : '',
+    game.accumulatedTime ? `${formatDuration(game.accumulatedTime)} played` : '',
+  ].filter(Boolean).join(' · ');
+  const frozenAgo = formatLibraryAgo(game.timestamp);
 
   return `
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow dark:bg-gray-800 dark:border-gray-700 cursor-pointer relative" onclick="loadFreezerGame(${originalIndex})">
-      <div class="absolute top-0 right-2 bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">${leadInfoText}</div>
-      <div class="p-5">
-        <div class="flex justify-between items-start mb-2">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${usDisplayText} vs ${demDisplayText}</h3>
-            <div class="text-sm text-gray-500 dark:text-gray-400">Frozen: ${timestampText}</div>
-          </div>
-          <div class="flex space-x-1">
-            <button onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-blue-600 dark:text-blue-400 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300" aria-label="Load">${Icons.Load}</button>
-            <button onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="p-1.5 text-red-600 dark:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300" aria-label="Delete">${Icons.Trash}</button>
-          </div>
-        </div>
-        <div class="text-sm text-gray-700 dark:text-gray-300">
-          <span>${usDisplayText}: ${usScore}</span> | <span>${demDisplayText}: ${demScore}</span>
-        </div>
-        <div class="mt-2 flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-          ${game.lastBid ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">Last Bid: ${lastBidText}</span>` : ''}
-          ${game.accumulatedTime ? `<span>Played: ${formatDuration(game.accumulatedTime)}</span>` : ''}
+    <article class="game-card game-card--frozen" ${getLibraryCardStyle(position)}>
+      <button type="button" class="game-card__open" onclick="loadFreezerGame(${originalIndex})" aria-label="${escapeAttribute(`Resume frozen game: ${usDisplay} ${usScore}, ${demDisplay} ${demScore}`)}"></button>
+      <div class="game-card__meta">
+        <span class="game-card__when game-card__when--frozen"><span class="game-card__meta-icon">${LIBRARY_ICONS.snowflake}</span>Frozen ${escapeHtmlValue(frozenAgo)}</span>
+        ${facts ? `<span class="game-card__facts">${escapeHtmlValue(facts)}</span>` : ''}
+      </div>
+      <div class="game-card__body">
+        <div class="game-card__teams">
+          ${buildLibraryTeamRow('us', usDisplay, usScore, { lead: usLeads, trail: demLeads })}
+          ${buildLibraryTeamRow('dem', demDisplay, demScore, { lead: demLeads, trail: usLeads })}
         </div>
       </div>
-    </div>`;
+      <div class="game-card__footer">
+        <div class="game-card__chips">
+          <span class="game-chip game-chip--lead">${escapeHtmlValue(leadInfo)}</span>
+          ${lastBid ? `<span class="game-chip">Bid ${escapeHtmlValue(lastBid)}</span>` : ''}
+        </div>
+        <button type="button" onclick="deleteFreezerGame(${originalIndex}); event.stopPropagation();" class="game-card__icon-btn game-card__icon-btn--danger" aria-label="${escapeAttribute(`Delete frozen game: ${usDisplay} vs ${demDisplay}`)}">${LIBRARY_ICONS.trash}</button>
+        <button type="button" onclick="loadFreezerGame(${originalIndex}); event.stopPropagation();" class="game-card__resume" aria-label="${escapeAttribute(`Resume ${usDisplay} vs ${demDisplay}`)}">${LIBRARY_ICONS.play}<span>Resume</span></button>
+      </div>
+    </article>`;
 }
 
 function sortGamesBy(entries, sortOption = 'newest') {
@@ -677,9 +785,23 @@ function ensureStatsSheetGesture(modalId, closeFn) {
   const onEnd = () => {
     if (!dragging) return;
     dragging = false;
-    shell.style.transition = '';
-    shell.style.transform = '';
-    if (deltaY > 90) closeFn();
+    if (deltaY <= 90) {
+      shell.style.transition = '';
+      shell.style.transform = '';
+      return;
+    }
+    // Finish the swipe from where the finger let go instead of snapping back first.
+    modal.dataset.sheetDismissed = 'true';
+    shell.style.transition = 'transform 0.22s cubic-bezier(0.4, 0, 1, 1)';
+    shell.style.transform = 'translateY(105%)';
+    modal.classList.add('is-dismissing');
+    setTimeout(() => {
+      closeFn();
+      delete modal.dataset.sheetDismissed;
+      modal.classList.remove('is-dismissing');
+      shell.style.transition = '';
+      shell.style.transform = '';
+    }, 220);
   };
 
   dragZones.forEach((zone) => {

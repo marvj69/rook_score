@@ -1025,8 +1025,11 @@ function loadFreezerGame(index) {
   const freezerGames = getLocalStorage("freezerGames");
   const chosen = freezerGames[index];
   if (!chosen) return;
+  const chosenTotals = sanitizeTotals(chosen.finalScore);
+  const chosenLabel = chosen.name
+    || `${getGameTeamDisplay(chosen, "us")} vs ${getGameTeamDisplay(chosen, "dem")} (${chosenTotals.us}–${chosenTotals.dem})`;
   openConfirmationModal(
-    `Load frozen game "${chosen.name || 'Untitled'}"? Current game will be overwritten.`,
+    `Resume ${chosenLabel}? The game on the scoreboard now will be replaced.`,
     () => {
       closeConfirmationModal();
       const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
@@ -1091,16 +1094,19 @@ function viewSavedGame(originalIndex) { // originalIndex is from the full savedG
   const chosen = savedGames[originalIndex];
 
   if (!chosen) return;
-  document.getElementById("viewSavedGameDetails").innerHTML = renderReadOnlyGameDetails(chosen);
+  const details = document.getElementById("viewSavedGameDetails");
+  details.innerHTML = renderReadOnlyGameDetails(chosen, originalIndex);
+  details.scrollTop = 0;
   openViewSavedGameModal();
 }
-function deleteGame(storageKey, index, descriptor) {
+function deleteGame(storageKey, index, descriptor, onDeleted) {
   const items = getLocalStorage(storageKey);
-  openConfirmationModal(`Delete this ${descriptor}?`, () => {
+  openConfirmationModal(`Delete this ${descriptor}? This can't be undone.`, () => {
     items.splice(index, 1);
     setLocalStorage(storageKey, items);
     if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game
     closeConfirmationModal();
+    if (typeof onDeleted === "function") onDeleted();
     // Re-render the list in the modal
     if (document.getElementById("savedGamesModal") && !document.getElementById("savedGamesModal").classList.contains("hidden")) {
       updateGamesCount();
@@ -1109,4 +1115,5 @@ function deleteGame(storageKey, index, descriptor) {
   }, closeConfirmationModal);
 }
 function deleteSavedGame(index) { deleteGame("savedGames", index, "completed game"); }
+function deleteViewedSavedGame(index) { deleteGame("savedGames", index, "completed game", closeViewSavedGameModal); }
 function deleteFreezerGame(index) { deleteGame("freezerGames", index, "frozen game"); }
