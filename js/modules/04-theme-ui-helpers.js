@@ -4,6 +4,8 @@
 const IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS = "ios-standalone-safe-area-fallback";
 const APP_CONTENT_OVERFLOWS_CLASS = "app-content-overflows";
 const IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX = 44;
+// Mirrors --top-edge-clearance in app.css.
+const TOP_EDGE_CLEARANCE_MAX_PX = 16;
 let viewportCompatibilitySyncScheduled = false;
 
 function getComputedSafeAreaInsetTop() {
@@ -70,7 +72,7 @@ function syncAppViewportOverflowClass(measuredSafeAreaInsetTop = getComputedSafe
   if (!body || !app) return false;
   const safeAreaInsetTop = body.classList.contains(IOS_STANDALONE_SAFE_AREA_FALLBACK_CLASS)
     ? IOS_STANDALONE_SAFE_AREA_FALLBACK_TOP_PX
-    : measuredSafeAreaInsetTop;
+    : measuredSafeAreaInsetTop + Math.min(Math.max(0, Number(measuredSafeAreaInsetTop) || 0), TOP_EDGE_CLEARANCE_MAX_PX);
   const shouldScroll = shouldEnableAppViewportScroll(app.scrollHeight, getViewportHeight(), safeAreaInsetTop);
   body.classList.toggle(APP_CONTENT_OVERFLOWS_CLASS, shouldScroll);
   return shouldScroll;
