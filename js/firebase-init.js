@@ -14,67 +14,6 @@ const REQUIRED_FIREBASE_CONFIG_KEYS = [
   "messagingSenderId",
   "appId",
 ];
-const VOICE_IMPROVEMENT_ACTION_TYPES = new Set([
-  "scoreRound",
-  "editRound",
-  "undo",
-  "redo",
-  "misdeal",
-  "newGame",
-  "freezeGame",
-  "saveGame",
-  "openModal",
-  "closeModal",
-  "setDealerOrder",
-  "startPaperGame",
-  "setTeams",
-  "selectDealerPair",
-  "selectBid",
-  "setSetting",
-  "tableTalkPenalty",
-  "rematch",
-  "toggleMenu",
-  "authAction",
-  "confirmationAction",
-  "gameLibraryAction",
-  "setThemeColors",
-  "themeAction",
-  "setBidPresets",
-  "setStatsControls",
-  "noop",
-]);
-const VOICE_IMPROVEMENT_PLAN_STATUSES = new Set(["execute", "confirm", "clarify", "unsupported"]);
-const VOICE_IMPROVEMENT_OUTCOMES = new Set(["success", "failed", "cancelled", "clarify", "unsupported"]);
-const VOICE_IMPROVEMENT_ACTION_FIELDS = {
-  scoreRound: ["biddingTeam", "bidAmount", "points", "enterBidderPoints"],
-  editRound: ["roundNumber", "bidAmount", "usTotal", "demTotal"],
-  undo: [],
-  redo: [],
-  misdeal: [],
-  newGame: [],
-  freezeGame: [],
-  saveGame: [],
-  openModal: ["target"],
-  closeModal: ["target"],
-  setDealerOrder: ["dealers"],
-  startPaperGame: ["usScore", "demScore", "usPlayers", "demPlayers"],
-  setTeams: ["usPlayers", "demPlayers"],
-  selectDealerPair: ["pair"],
-  selectBid: ["biddingTeam", "bidAmount"],
-  setSetting: ["key", "value"],
-  tableTalkPenalty: ["team"],
-  rematch: ["firstDealer"],
-  toggleMenu: ["open"],
-  authAction: ["authAction"],
-  confirmationAction: ["confirmationChoice"],
-  gameLibraryAction: ["gameAction", "gameType", "tab", "query", "sort", "index"],
-  setThemeColors: ["usColor", "demColor"],
-  themeAction: ["themeAction"],
-  setBidPresets: ["presets"],
-  setStatsControls: ["statsView", "statsMetric", "statsSort", "entityMode", "entityKey"],
-  noop: [],
-};
-
 let app = null;
 let auth = null;
 let db = null;
@@ -583,80 +522,55 @@ function sanitizeVoiceImprovementStringList(values, sanitizer, maximum) {
     .slice(0, maximum);
 }
 
-function sanitizeVoiceImprovementAction(action) {
-  if (!action || typeof action !== "object" || !VOICE_IMPROVEMENT_ACTION_TYPES.has(action.type)) {
-    return null;
-  }
-  const allowedFields = VOICE_IMPROVEMENT_ACTION_FIELDS[action.type] || [];
+// The lazy voice bundle publishes the action catalog (js/modules/09-voice-tools.js).
+// Samples only come from that bundle, so without it nothing is logged.
+function getVoiceImprovementTools() {
+  const tools = window.ROOK_VOICE_TOOLS;
+  return tools && tools.actions && tools.fields ? tools : null;
+}
+
+function sanitizeVoiceImprovementAction(action, tools) {
+  const allowedFields = action && typeof action === "object" ? tools.actions[action.type] : null;
+  if (!Array.isArray(allowedFields)) return null;
   const safe = { type: action.type };
-  const enumValues = {
-    biddingTeam: ["us", "dem"],
-    team: ["us", "dem"],
-    target: [
-      "savedGames", "settings", "about", "statistics", "dealerOrder",
-      "teamSelection", "resumeGame", "theme", "presets", "probability",
-      "version", "confirmation", "all",
-    ],
-    pair: ["13", "24"],
-    key: [
-      "mustWinByBid", "misdealHandling", "proMode", "experimentalFeatures",
-      "tableTalkPenaltyType", "tableTalkPenaltyPoints",
-    ],
-    authAction: ["toggle", "signIn", "signOut"],
-    confirmationChoice: ["confirm", "cancel"],
-    gameAction: ["switchTab", "search", "sort", "view", "delete", "resume"],
-    gameType: ["completed", "freezer"],
-    tab: ["completed", "freezer"],
-    sort: ["newest", "oldest", "highest", "lowest"],
-    themeAction: ["randomize", "reset", "apply"],
-    statsView: ["teams", "players"],
-    statsMetric: [
-      "netPerGame", "bidMakePct", "setsForced", "comebacks",
-      "closeWins", "perfect360s", "misdeals", "games",
-    ],
-    statsSort: ["recent", "most", "least"],
-    entityMode: ["teams", "players"],
-  };
-  const numberFields = new Set([
-    "bidAmount", "points", "roundNumber", "usTotal", "demTotal",
-    "usScore", "demScore", "index",
-  ]);
 
   allowedFields.forEach(key => {
+    const field = tools.fields[key];
     const value = action[key];
-    if (enumValues[key]?.includes(value)) {
-      safe[key] = value;
-    } else if (numberFields.has(key) && Number.isFinite(Number(value))) {
-      safe[key] = Number(value);
-    } else if ((key === "enterBidderPoints" || key === "open") && typeof value === "boolean") {
-      safe[key] = value;
-    } else if (key === "value") {
+    if (!field) return;
+    if (field.kind === "enum") {
+      if (field.schema.enum.includes(value)) safe[key] = value;
+    } else if (field.kind === "number") {
+      if (Number.isFinite(Number(value))) safe[key] = Number(value);
+    } else if (field.kind === "boolean") {
+      if (typeof value === "boolean") safe[key] = value;
+    } else if (field.kind === "settingValue") {
       if (typeof value === "boolean" || Number.isFinite(value)) safe.value = value;
       else if (value === "loseBid" || value === "setPoints") safe.value = value;
-    } else if (key === "dealers" || key === "usPlayers" || key === "demPlayers") {
+    } else if (field.kind === "players") {
       safe[key] = sanitizeVoiceImprovementStringList(
         value,
         sanitizeVoiceImprovementPlayerToken,
-        key === "dealers" ? 4 : 2,
+        field.schema.maxItems,
       );
-    } else if (key === "firstDealer") {
+    } else if (field.kind === "player") {
       const token = sanitizeVoiceImprovementPlayerToken(value);
-      if (token) safe.firstDealer = token;
-    } else if (key === "query") {
-      safe.query = String(value || "")
+      if (token) safe[key] = token;
+    } else if (field.kind === "text") {
+      safe[key] = String(value || "")
         .trim()
         .slice(0, 100)
         .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email]")
         .replace(/\b(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g, "[phone]");
-    } else if (key === "usColor" || key === "demColor") {
+    } else if (field.kind === "color") {
       if (/^#[0-9a-f]{6}$/i.test(value || "")) safe[key] = value.toLowerCase();
-    } else if (key === "presets") {
-      safe.presets = (Array.isArray(value) ? value : [])
+    } else if (field.kind === "numbers") {
+      safe[key] = (Array.isArray(value) ? value : [])
         .map(Number)
         .filter(Number.isFinite)
         .slice(0, 12);
-    } else if (key === "entityKey" && /^(?:player|team)-(?:[1-9]\d{0,2})$/.test(value || "")) {
-      safe.entityKey = value;
+    } else if (field.kind === "entityKey" && /^(?:player|team)-(?:[1-9]\d{0,2})$/.test(value || "")) {
+      safe[key] = value;
     }
   });
 
@@ -785,19 +699,20 @@ function sanitizeVoiceImprovementContext(context) {
 }
 
 function sanitizeVoiceImprovementSample(sample) {
-  if (!sample || typeof sample !== "object") return null;
+  const tools = getVoiceImprovementTools();
+  if (!tools || !sample || typeof sample !== "object") return null;
   const prompt = String(sample.prompt || "").trim().slice(0, 1000);
   const status = String(sample.target?.status || "");
   const outcome = String(sample.outcome || "");
   if (!prompt
-      || !VOICE_IMPROVEMENT_PLAN_STATUSES.has(status)
-      || !VOICE_IMPROVEMENT_OUTCOMES.has(outcome)) {
+      || !tools.statuses.includes(status)
+      || !tools.outcomes.includes(outcome)) {
     return null;
   }
 
   const actions = Array.isArray(sample.target?.actions)
     ? sample.target.actions
-        .map(sanitizeVoiceImprovementAction)
+        .map(action => sanitizeVoiceImprovementAction(action, tools))
         .filter(Boolean)
         .slice(0, 5)
     : [];
