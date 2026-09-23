@@ -1224,6 +1224,7 @@ function closeVoiceScoreModalTarget(target) {
       closeProbabilityModal,
       closeVersionInfoModal,
       closeConfirmationModal,
+      closeNoticeModal,
       closeTableTalkModal,
       closeEntityStatisticsModal,
       closeDealerPairSelectionModal,
