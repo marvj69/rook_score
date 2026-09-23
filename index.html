@@ -53,6 +53,8 @@
       <symbol id="ui-icon-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
       <symbol id="ui-icon-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8Z"/></symbol>
       <symbol id="ui-icon-bars" viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-7"/></symbol>
+      <symbol id="ui-icon-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+      <symbol id="ui-icon-tick" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
       <symbol id="ui-icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></symbol>
     </svg>
 
@@ -902,40 +904,86 @@
     </div>
 
     <!-- Custom Theme Selection Modal -->
-    <div id="themeModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle" tabindex="-1">
-      <div class="bg-white w-full max-w-md rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden transform transition-all duration-300">
-        <header class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-          <h2 id="themeModalTitle" class="text-xl font-bold text-gray-800 dark:text-white flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>Customize Theme</h2>
-          <button type="button" onclick="closeThemeModal(event)" class="text-gray-400 focus:outline-none"><svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+    <div id="themeModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden modal stats-modal library-modal sheet-modal theme-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="themeModalTitle" tabindex="-1">
+      <div class="stats-modal__shell library-shell sheet-shell relative mx-auto my-4 w-full max-w-md overflow-hidden flex flex-col">
+        <div class="stats-sheet-grip" data-sheet-drag aria-hidden="true"><span class="stats-sheet-grip__bar"></span></div>
+        <header class="library-header library-header--details" data-sheet-drag>
+          <div class="library-header__row">
+            <h2 id="themeModalTitle" class="library-title">
+              <span class="library-title__icon" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-palette"/></svg></span>
+              Team Colors
+            </h2>
+            <button type="button" onclick="closeThemeModal(event)" class="stats-modal__close library-close" aria-label="Close Team Colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
         </header>
-        <div class="p-6">
-          <div class="flex justify-center mb-6">
-            <div class="w-full max-w-xs bg-gray-100 dark:bg-gray-700 rounded-xl p-4 flex flex-col items-center">
-              <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Preview</p>
-              <div class="flex w-full space-x-3">
-                <div id="previewUs" class="flex-1 h-12 rounded-lg shadow-sm flex items-center justify-center text-white font-medium" style="background-color: var(--primary-color);">Us</div>
-                <div id="previewDem" class="flex-1 h-12 rounded-lg shadow-sm flex items-center justify-center text-white font-medium" style="background-color: var(--accent-color);">Dem</div>
-              </div>
+        <div class="sheet-scroll no-scrollbar">
+          <div class="theme-preview" aria-label="Preview" role="img">
+            <div id="previewUs" class="theme-preview__team" data-theme-team="us">
+              <span class="theme-preview__name">Us</span>
+              <span class="theme-preview__score">245</span>
+              <span class="theme-preview__bar"><span style="width: 49%"></span></span>
+            </div>
+            <span class="theme-preview__vs" aria-hidden="true">vs</span>
+            <div id="previewDem" class="theme-preview__team" data-theme-team="dem">
+              <span class="theme-preview__name">Dem</span>
+              <span class="theme-preview__score">180</span>
+              <span class="theme-preview__bar"><span style="width: 36%"></span></span>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-6 mb-6">
-            <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 text-center flex flex-col items-center">
-              <label for="usColorPicker" class="block text-sm font-medium text-gray-700 dark:text-white mb-3">Us Team Color</label>
-              <input type="color" id="usColorPicker" value="#3b82f6" class="w-16 h-16 cursor-pointer" oninput="updatePreview()" />
-            </div>
-            <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 text-center flex flex-col items-center">
-              <label for="demColorPicker" class="block text-sm font-medium text-gray-700 dark:text-white mb-3">Dem Team Color</label>
-              <input type="color" id="demColorPicker" value="#ef4444" class="w-16 h-16 cursor-pointer" oninput="updatePreview()" />
-            </div>
+
+          <h3 class="sheet-label">Your Colors</h3>
+          <div class="sheet-group">
+            <label class="sheet-row theme-color-row" for="usColorPicker" data-theme-team="us">
+              <span class="theme-swatch">
+                <input type="color" id="usColorPicker" value="#3b82f6" class="theme-swatch__input" oninput="updatePreview()" />
+              </span>
+              <span class="sheet-row__text">
+                <span class="sheet-row__title">Us</span>
+                <span id="usColorHex" class="sheet-row__desc theme-hex">#3B82F6</span>
+              </span>
+              <span class="theme-color-row__edit">Change</span>
+            </label>
+            <label class="sheet-row theme-color-row" for="demColorPicker" data-theme-team="dem">
+              <span class="theme-swatch">
+                <input type="color" id="demColorPicker" value="#ef4444" class="theme-swatch__input" oninput="updatePreview()" />
+              </span>
+              <span class="sheet-row__text">
+                <span class="sheet-row__title">Dem</span>
+                <span id="demColorHex" class="sheet-row__desc theme-hex">#EF4444</span>
+              </span>
+              <span class="theme-color-row__edit">Change</span>
+            </label>
           </div>
-          <div class="mb-6">
-            <button type="button" onclick="randomizeThemeColors()" class="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-md threed flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>Randomize Colors</button>
+          <p id="themeContrastNote" class="hidden sheet-footnote theme-note" role="status" aria-live="polite">These colors look alike. Pick two that are easier to tell apart at a glance.</p>
+
+          <h3 class="sheet-label">Quick Picks</h3>
+          <div class="theme-presets" role="group" aria-label="Color pairs">
+            <button type="button" class="theme-preset" data-us="#3b82f6" data-dem="#ef4444" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#3b82f6;--dem:#ef4444"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Classic</span></button>
+            <button type="button" class="theme-preset" data-us="#16a34a" data-dem="#f59e0b" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#16a34a;--dem:#f59e0b"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Meadow</span></button>
+            <button type="button" class="theme-preset" data-us="#7c3aed" data-dem="#f97316" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#7c3aed;--dem:#f97316"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Royal</span></button>
+            <button type="button" class="theme-preset" data-us="#0891b2" data-dem="#e11d48" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#0891b2;--dem:#e11d48"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Reef</span></button>
+            <button type="button" class="theme-preset" data-us="#4f46e5" data-dem="#db2777" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#4f46e5;--dem:#db2777"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Neon</span></button>
+            <button type="button" class="theme-preset" data-us="#0d9488" data-dem="#ea580c" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#0d9488;--dem:#ea580c"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Canyon</span></button>
+            <button type="button" class="theme-preset" data-us="#1d4ed8" data-dem="#eab308" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#1d4ed8;--dem:#eab308"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Varsity</span></button>
+            <button type="button" class="theme-preset" data-us="#475569" data-dem="#dc2626" onclick="selectThemePreset(this)" aria-pressed="false"><span class="theme-preset__dot" style="--us:#475569;--dem:#dc2626"><svg class="ui-icon theme-preset__check" aria-hidden="true"><use href="#ui-icon-tick"/></svg></span><span class="theme-preset__name">Slate</span></button>
           </div>
-          <footer class="flex space-x-3">
-            <button type="button" onclick="applyCustomThemeColors()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md threed font-medium">Apply Colors</button>
-            <button type="button" onclick="resetThemeColors()" class="flex-1 bg-gray-200 text-gray-800 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 shadow-md threed font-medium dark:bg-gray-600 dark:text-white">Reset Default</button>
-          </footer>
+          <div class="sheet-group theme-shuffle">
+            <button type="button" onclick="randomizeThemeColors()" class="sheet-row">
+              <span class="sheet-row__icon" style="--tone:#8b5cf6" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-shuffle"/></svg></span>
+              <span class="sheet-row__text">
+                <span class="sheet-row__title">Surprise Me</span>
+                <span class="sheet-row__desc">Roll a random pair of opposite colors.</span>
+              </span>
+            </button>
+          </div>
+          <p class="sheet-footnote">Nothing changes until you tap Apply.</p>
         </div>
+        <footer class="sheet-footer">
+          <button type="button" onclick="resetThemeColors()" class="dialog-btn dialog-btn--secondary">Reset</button>
+          <button type="button" onclick="applyCustomThemeColors()" class="dialog-btn dialog-btn--primary">Apply Colors</button>
+        </footer>
       </div>
     </div>
     <!-- Zero-points helper modal -->

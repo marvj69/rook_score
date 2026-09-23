@@ -4508,7 +4508,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.64";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.65";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
@@ -4629,6 +4629,25 @@ test('About, Settings, and Resume Paper Game open as swipeable bottom sheets', (
   assert.match(menuSource, /closeSheetModal\("aboutModal"\)/);
   assert.match(menuSource, /saveSettings\(\);\s*closeSheetModal\("settingsModal"\)/);
   assert.match(menuSource, /closeSheetModal\("resumeGameModal"\)/);
+});
+
+test('Customize Theme opens as a swipeable Team Colors sheet with quick picks', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const themeSource = readFileSync(path.join(repoRoot, 'js/modules/04-theme-ui-helpers.js'), 'utf8');
+
+  const modalStart = htmlSource.indexOf('id="themeModal"');
+  assert.notEqual(modalStart, -1);
+  const opening = htmlSource.slice(modalStart, modalStart + 1200);
+  assert.match(opening, /class="[^"]*\bstats-modal library-modal sheet-modal theme-modal\b/);
+  assert.match(opening, /class="stats-sheet-grip" data-sheet-drag/);
+  for (const id of ['usColorPicker', 'demColorPicker', 'previewUs', 'previewDem', 'usColorHex', 'demColorHex', 'themeContrastNote']) {
+    assert.match(htmlSource, new RegExp(`id="${id}"`), `${id} should exist`);
+  }
+  assert.equal((htmlSource.match(/class="theme-preset" data-us="#[0-9a-f]{6}" data-dem="#[0-9a-f]{6}"/g) || []).length, 8);
+  assert.match(themeSource, /openSheetModal\("themeModal", \(\) => closeThemeModal\(null\)\)/);
+  assert.match(themeSource, /closeSheetModal\("themeModal"\)/);
+  assert.match(themeSource, /function selectThemePreset\(button\)/);
+  assert.match(themeSource, /function themeColorsLookAlike\(a, b\)/);
 });
 
 test('standard scrollable modals share the bug report modal height cap', () => {

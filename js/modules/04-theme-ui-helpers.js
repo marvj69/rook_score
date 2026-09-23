@@ -243,14 +243,13 @@ function applyCustomThemeColors() {
 }
 function resetThemeColors() {
   const defaultUs = "#3b82f6", defaultDem = "#ef4444";
-  document.getElementById('bodyRoot').style.setProperty('--primary-color', defaultUs);
-  document.getElementById('bodyRoot').style.setProperty('--accent-color', defaultDem);
+  const bodyStyle = document.getElementById('bodyRoot').style;
+  bodyStyle.setProperty('--primary-color', defaultUs);
+  bodyStyle.setProperty('--accent-color', defaultDem);
   removeLocalStorageKey('customUsColor');
   removeLocalStorageKey('customDemColor');
-  const usPicker = document.getElementById('usColorPicker');
-  const demPicker = document.getElementById('demColorPicker');
-  if (usPicker) usPicker.value = defaultUs;
-  if (demPicker) demPicker.value = defaultDem;
+  document.getElementById('usColorPicker').value = defaultUs;
+  document.getElementById('demColorPicker').value = defaultDem;
   updatePreview();
 }
 function hslToHex(h, s, l) { // Helper for random colors
@@ -268,29 +267,44 @@ function randomizeThemeColors() {
   document.getElementById('demColorPicker').value = hslToHex((h + 180) % 360, s, l); // Complementary
   updatePreview();
 }
-function updatePreview() {
-  const usColor = document.getElementById('usColorPicker')?.value;
-  const demColor = document.getElementById('demColorPicker')?.value;
-  const previewUs = document.getElementById('previewUs');
-  const previewDem = document.getElementById('previewDem');
-  if (previewUs && usColor) previewUs.style.backgroundColor = usColor;
-  if (previewDem && demColor) previewDem.style.backgroundColor = demColor;
+function selectThemePreset(button) {
+  document.getElementById('usColorPicker').value = button.dataset.us;
+  document.getElementById('demColorPicker').value = button.dataset.dem;
+  updatePreview();
 }
- function openThemeModal(event) {
+// Weighted RGB distance; below ~80 the two teams are hard to tell apart.
+function themeColorsLookAlike(a, b) {
+  const [x, y] = [a, b].map(hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+  const [dr, dg, db] = [0, 1, 2].map(i => x[i] - y[i]);
+  const r = (x[0] + y[0]) / 512;
+  return (2 + r) * dr * dr + 4 * dg * dg + (3 - r) * db * db < 6400;
+}
+function updatePreview() {
+  const modal = document.getElementById('themeModal');
+  const colors = { us: document.getElementById('usColorPicker')?.value, dem: document.getElementById('demColorPicker')?.value };
+  if (!modal || !colors.us || !colors.dem) return;
+  for (const team of ['us', 'dem']) {
+    modal.style.setProperty(`--preview-${team}`, colors[team]);
+    modal.querySelectorAll(`[data-theme-team="${team}"]`).forEach(el => el.style.setProperty('--team', colors[team]));
+    document.getElementById(`${team}ColorHex`).textContent = colors[team].toUpperCase();
+  }
+  modal.querySelectorAll('.theme-preset').forEach(button => {
+    button.setAttribute('aria-pressed', button.dataset.us === colors.us && button.dataset.dem === colors.dem);
+  });
+  document.getElementById('themeContrastNote').classList.toggle('hidden', !themeColorsLookAlike(colors.us, colors.dem));
+}
+function openThemeModal(event) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
   document.getElementById("settingsModal")?.classList.add("hidden");
-  const themeModalEl = document.getElementById("themeModal");
-  if (themeModalEl) {
-      themeModalEl.classList.remove("hidden");
-      const content = themeModalEl.querySelector(".bg-white, .dark\\:bg-gray-800");
-      if (content) content.onclick = e => e.stopPropagation(); // Prevent closing on content click
-      initializeCustomThemeColors(); // Ensure pickers and preview are up-to-date
-  }
+  initializeCustomThemeColors(); // Ensure pickers and preview are up-to-date
+  openSheetModal("themeModal", () => closeThemeModal(null));
 }
 function closeThemeModal(event) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
-  document.getElementById("themeModal")?.classList.add("hidden");
-  document.getElementById("settingsModal")?.classList.remove("hidden"); // Show settings modal again
+  if (document.getElementById("themeModal")?.classList.contains("hidden") !== false) return;
+  // Show Settings first so closing the sheet keeps the modal environment active.
+  document.getElementById("settingsModal")?.classList.remove("hidden");
+  closeSheetModal("themeModal");
 }
 function showSaveIndicator(message = "Saved") {
   const el = document.getElementById("saveIndicator");
