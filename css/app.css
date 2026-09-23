@@ -1918,6 +1918,9 @@ body.liquid-glass .entity-section { background: var(--glass-layer); border-color
   border: 1.5px solid var(--lib-line);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18), 0 8px 18px -12px rgba(0, 0, 0, 0.6);
   transition: transform 0.18s var(--smooth), background-color 0.2s var(--smooth), border-color 0.2s var(--smooth);
+  /* Skip layout and paint for cards scrolled out of view; long libraries stay smooth */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 146px;
 }
 .game-card--frozen { border-color: color-mix(in srgb, var(--lib-frost) 22%, transparent); }
 .game-card:has(.game-card__open:active) { transform: scale(0.985); background: var(--lib-surface-strong); }
@@ -1996,8 +1999,7 @@ body.liquid-glass .entity-section { background: var(--glass-layer); border-color
 
 /* Entrance: stagger the first few cards when the sheet opens or tabs change */
 @media (prefers-reduced-motion: no-preference) {
-  .library-list--animate .game-card,
-  .library-list--animate .library-group {
+  .library-list--animate .library-enter {
     animation: libraryCardIn 0.36s var(--smooth) both;
     animation-delay: calc(var(--card-i, 0) * 32ms);
   }

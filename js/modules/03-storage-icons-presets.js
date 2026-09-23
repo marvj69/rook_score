@@ -6,6 +6,7 @@ function setLocalStorage(key, value, { sync = true } = {}) {
     const serialized = JSON.stringify(value);
     localStorage.setItem(key, serialized);
     LOCAL_STORAGE_CACHE.set(key, { raw: serialized, parsed: value });
+    if ((key === "savedGames" || key === "freezerGames") && typeof clearLibraryGameCache === "function") clearLibraryGameCache();
     if (key === "savedGames") {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames(value);
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
@@ -26,6 +27,7 @@ function removeLocalStorageKey(key) {
   try {
     localStorage.removeItem(key);
     LOCAL_STORAGE_CACHE.delete(key);
+    if ((key === "savedGames" || key === "freezerGames") && typeof clearLibraryGameCache === "function") clearLibraryGameCache();
     if (key === "savedGames") {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames();
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();

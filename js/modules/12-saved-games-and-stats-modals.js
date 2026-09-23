@@ -18,6 +18,77 @@ const LIBRARY_ICONS = {
   clock: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
 };
 const LIBRARY_ANIMATED_CARD_LIMIT = 8;
+// Cards are added a page at a time as the list scrolls, so big libraries open instantly.
+const LIBRARY_PAGE_SIZE = 30;
+const LIBRARY_LOAD_AHEAD_PX = 1200;
+const libraryListState = {};
+let libraryLoadMoreScheduled = false;
+// Per-game sort/search values, rebuilt whenever the saved lists change.
+let libraryGameMeta = new WeakMap();
+const LIBRARY_DATE_OPTIONS = {
+  full: { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+  time: { hour: 'numeric', minute: '2-digit' },
+  month: { month: 'long' },
+  monthYear: { month: 'long', year: 'numeric' },
+  weekday: { weekday: 'long' },
+  dayShort: { weekday: 'short', month: 'short', day: 'numeric' },
+  dateShort: { month: 'short', day: 'numeric', year: 'numeric' },
+};
+const LIBRARY_DATE_FORMATTERS = {};
+
+// toLocale*String builds a new formatter on every call; reuse one per format instead.
+function formatLibraryDate(date, format) {
+  const formatter = LIBRARY_DATE_FORMATTERS[format]
+    || (LIBRARY_DATE_FORMATTERS[format] = new Intl.DateTimeFormat([], LIBRARY_DATE_OPTIONS[format]));
+  return formatter.format(date);
+}
+
+function clearLibraryGameCache() {
+  libraryGameMeta = new WeakMap();
+}
+
+function getLibraryGameMeta(game) {
+  let meta = libraryGameMeta.get(game);
+  if (!meta) {
+    const date = getLibraryTimestamp(game.timestamp);
+    const finalScore = game.finalScore || {};
+    meta = {
+      date,
+      time: date ? date.getTime() : 0,
+      highScore: Math.max(Number(finalScore.us) || 0, Number(finalScore.dem) || 0),
+      dayKey: '',
+      group: null,
+      searchText: null,
+    };
+    libraryGameMeta.set(game, meta);
+  }
+  // Group labels ("Today", "This Week") shift at midnight.
+  const dayKey = new Date().toDateString();
+  if (meta.dayKey !== dayKey) {
+    meta.dayKey = dayKey;
+    meta.group = null;
+    meta.searchText = null;
+  }
+  return meta;
+}
+
+function getLibraryGameGroup(game) {
+  const meta = getLibraryGameMeta(game);
+  return meta.group || (meta.group = getLibraryDateGroup(game.timestamp));
+}
+
+function getLibrarySearchText(game) {
+  const meta = getLibraryGameMeta(game);
+  if (meta.searchText === null) {
+    meta.searchText = [
+      getGameTeamDisplay(game, 'us'),
+      getGameTeamDisplay(game, 'dem'),
+      meta.date ? formatLibraryDate(meta.date, 'full') : '',
+      meta.date ? getLibraryGameGroup(game).label : '',
+    ].join('\n').toLowerCase();
+  }
+  return meta.searchText;
+}
 
 function switchGamesTab(tabType) {
   const isFreezer = tabType === 'freezer';
@@ -33,8 +104,6 @@ function switchGamesTab(tabType) {
   document.getElementById('freezerGamesSection')?.classList.toggle('hidden', !isFreezer);
   document.getElementById('gameSearchInput').value = '';
   document.getElementById('gameSortSelect').value = 'newest';
-  const scroller = document.getElementById('savedGamesScroll');
-  if (scroller) scroller.scrollTop = 0;
   renderGamesWithFilter({ animate: true });
 }
 function updateGamesCount() {
@@ -61,7 +130,8 @@ function clearGameSearch() {
   input.focus();
 }
 function sortGames() { renderGamesWithFilter(); }
-function renderGamesWithFilter({ animate = false } = {}) {
+// keepPosition re-renders in place (after a delete) instead of jumping back to the top.
+function renderGamesWithFilter({ animate = false, keepPosition = false } = {}) {
   const rawSearchValue = document.getElementById('gameSearchInput').value || '';
   const searchTerm = rawSearchValue.trim().toLowerCase();
   const displaySearch = rawSearchValue.trim();
@@ -79,6 +149,7 @@ function renderGamesWithFilter({ animate = false } = {}) {
       displaySearch,
       sortOption,
       animate,
+      keepPosition,
       buildCard: buildSavedGameCard,
     });
   } else {
@@ -91,12 +162,13 @@ function renderGamesWithFilter({ animate = false } = {}) {
       displaySearch,
       sortOption,
       animate,
+      keepPosition,
       buildCard: buildFreezerGameCard,
     });
   }
 }
 
-function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, animate = false, buildCard }) {
+function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, animate = false, keepPosition = false, buildCard }) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -104,39 +176,84 @@ function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchM
   const normalizedTerm = searchTerm || '';
 
   const filteredEntries = normalizedTerm
-    ? entries.filter(({ game }) => {
-        const us = getGameTeamDisplay(game, 'us').toLowerCase();
-        const dem = getGameTeamDisplay(game, 'dem').toLowerCase();
-        const timestamp = game.timestamp ? new Date(game.timestamp).toLocaleString().toLowerCase() : '';
-        const when = game.timestamp ? getLibraryDateGroup(game.timestamp).label.toLowerCase() : '';
-        return us.includes(normalizedTerm) || dem.includes(normalizedTerm) || timestamp.includes(normalizedTerm) || when.includes(normalizedTerm);
-      })
+    ? entries.filter(({ game }) => getLibrarySearchText(game).includes(normalizedTerm))
     : entries;
 
   const sortedEntries = sortGamesBy(filteredEntries, sortOption);
-  const groupByDate = sortOption === 'newest' || sortOption === 'oldest';
-  let lastGroupKey = null;
-  const listHtml = sortedEntries.map(({ game, index }, position) => {
-    let heading = '';
-    if (groupByDate) {
-      const group = getLibraryDateGroup(game.timestamp);
-      if (group.key !== lastGroupKey) {
-        lastGroupKey = group.key;
-        heading = `<h4 class="library-group">${escapeHtmlValue(group.label)}</h4>`;
-      }
-    }
-    return heading + buildCard(game, index, position, groupByDate);
-  }).join('');
+  const previous = libraryListState[containerId];
+  const state = {
+    entries: sortedEntries,
+    buildCard,
+    groupByDate: sortOption === 'newest' || sortOption === 'oldest',
+    rendered: 0,
+    lastGroupKey: null,
+  };
+  libraryListState[containerId] = state;
+  const pageCount = keepPosition && previous ? Math.max(LIBRARY_PAGE_SIZE, previous.rendered) : LIBRARY_PAGE_SIZE;
+  const listHtml = buildLibraryListPage(state, pageCount);
 
   const emptyMessageEl = document.getElementById(emptyMessageId);
   if (emptyMessageEl) emptyMessageEl.classList.toggle('hidden', sortedEntries.length > 0 || Boolean(normalizedTerm));
 
+  const scroller = document.getElementById('savedGamesScroll');
+  if (scroller && !keepPosition) scroller.scrollTop = 0;
   container.classList.toggle('library-list--animate', animate);
   container.innerHTML = listHtml || (!normalizedTerm ? '' : `
     <div class="library-no-match">
       <p>${escapeHtmlValue(emptySearchMessage)} <strong>“${escapeHtmlValue(displaySearch)}”</strong></p>
       <button type="button" class="library-no-match__clear" onclick="clearGameSearch()">Clear search</button>
     </div>`);
+  ensureLibraryScrollPaging();
+}
+
+// Builds the next `count` cards (with any date headings) and advances the list's cursor.
+function buildLibraryListPage(state, count) {
+  const end = Math.min(state.entries.length, state.rendered + count);
+  let html = '';
+  for (let position = state.rendered; position < end; position += 1) {
+    const { game, index } = state.entries[position];
+    if (state.groupByDate) {
+      const group = getLibraryGameGroup(game);
+      if (group.key !== state.lastGroupKey) {
+        state.lastGroupKey = group.key;
+        html += `<h4 class="library-group${getLibraryEnterClass(position)}" ${getLibraryCardStyle(position)}>${escapeHtmlValue(group.label)}</h4>`;
+      }
+    }
+    html += state.buildCard(game, index, position, state.groupByDate);
+  }
+  state.rendered = end;
+  return html;
+}
+
+function getActiveLibraryListId() {
+  const freezerSection = document.getElementById('freezerGamesSection');
+  return freezerSection && !freezerSection.classList.contains('hidden') ? 'freezerGamesList' : 'savedGamesList';
+}
+
+function loadMoreLibraryGames() {
+  const containerId = getActiveLibraryListId();
+  const state = libraryListState[containerId];
+  const container = document.getElementById(containerId);
+  const scroller = document.getElementById('savedGamesScroll');
+  if (!state || !container || !scroller || state.rendered >= state.entries.length) return false;
+  const distanceToEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  if (distanceToEnd > LIBRARY_LOAD_AHEAD_PX) return false;
+  container.insertAdjacentHTML('beforeend', buildLibraryListPage(state, LIBRARY_PAGE_SIZE));
+  return true;
+}
+
+function ensureLibraryScrollPaging() {
+  const scroller = document.getElementById('savedGamesScroll');
+  if (!scroller || scroller.dataset.pagingBound === 'true') return;
+  scroller.addEventListener('scroll', () => {
+    if (libraryLoadMoreScheduled) return;
+    libraryLoadMoreScheduled = true;
+    scheduleFrame(() => {
+      libraryLoadMoreScheduled = false;
+      loadMoreLibraryGames();
+    });
+  }, { passive: true });
+  scroller.dataset.pagingBound = 'true';
 }
 
 function getLibraryTimestamp(value) {
@@ -159,7 +276,7 @@ function getLibraryDateGroup(timestamp, now = new Date()) {
   const sameYear = date.getFullYear() === now.getFullYear();
   return {
     key: `${date.getFullYear()}-${date.getMonth()}`,
-    label: date.toLocaleDateString([], sameYear ? { month: 'long' } : { month: 'long', year: 'numeric' }),
+    label: formatLibraryDate(date, sameYear ? 'month' : 'monthYear'),
   };
 }
 
@@ -167,15 +284,15 @@ function getLibraryDateGroup(timestamp, now = new Date()) {
 function formatLibraryWhen(timestamp, { grouped = false, now = new Date() } = {}) {
   const date = getLibraryTimestamp(timestamp);
   if (!date) return 'Unknown date';
-  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const time = formatLibraryDate(date, 'time');
   const dayDiff = getLibraryDayDiff(date, now);
   if (dayDiff <= 1) {
     if (grouped) return time;
     return `${dayDiff <= 0 ? 'Today' : 'Yesterday'} · ${time}`;
   }
-  if (dayDiff < 7) return `${date.toLocaleDateString([], { weekday: 'long' })} · ${time}`;
+  if (dayDiff < 7) return `${formatLibraryDate(date, 'weekday')} · ${time}`;
   const sameYear = date.getFullYear() === now.getFullYear();
-  const day = date.toLocaleDateString([], sameYear ? { weekday: 'short', month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  const day = formatLibraryDate(date, sameYear ? 'dayShort' : 'dateShort');
   return grouped ? `${day} · ${time}` : day;
 }
 
@@ -193,9 +310,17 @@ function formatLibraryAgo(timestamp, now = new Date()) {
   return `on ${formatLibraryWhen(timestamp, { now })}`;
 }
 
+// Only the first few cards stagger in; the rest are below the fold and appear without animating.
+function isLibraryEnterPosition(position) {
+  return (Number(position) || 0) < LIBRARY_ANIMATED_CARD_LIMIT;
+}
+
+function getLibraryEnterClass(position) {
+  return isLibraryEnterPosition(position) ? ' library-enter' : '';
+}
+
 function getLibraryCardStyle(position) {
-  const step = Math.min(Number(position) || 0, LIBRARY_ANIMATED_CARD_LIMIT);
-  return `style="--card-i: ${step}"`;
+  return isLibraryEnterPosition(position) ? `style="--card-i: ${Number(position) || 0}"` : '';
 }
 
 function buildLibraryTeamRow(side, name, score, { lead = false, trophy = false, dim = false, trail = false } = {}) {
@@ -232,7 +357,7 @@ function buildSavedGameCard(game, originalIndex, position = 0, grouped = false) 
   const summary = `${usDisplay} ${usScore}, ${demDisplay} ${demScore}. ${winnerName ? `${winnerName} won. ` : ''}${formatLibraryWhen(game.timestamp)}`;
 
   return `
-    <article class="game-card game-card--completed" ${getLibraryCardStyle(position)}>
+    <article class="game-card game-card--completed${getLibraryEnterClass(position)}" ${getLibraryCardStyle(position)}>
       <button type="button" class="game-card__open" onclick="viewSavedGame(${originalIndex})" aria-label="${escapeAttribute(`View game details: ${summary}`)}"></button>
       <div class="game-card__meta">
         <span class="game-card__when">${escapeHtmlValue(when)}</span>
@@ -274,7 +399,7 @@ function buildFreezerGameCard(game, originalIndex, position = 0) {
   const frozenAgo = formatLibraryAgo(game.timestamp);
 
   return `
-    <article class="game-card game-card--frozen" ${getLibraryCardStyle(position)}>
+    <article class="game-card game-card--frozen${getLibraryEnterClass(position)}" ${getLibraryCardStyle(position)}>
       <button type="button" class="game-card__open" onclick="loadFreezerGame(${originalIndex})" aria-label="${escapeAttribute(`Resume frozen game: ${usDisplay} ${usScore}, ${demDisplay} ${demScore}`)}"></button>
       <div class="game-card__meta">
         <span class="game-card__when game-card__when--frozen"><span class="game-card__meta-icon">${LIBRARY_ICONS.snowflake}</span>Frozen ${escapeHtmlValue(frozenAgo)}</span>
@@ -299,16 +424,8 @@ function buildFreezerGameCard(game, originalIndex, position = 0) {
 
 function sortGamesBy(entries, sortOption = 'newest') {
   const sorted = [...entries];
-  const getTimestamp = ({ game }) => {
-    const parsed = game.timestamp ? Date.parse(game.timestamp) : NaN;
-    return Number.isNaN(parsed) ? 0 : parsed;
-  };
-  const getHighScore = ({ game }) => {
-    const finalScore = game.finalScore || {};
-    const usScore = Number(finalScore.us) || 0;
-    const demScore = Number(finalScore.dem) || 0;
-    return Math.max(usScore, demScore);
-  };
+  const getTimestamp = ({ game }) => getLibraryGameMeta(game).time;
+  const getHighScore = ({ game }) => getLibraryGameMeta(game).highScore;
 
   switch (sortOption) {
     case 'oldest':

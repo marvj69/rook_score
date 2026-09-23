@@ -1109,7 +1109,7 @@ function deleteGame(storageKey, index, descriptor, onDeleted) {
     // Re-render the list in the modal
     if (document.getElementById("savedGamesModal") && !document.getElementById("savedGamesModal").classList.contains("hidden")) {
       updateGamesCount();
-      renderGamesWithFilter();
+      renderGamesWithFilter({ keepPosition: true });
     }
   }, closeConfirmationModal, { title: `Delete this ${descriptor}?`, confirmLabel: "Delete", tone: "danger" });
 }

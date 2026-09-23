@@ -36,6 +36,7 @@ function createRuntime(bundled) {
           return shouldAdd;
         },
       },
+      insertAdjacentHTML(position, html) { this.innerHTML += html; }, closest: () => null,
       appendChild: noop, remove: noop, setAttribute: noop, removeAttribute: noop,
       addEventListener: noop, removeEventListener: noop, focus: noop, blur: noop,
       querySelector: () => null, querySelectorAll: () => [],
@@ -204,9 +205,67 @@ for (const bundled of [false, true]) {
   });
 }
 
+for (const bundled of [false, true]) {
+  const label = bundled ? 'production bundles' : 'source modules';
+
+  test(`${label}: the game library renders large collections a page at a time`, () => {
+    const app = createRuntime(bundled);
+    const games = Array.from({ length: 100 }, (_, i) => ({
+      usTeamName: i === 90 ? 'Zelda & Link' : 'Alice & Bob', demTeamName: 'Cara & Dan',
+      winner: 'us', timestamp: new Date(100000 - i * 36e5).toISOString(),
+      finalScore: { us: 500 + i, dem: 200 }, rounds: [],
+    }));
+    app.localStorage.setItem('savedGames', JSON.stringify(games));
+    const list = app.elements.get('savedGamesList') || app.document.getElementById('savedGamesList');
+    const scroller = app.document.getElementById('savedGamesScroll');
+    const cards = () => (list.innerHTML.match(/<article /g) || []).length;
+
+    app.run("switchGamesTab('completed')");
+    assert.equal(cards(), 30);
+    assert.equal((list.innerHTML.match(/library-enter/g) || []).length > 0, true);
+    assert.equal((list.innerHTML.match(/game-card[^"]*library-enter/g) || []).length, 8);
+
+    Object.assign(scroller, { scrollHeight: 5000, clientHeight: 800, scrollTop: 0 });
+    assert.equal(app.run('loadMoreLibraryGames()'), false);
+    scroller.scrollTop = 3500;
+    assert.equal(app.run('loadMoreLibraryGames()'), true);
+    assert.equal(cards(), 60);
+    assert.equal(scroller.scrollTop, 3500);
+
+    // A delete re-render keeps everything already loaded and the scroll position.
+    app.run('renderGamesWithFilter({ keepPosition: true })');
+    assert.equal(cards(), 60);
+    assert.equal(scroller.scrollTop, 3500);
+
+    // Search covers games that were never rendered, and resets to the top.
+    app.document.getElementById('gameSearchInput').value = 'zelda';
+    app.run('renderGamesWithFilter()');
+    assert.equal(cards(), 1);
+    assert.match(list.innerHTML, /viewSavedGame\(90\)/);
+    assert.equal(scroller.scrollTop, 0);
+
+    // Oldest-first sort reaches the end of the list with no duplicate cards.
+    app.document.getElementById('gameSearchInput').value = '';
+    app.document.getElementById('gameSortSelect').value = 'oldest';
+    app.run('renderGamesWithFilter()');
+    assert.match(list.innerHTML, /viewSavedGame\(99\)/);
+    for (let i = 0; i < 5; i++) { scroller.scrollTop = 1e6; app.run('loadMoreLibraryGames()'); }
+    assert.equal(cards(), 100);
+    assert.equal(new Set(list.innerHTML.match(/viewSavedGame\(\d+\)/g)).size, 100);
+  });
+
+  test(`${label}: saving games refreshes cached library search text`, () => {
+    const app = createRuntime(bundled);
+    app.run("setLocalStorage('savedGames', [{ usTeamName: 'Old Name', demTeamName: 'Them', timestamp: '2026-01-01T00:00:00Z', finalScore: { us: 500, dem: 100 } }], { sync: false })");
+    assert.equal(app.run("getLibrarySearchText(getLocalStorage('savedGames')[0]).includes('old name')"), true);
+    app.run("{ const games = getLocalStorage('savedGames'); games[0].usTeamName = 'New Name'; setLocalStorage('savedGames', games, { sync: false }); }");
+    assert.equal(app.run("getLibrarySearchText(getLocalStorage('savedGames')[0]).includes('new name')"), true);
+  });
+}
+
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 250000, 65000],
+    ['js/app.bundle.js', 256000, 66000],
     ['js/voice-score.bundle.js', 60000, 17000],
   ]) {
     const source = read(file);
