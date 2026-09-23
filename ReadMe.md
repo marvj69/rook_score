@@ -7,7 +7,7 @@
 ## ✨ Features
 
 *   **Effortless Scoring:** Intuitive interface for selecting bidding teams, bid amounts (preset or custom), and entering points.
-*   **Voice Score Entry:** Enable Experimental Features to complete the microphone-permission onboarding and show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action.
+*   **Voice Score Entry:** Enable Experimental Features to complete the microphone-permission onboarding and show the large bottom-right microphone button, then hold it while speaking and release it to process the voice action. The mic stays available over open panels, confirmation dialogs, and the game-over screen, so you can answer "yes", close a panel, or start a rematch by voice.
 *   **Real-time Score Updates:** Team scores and round numbers update instantly.
 *   **Live Game Timer:** Times the game automatically, including hands played with the phone locked or the app closed. Any stretch of more than 30 minutes with no one using the app counts as a break and is left out, so saved game lengths reflect actual play.
 *   **Detailed Game History:** View a log of all rounds, including bids and running totals.
@@ -34,8 +34,9 @@
 *   **Advanced Gameplay Features:**
     *   **Dealer Tracking:** Enter a four-player dealing order, auto-set teams by pairing with the dealer across the table, and see a dealer badge during play.
     *   **Misdeal Handling:** Optional setting adds a Misdeal button to move to the next dealer without affecting the score.
-    *   **Voice Scoring:** Transcribes short score phrases, infers team, bid, points, made/set status, misdeal, and undo actions, and asks for confirmation when the phrase is incomplete.
-    *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question so short answers can complete the same request.
+    *   **Voice Scoring:** Understands spoken score phrases, infers team, bid, points, made/set status, misdeal, undo, and "fix the last hand" corrections, and asks for confirmation when the phrase is incomplete.
+    *   **Voice Answers:** Ask about the game ("What's the score?", "Who deals next?", "How many do we need?") and hear the answer. Replies are read aloud unless Spoken voice replies is turned off.
+    *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question or answer so short follow-ups ("Carol", "and theirs?") can complete the same request.
     *   **Optional Improvement Sharing:** With Experimental Features enabled, users can separately opt in to share redacted command text, sanitized structured action targets, limited game context, and outcomes for future model improvement. Raw audio and real player/team names are never stored by Rook Score.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
@@ -172,6 +173,7 @@ Access these via **Menu -> Settings**:
 *   **Appearance & Features:**
     *   **Pro Mode:** Toggle to enable/disable the win probability display during active games.
     *   **Experimental Features:** Show preview controls such as the microphone-powered voice actions. This is off by default.
+    *   **Spoken voice replies:** When Experimental Features is on, choose whether voice answers and results are read aloud. This is on by default and stored only on this device.
     *   **Help improve voice actions:** When Experimental Features is on, separately opt in or out of sharing redacted command text, sanitized structured action targets, limited game context, and action outcomes. This control is hidden when Experimental Features is off.
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
@@ -220,9 +222,9 @@ FIREBASE_APP_ID
 OPENROUTER_API_KEY
 OPENROUTER_MODEL
 OPENROUTER_FALLBACK_MODELS
+OPENROUTER_REASONING_EFFORT
 OPENROUTER_SITE_URL
 OPENROUTER_APP_TITLE
-VOICE_SCORE_COMMAND_LOCAL_FALLBACK
 RESEND_API_KEY
 BUG_REPORT_TO_EMAIL
 BUG_REPORT_FROM_EMAIL
@@ -231,22 +233,24 @@ BUG_REPORT_ALLOWED_ORIGINS
 
 The in-app bug report endpoint sends through Resend. `BUG_REPORT_TO_EMAIL` defaults to `heinonenmh@gmail.com`, and `BUG_REPORT_FROM_EMAIL` defaults to `Rook Score <onboarding@resend.dev>`. The Resend onboarding sender is suitable while testing with the email address associated with the Resend account. For general production delivery, verify a sending domain in Resend and set `BUG_REPORT_FROM_EMAIL` to an address on that domain.
 
-Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.1-flash-lite` with low reasoning effort. `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-2.5-flash` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
-`VOICE_SCORE_COMMAND_LOCAL_FALLBACK` is optional; local development enables a narrow fallback planner by default so provider 502s do not block voice-action testing. Set it to `false` to test provider-only failures.
+Voice recordings are captured as compact mono speech audio and uploaded as binary data to the OpenRouter chat model (no separate transcription step or phone-side Base64 conversion). `OPENROUTER_MODEL` is optional; the voice command planner defaults to `google/gemini-3.7-flash`. `OPENROUTER_REASONING_EFFORT` is optional and defaults to `minimal` (`none`, `low`, `medium`, and `high` are also accepted). `OPENROUTER_FALLBACK_MODELS` is an optional comma-separated model list and defaults to `google/gemini-3.1-flash-lite` for automatic model failover. `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` are optional OpenRouter attribution headers.
+
+To keep voice responsive, the app gathers the game context while the mic is held and pings the endpoint (a bodiless `GET`) so the function is warm before the recording uploads. Each provider call is abandoned after 8 seconds, the whole plan (including one retry) must finish within 12 seconds, and the phone gives up after 16 seconds. `vercel.json` caps the function at 20 seconds.
 
 Enabling Experimental Features opens a one-time, device-local onboarding dialog. Continuing requests microphone permission and immediately stops the permission-check stream without recording. Optional model-improvement consent is stored separately from the Experimental Features setting and defaults to off. Its Settings control is visible only while Experimental Features is enabled, and submissions require both settings to be on.
 
 When improvement sharing is enabled, the existing planner response supplies a text transcription without a second model call. Before one Firestore document is created, Rook Score replaces known player/team names and common email/phone patterns. Schema version 2 stores the redacted command, the planner's sanitized structured target (`status`, confirmation requirement, and full whitelisted action arguments), the final execution outcome, and a pre-execution snapshot of limited game state. That context uses placeholders such as `Player 1`, keeps only the scoring/dealer/statistics identifiers needed to resolve the command, and omits real names and unrelated game-library details. Raw audio, Base64 audio, account profile fields, and unsanitized action or game payloads are never stored.
 
-The voice LLM uses a fixed, server-validated catalog of 27 safe app actions:
+The voice LLM uses a fixed, server-validated catalog of 29 safe app actions, defined once in `js/modules/09-voice-tools.js`. The Vercel planner builds its schema and prompt from that file, and the browser uses it to whitelist, execute, and sanitize the same actions. To add a tool, add it to the registry, describe it in `VOICE_TOOL_DESCRIPTIONS` in `api/voice-score-command.js`, and give it a handler in `VOICE_SCORE_ACTION_HANDLERS`; tests fail if the three disagree.
 
-- Scoring and game state: score or edit a round, undo, redo, record a misdeal, start/reset, freeze, save, or rematch a game.
+- Scoring and game state: score a hand, correct the last hand, edit an older round, undo, redo, record a misdeal, start/reset, freeze, save, or rematch a game.
 - Setup and gameplay: set teams or dealer order, start from paper scores, choose the dealer pair or bid, change rules, and apply a table-talk penalty.
 - Navigation and account: open or close app panels, toggle the menu, sign in or out, confirm or cancel a visible prompt, and view/search/sort/delete/resume games.
 - Personalization and statistics: set theme colors, randomize/reset/apply the theme, edit bid presets, and change statistics view, metric, sort, or selected entity.
+- Data: download a backup of all app data.
 - `noop` safely records that no action should be taken.
 
-The planner can return up to five ordered actions for one compound request. It cannot execute arbitrary JavaScript, access unrelated device data, grant microphone permission, or submit the bug-report form; those remain explicit user actions.
+The planner can also return an `answer` status for questions about the current game. Answers never run actions. The planner can return up to five ordered actions for one compound request. It cannot execute arbitrary JavaScript, access unrelated device data, grant microphone permission, or submit the bug-report form; those remain explicit user actions.
 
 For local Vercel development, copy `.env.example` to `.env.local`, fill in the values from your Firebase web app config, and run:
 

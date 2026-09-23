@@ -760,15 +760,27 @@
                             <span class="settings-switch__track" aria-hidden="true"></span>
                         </label>
                     </div>
-                    <div id="voiceImprovementOptInContainer" class="hidden flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
-                        <div class="pr-3">
-                            <label for="voiceImprovementOptInToggle" class="text-gray-700 dark:text-white font-medium">Help improve voice actions</label>
-                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Share anonymized voice feedback.</p>
+                    <div id="voiceImprovementOptInContainer" class="hidden space-y-4">
+                        <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
+                            <div class="pr-3">
+                                <label for="voiceSpokenRepliesToggle" class="text-gray-700 dark:text-white font-medium">Spoken voice replies</label>
+                                <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Read voice answers and results aloud.</p>
+                            </div>
+                            <label class="settings-switch ml-4">
+                                <input type="checkbox" id="voiceSpokenRepliesToggle" class="settings-switch__input" checked />
+                                <span class="settings-switch__track" aria-hidden="true"></span>
+                            </label>
                         </div>
-                        <label class="settings-switch ml-4">
-                            <input type="checkbox" id="voiceImprovementOptInToggle" class="settings-switch__input" />
-                            <span class="settings-switch__track" aria-hidden="true"></span>
-                        </label>
+                        <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm">
+                            <div class="pr-3">
+                                <label for="voiceImprovementOptInToggle" class="text-gray-700 dark:text-white font-medium">Help improve voice actions</label>
+                                <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Share anonymized voice feedback.</p>
+                            </div>
+                            <label class="settings-switch ml-4">
+                                <input type="checkbox" id="voiceImprovementOptInToggle" class="settings-switch__input" />
+                                <span class="settings-switch__track" aria-hidden="true"></span>
+                            </label>
+                        </div>
                     </div>
                     <button type="button" onclick="openThemeModal(event)" class="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-600 rounded-lg shadow-sm transition-colors">
                         <div><span class="text-gray-700 dark:text-white font-medium block text-left">Customize Theme Colors</span><p class="text-sm text-gray-500 dark:text-gray-300 mt-1 text-left">Personalize team colors.</p></div>

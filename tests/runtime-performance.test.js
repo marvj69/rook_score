@@ -7,7 +7,7 @@ const { gzipSync } = require('node:zlib');
 
 const root = path.join(__dirname, '..');
 const modules = require('../scripts/app-module-files.cjs');
-const voiceModule = 'js/modules/09-voice-scoring.js';
+const voiceModules = ['js/modules/09-voice-tools.js', 'js/modules/09-voice-scoring.js'];
 const read = file => readFileSync(path.join(root, file), 'utf8');
 
 // Run the real classic scripts without CommonJS exports, in their browser order.
@@ -81,7 +81,7 @@ function createRuntime(bundled) {
   });
   vm.runInContext('window = globalThis; self = globalThis;', context);
   const run = code => vm.runInContext(code, context);
-  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => file !== voiceModule)) {
+  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => !voiceModules.includes(file))) {
     run(read(file));
   }
   return {
@@ -92,7 +92,7 @@ function createRuntime(bundled) {
       for (const { callback } of listeners[target].get(name) || []) callback({});
     },
     listeners,
-    loadVoice() { run(read(bundled ? 'js/voice-score.bundle.js' : voiceModule)); },
+    loadVoice() { for (const file of bundled ? ['js/voice-score.bundle.js'] : voiceModules) run(read(file)); },
   };
 }
 
@@ -196,8 +196,9 @@ for (const bundled of [false, true]) {
       assert.equal(listener?.options?.passive, true, `${name} menu tracking is passive`);
     }
     app.loadVoice();
-    assert.equal(app.run('typeof getVoiceScoreRuntime().parseVoiceScoreCommand'), 'function');
-    assert.equal(app.run('parseVoiceScoreCommand("Us bid 120 and made 140").type'), 'scoreRound');
+    assert.equal(app.run('typeof getVoiceScoreRuntime().refreshVoiceScoreControls'), 'function');
+    assert.equal(app.run('normalizeVoiceScorePlan({ status: "answer", message: "Us leads.", actions: [{ type: "undo" }] }).actions.length'), 0);
+    assert.equal(app.run('Object.keys(VOICE_TOOLS.actions).length > 0 && window.ROOK_VOICE_TOOLS === VOICE_TOOLS'), true);
     assert.equal(app.run('validateBid(125)'), '');
     assert.equal(app.run('validateBid(123)').length > 0, true);
   });

@@ -79,12 +79,6 @@ function initializeVoiceScoreModuleWhenEnabled() {
     });
 }
 
-function renderLazyVoiceScoreControls() {
-  const runtime = getVoiceScoreRuntime();
-  if (!runtime || typeof runtime.renderVoiceScoreControls !== "function") return "";
-  return runtime.renderVoiceScoreControls();
-}
-
 function cancelLoadedVoiceScoreEntry() {
   const runtime = getVoiceScoreRuntime();
   if (!runtime || typeof runtime.cancelVoiceScoreEntry !== "function") return false;
@@ -109,14 +103,6 @@ function stopLoadedVoiceScoreEntry(...args) {
   return typeof runtime?.stopVoiceScoreEntry === "function"
     ? runtime.stopVoiceScoreEntry(...args)
     : false;
-}
-
-function processLazyVoiceScoreTranscript(...args) {
-  return invokeLazyVoiceScoreRuntime("processVoiceScoreTranscript", ...args);
-}
-
-function parseLazyVoiceScoreCommand(...args) {
-  return invokeLazyVoiceScoreRuntime("parseVoiceScoreCommand", ...args);
 }
 
 function requestLazyVoiceScoreActionPlan(...args) {

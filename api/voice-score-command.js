@@ -1,3 +1,5 @@
+const VOICE_TOOLS = require("../js/modules/09-voice-tools.js");
+
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://marvj69.github.io",
   "https://rook-score.vercel.app",
@@ -7,14 +9,23 @@ const DEFAULT_ALLOWED_ORIGINS = [
 
 const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.7-flash";
 const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-3.1-flash-lite"];
-const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
+const DEFAULT_OPENROUTER_REASONING_EFFORT = "minimal";
+const OPENROUTER_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high"]);
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
+// One provider call may take this long before it is abandoned, and the whole
+// request (including a retry) must finish inside the planning budget, so a
+// hung provider can never leave the phone waiting for minutes.
+const OPENROUTER_ATTEMPT_TIMEOUT_MS = 8000;
+const VOICE_PLAN_TIME_BUDGET_MS = 12000;
+const MIN_RETRY_TIME_MS = 3000;
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
+const MAX_CONTEXT_JSON_LENGTH = 60000;
 const MAX_CONVERSATION_MESSAGES = 6;
 const MAX_CONVERSATION_CONTENT_LENGTH = 1000;
 const MAX_HEARD_TEXT_LENGTH = 1000;
-const VOICE_COMMAND_REVISION = "multipart-audio-v6";
+const MAX_MESSAGE_LENGTH = 300;
+const VOICE_COMMAND_REVISION = "voice-tools-v7";
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MIME_AUDIO_FORMAT_MAP = {
   "audio/wav": "wav",
@@ -33,31 +44,51 @@ const MIME_AUDIO_FORMAT_MAP = {
   "audio/x-aiff": "aiff",
 };
 
+// Prompt text for each registry action. A test keeps this in step with VOICE_TOOLS.
+const VOICE_TOOL_DESCRIPTIONS = {
+  scoreRound: "Record a new hand. enterBidderPoints=true when points are the bidding team's, false when they are the other team's.",
+  replaceLastRound: "Fix the most recent hand (\"that should have been 140\", \"that was Dem's bid\"). Give the whole corrected hand, copying unchanged values from the last recentRounds entry.",
+  editRound: "Change an older round, or any round when the user states cumulative totals. roundNumber is one-based; usTotal/demTotal are totals after that round. Include only the fields the user changed.",
+  undo: "Undo the last hand.",
+  redo: "Redo the last undone hand.",
+  misdeal: "Record a misdeal (\"next dealer\") and move to the next dealer.",
+  newGame: "Start a new game, clearing the current one.",
+  freezeGame: "Freeze the current game to finish later.",
+  saveGame: "Save the current game; a finished game is added to the library.",
+  rematch: "Start a rematch with the same teams. firstDealer must be a current player; without one the user picks.",
+  openModal: "Open an app panel.",
+  closeModal: "Close an app panel, or every panel with target=all.",
+  setDealerOrder: "Set the dealing order.",
+  startPaperGame: "Continue a paper game from starting scores, optionally naming the players.",
+  setTeams: "Set both teams' players.",
+  selectDealerPair: "Choose which seat pair deals first.",
+  selectBid: "Select the bidding team and bid before the hand is scored.",
+  setSetting: "Change a setting. mustWinByBid, misdealHandling, proMode, experimentalFeatures, and spokenReplies take true/false; tableTalkPenaltyType takes loseBid or setPoints; tableTalkPenaltyPoints takes a multiple of 5.",
+  tableTalkPenalty: "Penalize a team for table talk. The app asks to confirm, so don't add another confirmation.",
+  toggleMenu: "Open (open=true) or close (open=false) the side menu.",
+  authAction: "Sign in, sign out, or toggle.",
+  confirmationAction: "Answer the confirmation dialog that is open now.",
+  gameLibraryAction: "Saved (completed) and frozen (freezer) games: switchTab, search by query, sort, view, delete, or resume. Use the entry's index from App context library. delete and resume open the app's own confirmation, so don't add another.",
+  setThemeColors: "Set team colors.",
+  themeAction: "Randomize, reset, or apply the theme colors.",
+  setBidPresets: "Replace the quick bid buttons.",
+  setStatsControls: "Show statistics: change the view, metric, or sort, or open one player's or team's details with entityMode and entityKey.",
+  exportData: "Download a backup file of all app data.",
+  noop: "Do nothing.",
+};
+
+const ACTION_TYPES = new Set(Object.keys(VOICE_TOOLS.actions));
+const PLAN_STATUSES = new Set(VOICE_TOOLS.statuses);
+
 const ACTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    status: {
-      type: "string",
-      enum: ["execute", "confirm", "clarify", "unsupported"],
-      description: "Use execute for clear commands, confirm for destructive or ambiguous actions, clarify when required details are missing, and unsupported when the request is outside this app.",
-    },
-    summary: {
-      type: "string",
-      description: "Short user-facing summary of what will happen.",
-    },
-    message: {
-      type: "string",
-      description: "Clarification, confirmation, or success message for the user.",
-    },
-    requiresConfirmation: {
-      type: "boolean",
-      description: "True when the app should ask before executing.",
-    },
-    heardText: {
-      type: "string",
-      description: "Transcription of only the current spoken request. Do not include prior conversation or app context.",
-    },
+    status: { type: "string", enum: VOICE_TOOLS.statuses },
+    summary: { type: "string" },
+    message: { type: "string" },
+    requiresConfirmation: { type: "boolean" },
+    heardText: { type: "string" },
     actions: {
       type: "array",
       maxItems: 5,
@@ -65,137 +96,10 @@ const ACTION_SCHEMA = {
         type: "object",
         additionalProperties: false,
         properties: {
-          type: {
-            type: "string",
-            enum: [
-              "scoreRound",
-              "editRound",
-              "undo",
-              "redo",
-              "misdeal",
-              "newGame",
-              "freezeGame",
-              "saveGame",
-              "openModal",
-              "closeModal",
-              "setDealerOrder",
-              "startPaperGame",
-              "setTeams",
-              "selectDealerPair",
-              "selectBid",
-              "setSetting",
-              "tableTalkPenalty",
-              "rematch",
-              "toggleMenu",
-              "authAction",
-              "confirmationAction",
-              "gameLibraryAction",
-              "setThemeColors",
-              "themeAction",
-              "setBidPresets",
-              "setStatsControls",
-              "noop",
-            ],
-          },
-          biddingTeam: { type: "string", enum: ["us", "dem"] },
-          bidAmount: { type: "number" },
-          points: { type: "number" },
-          enterBidderPoints: { type: "boolean" },
-          team: { type: "string", enum: ["us", "dem"] },
-          target: {
-            type: "string",
-            enum: [
-              "savedGames",
-              "settings",
-              "about",
-              "statistics",
-              "dealerOrder",
-              "teamSelection",
-              "resumeGame",
-              "theme",
-              "presets",
-              "probability",
-              "version",
-              "confirmation",
-              "all",
-            ],
-          },
-          roundNumber: { type: "integer", minimum: 1 },
-          usTotal: { type: "number" },
-          demTotal: { type: "number" },
-          dealers: {
-            type: "array",
-            minItems: 4,
-            maxItems: 4,
-            items: { type: "string" },
-          },
-          usPlayers: {
-            type: "array",
-            minItems: 2,
-            maxItems: 2,
-            items: { type: "string" },
-          },
-          demPlayers: {
-            type: "array",
-            minItems: 2,
-            maxItems: 2,
-            items: { type: "string" },
-          },
-          usScore: { type: "number" },
-          demScore: { type: "number" },
-          pair: { type: "string", enum: ["13", "24"] },
-          key: {
-            type: "string",
-            enum: [
-              "mustWinByBid",
-              "misdealHandling",
-              "proMode",
-              "experimentalFeatures",
-              "tableTalkPenaltyType",
-              "tableTalkPenaltyPoints",
-            ],
-          },
-          value: {
-            anyOf: [
-              { type: "string" },
-              { type: "number" },
-              { type: "boolean" },
-            ],
-          },
-          firstDealer: { type: "string" },
-          open: { type: "boolean" },
-          authAction: { type: "string", enum: ["toggle", "signIn", "signOut"] },
-          confirmationChoice: { type: "string", enum: ["confirm", "cancel"] },
-          gameAction: { type: "string", enum: ["switchTab", "search", "sort", "view", "delete", "resume"] },
-          gameType: { type: "string", enum: ["completed", "freezer"] },
-          tab: { type: "string", enum: ["completed", "freezer"] },
-          query: { type: "string" },
-          sort: { type: "string", enum: ["newest", "oldest", "highest", "lowest"] },
-          index: { type: "number" },
-          usColor: { type: "string" },
-          demColor: { type: "string" },
-          themeAction: { type: "string", enum: ["randomize", "reset", "apply"] },
-          presets: {
-            type: "array",
-            minItems: 1,
-            maxItems: 12,
-            items: { type: "number" },
-          },
-          statsView: { type: "string", enum: ["teams", "players"] },
-          statsMetric: {
-            type: "string",
-            enum: ["netPerGame", "bidMakePct", "setsForced", "comebacks", "closeWins", "perfect360s", "misdeals", "games"],
-          },
-          statsSort: { type: "string", enum: ["recent", "most", "least"] },
-          entityMode: {
-            type: "string",
-            enum: ["teams", "players"],
-            description: "Use with entityKey to open one saved team's or player's detailed statistics.",
-          },
-          entityKey: {
-            type: "string",
-            description: "Exact key from App context statistics.teams or statistics.players. Never invent a key.",
-          },
+          type: { type: "string", enum: Object.keys(VOICE_TOOLS.actions) },
+          ...Object.fromEntries(
+            Object.entries(VOICE_TOOLS.fields).map(([name, field]) => [name, field.schema]),
+          ),
         },
         required: ["type"],
       },
@@ -203,8 +107,6 @@ const ACTION_SCHEMA = {
   },
   required: ["status", "summary", "message", "requiresConfirmation", "heardText", "actions"],
 };
-
-const ACTION_TYPES = new Set(ACTION_SCHEMA.properties.actions.items.properties.type.enum);
 
 function getAllowedOrigins() {
   const configuredOrigins = (process.env.VOICE_SCORE_ALLOWED_ORIGINS || process.env.FIREBASE_CONFIG_ALLOWED_ORIGINS || "")
@@ -218,7 +120,7 @@ function getAllowedOrigins() {
 function setCorsHeaders(request, response) {
   const origin = request.headers?.origin;
   response.setHeader("Vary", "Origin");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Accept, Content-Type");
 
   if (origin && getAllowedOrigins().has(origin)) {
@@ -314,10 +216,14 @@ function parsePayloadObject(payload) {
   }
 
   const context = candidate.context && typeof candidate.context === "object" ? candidate.context : {};
-  const localIntent = candidate.localIntent && typeof candidate.localIntent === "object" ? candidate.localIntent : null;
+  if (JSON.stringify(context).length > MAX_CONTEXT_JSON_LENGTH) {
+    const error = new Error("App context is too large.");
+    error.statusCode = 413;
+    throw error;
+  }
   const conversation = sanitizeConversation(candidate.conversation);
 
-  return { transcript, audio, context, localIntent, conversation };
+  return { transcript, audio, context, conversation };
 }
 
 function parseJsonPayload(bodyBuffer) {
@@ -395,7 +301,6 @@ function parseMultipartPayload(bodyBuffer, contentType) {
   return parsePayloadObject({
     transcript: fields.transcript || "",
     context: parseMultipartJsonField(fields, "context", {}),
-    localIntent: parseMultipartJsonField(fields, "localIntent", null),
     conversation: parseMultipartJsonField(fields, "conversation", []),
     audioBuffer,
     mimeType: audioMimeType,
@@ -424,67 +329,79 @@ function sanitizeConversation(conversation) {
     .slice(-MAX_CONVERSATION_MESSAGES);
 }
 
+function describeVoiceToolField({ kind, schema }) {
+  if (kind === "enum") return schema.enum.join("|");
+  if (kind === "players") return `${schema.maxItems} player names`;
+  if (kind === "player") return "a current player's name";
+  if (kind === "numbers") return "list of numbers";
+  if (kind === "boolean") return "true|false";
+  if (kind === "color") return "#RRGGBB";
+  if (kind === "text") return "text";
+  if (kind === "settingValue") return "see setSetting";
+  if (kind === "entityKey") return "see Statistics";
+  return schema.type === "integer" ? "integer" : "number";
+}
+
+function buildToolPromptLines() {
+  const toolLines = Object.entries(VOICE_TOOLS.actions).map(([type, fields]) => (
+    `- ${type}${fields.length ? `(${fields.join(", ")})` : ""}: ${VOICE_TOOL_DESCRIPTIONS[type]}`
+  ));
+  // Group fields that share a domain so each value list appears once.
+  const fieldsByDomain = new Map();
+  Object.entries(VOICE_TOOLS.fields).forEach(([name, field]) => {
+    const domain = describeVoiceToolField(field);
+    fieldsByDomain.set(domain, [...(fieldsByDomain.get(domain) || []), name]);
+  });
+  const fieldLines = [...fieldsByDomain].map(([domain, names]) => `- ${names.join(", ")}: ${domain}`);
+  return ["Tools (action objects are {\"type\": tool, ...fields}):", ...toolLines, "Field values:", ...fieldLines];
+}
+
 function buildSystemPrompt() {
   return [
-    "You are an action planner for a Rook scorekeeping web app.",
-    "Return only JSON matching the provided schema. Do not include commentary.",
-    "Always choose the most likely app action for short spoken voice commands.",
-    "When voice audio is attached, listen to it and treat the spoken words as the user request. Do not ask the user to type a transcript.",
-    "Set heardText to a concise transcription of only the current spoken request. Never copy prior conversation, app context, or deterministic parser JSON into heardText.",
-    "Prefer concrete app actions over explanation when the user's intent is clear.",
-    "Use status=clarify when required values are missing or ambiguous.",
-    "Recent conversation messages, when present, contain earlier voice commands and your clarification questions. Use them to interpret a short follow-up answer and complete the original request.",
-    "If the latest command is clearly a new standalone request instead of an answer, handle it as a new request.",
-    "Use requiresConfirmation/status=confirm for destructive actions such as new game, freeze game, save completed game, rematch without a dealer, or ambiguous score assumptions. Game-library delete/resume actions already open the app's own confirmation, so do not add a second planner confirmation for them.",
-    "Never invent card play, strategy, or hidden game state. Use only the provided context.",
-    "If deterministicParserIntent.type is scoreRound, undo, or misdeal, convert it directly to the matching action unless the spoken command contradicts it.",
-    "If deterministicParserIntent.type is clarification, treat it only as a failed score-parser result. Do not repeat that clarification when the command clearly asks for a non-scoring app action.",
-    "Scoring rules: scoreRound requires biddingTeam, bidAmount, points, enterBidderPoints. enterBidderPoints=true means points belong to the bidder; false means points belong to the non-bidding team.",
-    "Use editRound to correct saved round history. roundNumber is one-based; usTotal and demTotal are the cumulative scores shown after that round. Include only fields the user asked to change.",
-    "For 'got set' without a score, plan scoreRound with points=180, enterBidderPoints=false, requiresConfirmation=true.",
-    "For 'misdeal' or 'next dealer', use misdeal. For 'undo', use undo. For 'redo', use redo.",
-    "Available tool actions: scoreRound, editRound, undo, redo, misdeal, newGame, freezeGame, saveGame, openModal, closeModal, setDealerOrder, startPaperGame, setTeams, selectDealerPair, selectBid, setSetting, tableTalkPenalty, rematch, toggleMenu, authAction, confirmationAction, gameLibraryAction, setThemeColors, themeAction, setBidPresets, setStatsControls, noop.",
-    "Actions execute sequentially. For compound requests, return the smallest ordered set of high-level actions, up to five. Do not emit redundant setup actions before a high-level action that already performs the outcome.",
-    "Use toggleMenu with open=true or open=false for the hamburger menu.",
-    "Use authAction with authAction='signIn', 'signOut', or 'toggle' for account controls.",
-    "Use confirmationAction with confirmationChoice='confirm' or 'cancel' to answer the current confirmation dialog.",
-    "Use gameLibraryAction for saved/frozen games: switchTab/search/sort/view/delete/resume. Use gameType completed/freezer and the exact zero-based storage index supplied in App context library entries. The position field is the user-facing game number.",
-    "Use setThemeColors with usColor and/or demColor as #RRGGBB. Use themeAction randomize/reset/apply for theme modal controls.",
-    "Use setBidPresets with presets array for quick bid buttons.",
-    "Use setStatsControls with statsView, statsMetric, statsSort, or entityMode/entityKey to control the statistics modal. Current metrics: netPerGame, bidMakePct, setsForced, comebacks, closeWins, perfect360s, misdeals, games.",
-    "For statistics about a specific player or team, find the matching entry in App context statistics.players or statistics.teams. Set statsView and entityMode to that collection and copy its exact key into entityKey. Never use a display name as entityKey and never invent a key.",
-    "If a request names two players who appear together in one statistics.teams entry, treat it as that team. If one player is named without asking for their team, use that player's statistics.players entry.",
+    "You are the voice assistant inside Rook Score, a scorekeeping app for the card game Rook. Reply with one JSON object only, no commentary.",
+    "Shape: {\"status\":\"execute|confirm|clarify|answer|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"heardText\":\"...\",\"actions\":[]}",
+    "heardText: a transcription of only the current spoken request, never earlier turns or app context. summary: a few words on what will happen. message: one short, friendly sentence for the user; it may be read aloud.",
+    "Statuses:",
+    "- execute: a clear request. List the actions.",
+    "- confirm: destructive actions or assumptions (new game, freeze game, saving a finished game, rematch without a first dealer, a set hand with no spoken score). Set requiresConfirmation=true and ask the question in message.",
+    "- answer: a question about the current game or app. actions=[]; answer in message using only App context (scores, who leads, points to win, dealer, recent hands, current bid, winProbability, settings). One or two short sentences, using the team labels. For saved statistics about a player or team, use setStatsControls to show them instead of answering.",
+    "- clarify: a required detail is missing or ambiguous. Ask one short question in message.",
+    "- unsupported: the request is outside this app.",
+    "Rules:",
+    "- When audio is attached it is the request. Never ask the user to type.",
+    "- Earlier turns, when present, are the user's recent requests and your replies. Use them to finish a short follow-up (\"Carol\", \"yes\", \"and theirs?\"). Handle a clearly new request on its own.",
+    "- Actions run in order. Use the fewest high-level actions, at most five, and skip setup steps a later action already does.",
+    "- Never invent card play, hidden state, names, keys, or scores. Use only App context.",
+    "- A team wins by reaching 500 on a hand it bid and made, or by leading by 1000. If gameOver is true, don't score hands; offer rematch, newGame, or saveGame.",
+    "- If ui.openPanels includes confirmationModal, yes/confirm/do it means confirmationAction confirm and no/cancel means confirmationAction cancel.",
+    "Scoring:",
+    "- \"Dem bid 125 and made 145\": scoreRound biddingTeam dem, bidAmount 125, points 145, enterBidderPoints true.",
+    "- \"got set\" with no score: scoreRound points 180, enterBidderPoints false, status confirm.",
+    "Statistics:",
+    "- statistics.players lists saved player names. statistics.teams lists saved teams as [name, name], or {players, name} when the team has its own name.",
+    "- For one player's or team's statistics, set statsView and entityMode to players or teams, and entityKey to the player's name exactly as listed, or the team's two player names joined by || (for example Alice||Bob). Two named players who form a saved team mean that team.",
+    "Library: library.completed and library.freezer entries show position (the number the user sees) and index (use this in gameLibraryAction).",
+    ...buildToolPromptLines(),
     "Examples:",
-    "Voice 'open settings' => status execute, action {type:'openModal', target:'settings'}.",
-    "Voice 'show saved games' => status execute, action {type:'openModal', target:'savedGames'}.",
-    "Voice 'Dem bid 125 and made 145' => status execute, action {type:'scoreRound', biddingTeam:'dem', bidAmount:125, points:145, enterBidderPoints:true}.",
-    "Voice 'Us bid 130 and got set' => status confirm, requiresConfirmation true, action {type:'scoreRound', biddingTeam:'us', bidAmount:130, points:180, enterBidderPoints:false}.",
-    "Voice 'change round 2 Us total to 305' => status execute, action {type:'editRound', roundNumber:2, usTotal:305}.",
-    "Voice 'set dealers Alice Bob Carol Dan' => status execute, action {type:'setDealerOrder', dealers:['Alice','Bob','Carol','Dan']}.",
-    "Voice 'turn on pro mode' => status execute, action {type:'setSetting', key:'proMode', value:true}.",
-    "Voice 'search saved games for Alice' => status execute, action {type:'gameLibraryAction', gameAction:'search', gameType:'completed', query:'Alice'}.",
-    "Voice 'show frozen games' => status execute, action {type:'gameLibraryAction', gameAction:'switchTab', tab:'freezer'}.",
-    "Voice 'make our color blue' => status execute, action {type:'setThemeColors', usColor:'#3b82f6'}.",
-    "Voice 'set bid presets to 120 125 130 135' => status execute, action {type:'setBidPresets', presets:[120,125,130,135]}.",
-    "Voice 'show player stats by bid win percentage' => status execute, action {type:'setStatsControls', statsView:'players', statsMetric:'bidMakePct'}.",
-    "Voice 'show Alice's stats', when statistics.players contains {key:'alice',name:'Alice'}, => status execute, action {type:'setStatsControls', statsView:'players', entityMode:'players', entityKey:'alice'}.",
-    "Voice 'show Alice and Bob's team stats', when statistics.teams contains {key:'alice||bob',players:['Alice','Bob']}, => status execute, action {type:'setStatsControls', statsView:'teams', entityMode:'teams', entityKey:'alice||bob'}.",
-    "Modal target names: savedGames, settings, about, statistics, dealerOrder, teamSelection, resumeGame, theme, presets, probability, version, confirmation, all.",
-    "Settings keys: mustWinByBid, misdealHandling, proMode, experimentalFeatures, tableTalkPenaltyType, tableTalkPenaltyPoints.",
-    "Output shape: {\"status\":\"execute|confirm|clarify|unsupported\",\"summary\":\"...\",\"message\":\"...\",\"requiresConfirmation\":false,\"heardText\":\"current spoken request\",\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
+    "\"open settings\" => {\"status\":\"execute\",\"summary\":\"Open settings\",\"message\":\"Opening settings.\",\"requiresConfirmation\":false,\"heardText\":\"open settings\",\"actions\":[{\"type\":\"openModal\",\"target\":\"settings\"}]}",
+    "\"that last hand was 140\" when the last recentRounds entry is us bidding 130 => actions [{\"type\":\"replaceLastRound\",\"biddingTeam\":\"us\",\"bidAmount\":130,\"points\":140,\"enterBidderPoints\":true}]",
+    "\"what's the score?\" => {\"status\":\"answer\",\"summary\":\"Current score\",\"message\":\"Us has 320 and Dem has 275, so Us leads by 45.\",\"requiresConfirmation\":false,\"heardText\":\"what's the score?\",\"actions\":[]}",
+    "\"show Alice's stats\" when statistics.players includes Alice => actions [{\"type\":\"setStatsControls\",\"statsView\":\"players\",\"entityMode\":\"players\",\"entityKey\":\"Alice\"}]",
+    "\"search saved games for Alice\" => actions [{\"type\":\"gameLibraryAction\",\"gameAction\":\"search\",\"gameType\":\"completed\",\"query\":\"Alice\"}]",
+    "\"make our color blue\" => actions [{\"type\":\"setThemeColors\",\"usColor\":\"#3b82f6\"}]",
   ].join("\n");
 }
 
-function buildUserTextContent({ transcript, context, localIntent, hasAudio }) {
+const SYSTEM_PROMPT = buildSystemPrompt();
+
+function buildUserTextContent({ transcript, context, hasAudio }) {
   return [
     hasAudio
-      ? "Current voice audio is attached. Interpret the spoken command from the audio."
+      ? "The current voice request is in the attached audio."
       : `Current voice transcript: ${transcript}`,
     transcript && hasAudio ? `Optional text transcript hint: ${transcript}` : "",
     `App context JSON: ${JSON.stringify(context)}`,
-    `Deterministic score-parser JSON: ${JSON.stringify(localIntent)}`,
-    "The deterministic score parser only recognizes scoring, undo, and misdeal commands. If it returned clarification or null, still plan clear non-scoring app actions from the spoken request.",
-    "Return the action plan JSON now.",
+    "Return the JSON now.",
   ].filter(Boolean).join("\n");
 }
 
@@ -492,14 +409,13 @@ function buildOpenRouterMessages(payload) {
   const conversation = sanitizeConversation(payload.conversation).map(message => ({
     role: message.role,
     content: message.role === "user"
-      ? `Earlier voice command: ${message.content}`
-      : `Clarification question: ${message.content}`,
+      ? `Earlier voice request: ${message.content}`
+      : `Your earlier reply: ${message.content}`,
   }));
 
   const textContent = buildUserTextContent({
     transcript: payload.transcript,
     context: payload.context,
-    localIntent: payload.localIntent,
     hasAudio: Boolean(payload.audio),
   });
 
@@ -517,7 +433,7 @@ function buildOpenRouterMessages(payload) {
     : textContent;
 
   return [
-    { role: "system", content: buildSystemPrompt() },
+    { role: "system", content: SYSTEM_PROMPT },
     ...conversation,
     { role: "user", content: userContent },
   ];
@@ -549,22 +465,32 @@ function extractJsonObject(text) {
 
 function normalizePlan(plan, fallbackHeardText = "") {
   const normalized = plan && typeof plan === "object" ? plan : {};
-  const actions = Array.isArray(normalized.actions)
+  let actions = Array.isArray(normalized.actions)
     ? normalized.actions
         .filter(action => action && typeof action === "object" && ACTION_TYPES.has(action.type))
         .slice(0, 5)
     : [];
-  const status = ["execute", "confirm", "clarify", "unsupported"].includes(normalized.status)
+  let status = PLAN_STATUSES.has(normalized.status)
     ? normalized.status
     : actions.length
       ? "execute"
       : "clarify";
+  let message = typeof normalized.message === "string" ? normalized.message.slice(0, MAX_MESSAGE_LENGTH) : "";
+
+  // Answers are read-only, and a plan that says to act must name an action the
+  // app can run; otherwise the user is asked to try again instead.
+  if (status === "answer") actions = [];
+  if ((status === "execute" || status === "confirm") && !actions.length) {
+    status = "clarify";
+    message = message || "I didn't catch an action. Please try again.";
+  }
+  const canAct = status === "execute" || status === "confirm";
 
   return {
     status,
     summary: typeof normalized.summary === "string" ? normalized.summary.slice(0, 200) : "",
-    message: typeof normalized.message === "string" ? normalized.message.slice(0, 240) : "",
-    requiresConfirmation: Boolean(normalized.requiresConfirmation || status === "confirm"),
+    message,
+    requiresConfirmation: canAct && Boolean(normalized.requiresConfirmation || status === "confirm"),
     heardText: String(normalized.heardText || fallbackHeardText || "").trim().slice(0, MAX_HEARD_TEXT_LENGTH),
     actions,
     ...(typeof normalized.plannerModel === "string"
@@ -576,58 +502,10 @@ function normalizePlan(plan, fallbackHeardText = "") {
   };
 }
 
-function isTruthyEnvValue(value) {
-  return /^(1|true|yes|on)$/i.test(String(value || "").trim());
-}
-
-function getOpenRouterMaxAttempts() {
-  const configuredAttempts = Number(process.env.OPENROUTER_MAX_ATTEMPTS);
-  if (!Number.isFinite(configuredAttempts)) return DEFAULT_OPENROUTER_MAX_ATTEMPTS;
-  return Math.max(1, Math.min(4, Math.round(configuredAttempts)));
-}
-
-function getOpenRouterFallbackModels(primaryModel) {
-  const configuredModels = String(process.env.OPENROUTER_FALLBACK_MODELS || "")
-    .split(",")
-    .map(model => model.trim())
-    .filter(Boolean);
-  return [...new Set([
-    ...(configuredModels.length ? configuredModels : DEFAULT_OPENROUTER_FALLBACK_MODELS),
-  ])]
-    .filter(model => model !== primaryModel)
-    .slice(0, 3);
-}
-
-function shouldRetryOpenRouterError(error, attempt, maxAttempts) {
-  if (attempt >= maxAttempts) return false;
-  const statusCode = Number(error?.statusCode) || 0;
-  return statusCode === 408
-    || statusCode === 429
-    || statusCode >= 500
-    || /provider returned error/i.test(String(error?.message || ""));
-}
-
-function shouldUseLocalCommandFallback() {
-  const configuredFallback = process.env.VOICE_SCORE_COMMAND_LOCAL_FALLBACK;
-  if (configuredFallback !== undefined) {
-    return isTruthyEnvValue(configuredFallback);
-  }
-
-  const vercelEnv = process.env.VERCEL_ENV;
-  if (vercelEnv && vercelEnv !== "development") return false;
-  return process.env.NODE_ENV !== "production";
-}
-
-function createLocalPlan(status, summary, message, actions, requiresConfirmation = status === "confirm") {
-  return normalizePlan({
-    status,
-    summary,
-    message,
-    requiresConfirmation,
-    actions,
-  });
-}
-
+// --- Statistics grounding ---
+// The model sometimes opens the statistics panel without choosing the named
+// player or team. When the heard request names exactly one saved entity, pin
+// the action to it so the right details open.
 function normalizeCommandText(value) {
   return String(value || "")
     .toLowerCase()
@@ -636,224 +514,26 @@ function normalizeCommandText(value) {
     .trim();
 }
 
-function titleCaseName(value) {
-  return String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, letter => letter.toUpperCase());
-}
-
-function extractFirstNumber(text) {
-  const match = String(text || "").match(/\b\d{1,4}\b/);
-  return match ? Number(match[0]) : null;
-}
-
-function resolveLocalTeam(text) {
-  if (/\b(?:us|we|our|ours)\b/.test(text)) return "us";
-  if (/\b(?:dem|them|they|their|theirs)\b/.test(text)) return "dem";
-  return null;
-}
-
-function getLocalToggleValue(text) {
-  if (/\b(?:enable|enabled|on|activate|activated)\b/.test(text)) return true;
-  if (/\b(?:disable|disabled|off|deactivate|deactivated)\b/.test(text)) return false;
-  return null;
-}
-
-const LOCAL_MODAL_TARGETS = [
-  { target: "savedGames", label: "saved games", patterns: [/\bsaved games?\b/, /\bgame library\b/, /\blibrary\b/] },
-  { target: "settings", label: "settings", patterns: [/\bsettings?\b/, /\bpreferences?\b/] },
-  { target: "version", label: "version information", patterns: [/\bversion\b/, /\brelease notes?\b/] },
-  { target: "about", label: "about", patterns: [/\babout\b/, /\bapp info\b/] },
-  { target: "statistics", label: "statistics", patterns: [/\bstatistics?\b/, /\bstats\b/] },
-  { target: "dealerOrder", label: "dealer order", patterns: [/\bdealer order\b/, /\bdealers?\b/] },
-  { target: "teamSelection", label: "team selection", patterns: [/\bteam selection\b/, /\bteams?\b/, /\bplayers?\b/] },
-  { target: "resumeGame", label: "resume game", patterns: [/\bresume\b/, /\brestore game\b/] },
-  { target: "theme", label: "theme", patterns: [/\btheme\b/, /\bcolors?\b/] },
-  { target: "presets", label: "bid presets", patterns: [/\bpresets?\b/, /\bbid presets?\b/] },
-  { target: "probability", label: "probability", patterns: [/\bprobability\b/, /\bwin chance\b/, /\bwin odds\b/] },
-  { target: "confirmation", label: "confirmation", patterns: [/\bconfirmation\b/] },
-];
-
-function findLocalModalTarget(text) {
-  if (/\b(?:all|everything|modal|panel|popup)\b/.test(text)) {
-    return { target: "all", label: "all panels" };
-  }
-  return LOCAL_MODAL_TARGETS.find(({ patterns }) => patterns.some(pattern => pattern.test(text))) || null;
-}
-
-function buildLocalModalPlan(transcript) {
-  const text = normalizeCommandText(transcript);
-  const isOpen = /\b(?:open|show|view|display|go to)\b/.test(text);
-  const isClose = /\b(?:close|dismiss|hide|exit)\b/.test(text);
-  if (!isOpen && !isClose) return null;
-
-  const modal = findLocalModalTarget(text);
-  if (!modal) return null;
-
-  const action = isClose
-    ? { type: "closeModal", target: modal.target }
-    : { type: "openModal", target: modal.target };
-  const verb = isClose ? "Close" : "Open";
-  return createLocalPlan("execute", `${verb} ${modal.label}`, `${verb}ing ${modal.label}.`, [action]);
-}
-
-function buildLocalDealerPlan(transcript) {
-  const match = String(transcript || "").match(/\b(?:set\s+(?:the\s+)?dealers?|dealer\s+order(?:\s+is)?|dealers?\s+are)\s+(.+)$/i);
-  if (!match) return null;
-
-  const dealers = match[1]
-    .replace(/\b(?:to|as)\b/gi, " ")
-    .split(/\s*(?:,|\band\b)\s*|\s+/i)
-    .map(titleCaseName)
-    .filter(Boolean);
-
-  if (dealers.length !== 4 || new Set(dealers.map(name => name.toLowerCase())).size !== 4) return null;
-
-  return createLocalPlan(
-    "execute",
-    `Set dealer order to ${dealers.join(", ")}`,
-    `Dealer order set to ${dealers.join(", ")}.`,
-    [{ type: "setDealerOrder", dealers }],
-  );
-}
-
-function buildLocalPaperGamePlan(transcript) {
-  const text = normalizeCommandText(transcript);
-  if (!/\b(?:paper game|starting scores?|start from)\b/.test(text)) return null;
-
-  const scores = text.match(/-?\d{1,4}/g)?.map(Number) || [];
-  if (scores.length < 2) return null;
-
-  return createLocalPlan(
-    "execute",
-    `Start paper game at ${scores[0]} to ${scores[1]}`,
-    `Starting scores will be ${scores[0]} to ${scores[1]}.`,
-    [{ type: "startPaperGame", usScore: scores[0], demScore: scores[1] }],
-  );
-}
-
-function buildLocalSettingPlan(transcript) {
-  const text = normalizeCommandText(transcript);
-  const toggleValue = getLocalToggleValue(text);
-
-  if (/\bpro mode\b/.test(text) && toggleValue !== null) {
-    return createLocalPlan(
-      "execute",
-      toggleValue ? "Turn on pro mode" : "Turn off pro mode",
-      toggleValue ? "Pro mode will be turned on." : "Pro mode will be turned off.",
-      [{ type: "setSetting", key: "proMode", value: toggleValue }],
-    );
-  }
-
-  if (/\bexperimental features?\b/.test(text) && toggleValue !== null) {
-    return createLocalPlan(
-      "execute",
-      toggleValue ? "Turn on experimental features" : "Turn off experimental features",
-      toggleValue ? "Experimental features will be turned on." : "Experimental features will be turned off.",
-      [{ type: "setSetting", key: "experimentalFeatures", value: toggleValue }],
-    );
-  }
-
-  if (/\bmust win by bid\b/.test(text) && toggleValue !== null) {
-    return createLocalPlan(
-      "execute",
-      toggleValue ? "Turn on must win by bid" : "Turn off must win by bid",
-      toggleValue ? "Must win by bid will be turned on." : "Must win by bid will be turned off.",
-      [{ type: "setSetting", key: "mustWinByBid", value: toggleValue }],
-    );
-  }
-
-  if (/\bmisdeal handling\b/.test(text) && toggleValue !== null) {
-    return createLocalPlan(
-      "execute",
-      toggleValue ? "Turn on misdeal handling" : "Turn off misdeal handling",
-      toggleValue ? "Misdeal handling will be turned on." : "Misdeal handling will be turned off.",
-      [{ type: "setSetting", key: "misdealHandling", value: toggleValue }],
-    );
-  }
-
-  if (/\btable talk\b/.test(text) && /\b(?:lost bid|lose bid)\b/.test(text)) {
-    return createLocalPlan(
-      "execute",
-      "Set table-talk penalty to lost bid",
-      "Table-talk penalty will use the lost bid.",
-      [{ type: "setSetting", key: "tableTalkPenaltyType", value: "loseBid" }],
-    );
-  }
-
-  if (/\btable talk\b/.test(text) && /\b(?:set points|fixed points)\b/.test(text)) {
-    return createLocalPlan(
-      "execute",
-      "Set table-talk penalty to set points",
-      "Table-talk penalty will use set points.",
-      [{ type: "setSetting", key: "tableTalkPenaltyType", value: "setPoints" }],
-    );
-  }
-
-  if (/\btable talk\b/.test(text) && /\bpoints?\b/.test(text)) {
-    const points = extractFirstNumber(text);
-    if (points !== null) {
-      return createLocalPlan(
-        "execute",
-        `Set table-talk penalty to ${points} points`,
-        `Table-talk penalty points will be ${points}.`,
-        [{ type: "setSetting", key: "tableTalkPenaltyPoints", value: points }],
-      );
-    }
-  }
-
-  return null;
-}
-
-function extractNumberList(text) {
-  return (String(text || "").match(/\b\d{1,4}\b/g) || []).map(Number);
-}
-
-const LOCAL_GAME_ORDINALS = {
-  first: 1,
-  second: 2,
-  third: 3,
-  fourth: 4,
-  fifth: 5,
-  sixth: 6,
-  seventh: 7,
-  eighth: 8,
-  ninth: 9,
-  tenth: 10,
-};
-
-function parseLocalGamePosition(value) {
-  const normalized = String(value || "").toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(LOCAL_GAME_ORDINALS, normalized)) {
-    return LOCAL_GAME_ORDINALS[normalized];
-  }
-  const numericMatch = normalized.match(/^(\d+)(?:st|nd|rd|th)?$/);
-  const numeric = numericMatch ? Number(numericMatch[1]) : NaN;
-  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
-}
-
-function resolveContextGameIndex(context, gameType, position) {
-  const contextKey = gameType === "freezer" ? "freezer" : "completed";
-  const entries = Array.isArray(context?.library?.[contextKey]) ? context.library[contextKey] : [];
-  const entry = entries.find(candidate => Number(candidate?.position) === position) || entries[position - 1];
-  const contextIndex = Number(entry?.index);
-  return Number.isInteger(contextIndex) && contextIndex >= 0 ? contextIndex : position - 1;
-}
-
 function getContextStatisticsEntries(context, mode) {
   const entries = Array.isArray(context?.statistics?.[mode]) ? context.statistics[mode] : [];
   return entries
-    .filter(entry => entry && typeof entry === "object" && typeof entry.key === "string" && entry.key.trim())
-    .map(entry => ({
-      key: entry.key.trim(),
-      name: typeof entry.name === "string" ? entry.name.trim() : "",
-      players: mode === "teams"
-        ? (Array.isArray(entry.players) ? entry.players : entry.key.split("||"))
-            .map(name => String(name || "").trim())
-            .filter(Boolean)
-        : [],
-    }));
+    .map(entry => {
+      if (mode === "players") {
+        // Current clients send names; older cached clients send {key, name}.
+        const name = String((typeof entry === "string" ? entry : entry?.name) || "").trim();
+        const key = String((typeof entry === "string" ? entry : entry?.key || entry?.name) || "").trim();
+        return { key, name, players: [] };
+      }
+      const players = (Array.isArray(entry)
+        ? entry
+        : Array.isArray(entry?.players) ? entry.players : String(entry?.key || "").split("||"))
+        .map(name => String(name || "").trim())
+        .filter(Boolean);
+      const key = String((!Array.isArray(entry) && entry?.key) || players.join("||")).trim();
+      const name = String((!Array.isArray(entry) && entry?.name) || players.join(" & ")).trim();
+      return { key, name, players };
+    })
+    .filter(entry => entry.key && entry.name);
 }
 
 function commandTextIncludesPhrase(commandText, phrase) {
@@ -942,351 +622,98 @@ function buildStatisticsControl(transcript, context = {}) {
   return Object.keys(action).length > 1 ? { action, entity } : null;
 }
 
-function buildLocalExpandedControlPlan(transcript, context = {}) {
-  const text = normalizeCommandText(transcript);
-
-  if (/\b(?:open|show)\s+(?:the\s+)?menu\b/.test(text)) {
-    return createLocalPlan("execute", "Open menu", "Opening the menu.", [{ type: "toggleMenu", open: true }]);
-  }
-
-  if (/\b(?:close|hide)\s+(?:the\s+)?menu\b/.test(text)) {
-    return createLocalPlan("execute", "Close menu", "Closing the menu.", [{ type: "toggleMenu", open: false }]);
-  }
-
-  if (/\b(?:confirm|yes|okay|ok|do it|proceed)\b/.test(text) && /\b(?:action|that|confirm)\b/.test(text)) {
-    return createLocalPlan("execute", "Confirm action", "Confirming the current action.", [{ type: "confirmationAction", confirmationChoice: "confirm" }]);
-  }
-
-  if (/\b(?:cancel|no|never mind|dismiss)\b/.test(text) && /\b(?:action|that|confirmation|dialog)\b/.test(text)) {
-    return createLocalPlan("execute", "Cancel action", "Canceling the current action.", [{ type: "confirmationAction", confirmationChoice: "cancel" }]);
-  }
-
-  if (/\b(?:sign in|log in|login)\b/.test(text)) {
-    return createLocalPlan("execute", "Sign in", "Opening sign in.", [{ type: "authAction", authAction: "signIn" }]);
-  }
-
-  if (/\b(?:sign out|log out|logout)\b/.test(text)) {
-    return createLocalPlan("execute", "Sign out", "Signing out.", [{ type: "authAction", authAction: "signOut" }]);
-  }
-
-  if (/\b(?:frozen|freezer)\s+games?\b/.test(text)) {
-    return createLocalPlan("execute", "Show frozen games", "Showing frozen games.", [{ type: "gameLibraryAction", gameAction: "switchTab", tab: "freezer" }]);
-  }
-
-  if (/\b(?:completed|saved)\s+games?\b/.test(text) && /\b(?:tab|show|view)\b/.test(text)) {
-    return createLocalPlan("execute", "Show completed games", "Showing completed games.", [{ type: "gameLibraryAction", gameAction: "switchTab", tab: "completed" }]);
-  }
-
-  const searchMatch = String(transcript || "").match(/\bsearch\s+(?:saved\s+games?|games?|library)\s+(?:for\s+)?(.+)$/i);
-  if (searchMatch && searchMatch[1]?.trim()) {
-    return createLocalPlan(
-      "execute",
-      `Search games for ${searchMatch[1].trim()}`,
-      "Searching the game library.",
-      [{ type: "gameLibraryAction", gameAction: "search", query: searchMatch[1].trim() }],
-    );
-  }
-
-  if (/\bsort\b/.test(text) && /\bgames?\b/.test(text)) {
-    const sort = /\boldest\b/.test(text) ? "oldest"
-      : /\bhighest\b/.test(text) ? "highest"
-        : /\blowest\b/.test(text) ? "lowest"
-          : "newest";
-    return createLocalPlan("execute", "Sort games", "Sorting games.", [{ type: "gameLibraryAction", gameAction: "sort", sort }]);
-  }
-
-  const libraryItemMatch = String(transcript || "").match(
-    /\b(view|open|delete|remove|resume|load)\s+(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+(?:(completed|saved|frozen|freezer)\s+)?game\b/i,
-  );
-  if (libraryItemMatch) {
-    const verb = libraryItemMatch[1].toLowerCase();
-    const position = parseLocalGamePosition(libraryItemMatch[2]);
-    const typeHint = String(libraryItemMatch[3] || "").toLowerCase();
-    const gameType = /frozen|freezer/.test(typeHint) || /resume|load/.test(verb) ? "freezer" : "completed";
-    const gameAction = /delete|remove/.test(verb) ? "delete"
-      : /resume|load/.test(verb) ? "resume"
-        : "view";
-    const index = resolveContextGameIndex(context, gameType, position);
-    return createLocalPlan(
-      "execute",
-      `${gameAction === "delete" ? "Delete" : gameAction === "resume" ? "Resume" : "View"} ${gameType} game ${position}`,
-      `${gameAction === "delete" ? "Opening delete confirmation for" : gameAction === "resume" ? "Opening resume confirmation for" : "Opening"} game ${position}.`,
-      [{ type: "gameLibraryAction", gameAction, gameType, index }],
-    );
-  }
-
-  const presets = /\bpresets?\b/.test(text) ? extractNumberList(text) : [];
-  if (presets.length) {
-    return createLocalPlan(
-      "execute",
-      `Set bid presets to ${presets.join(", ")}`,
-      "Updating bid presets.",
-      [{ type: "setBidPresets", presets }],
-    );
-  }
-
-  if (/\brandom(?:ize)?\b/.test(text) && /\b(?:theme|colors?)\b/.test(text)) {
-    return createLocalPlan("execute", "Randomize theme colors", "Randomizing theme colors.", [{ type: "themeAction", themeAction: "randomize" }]);
-  }
-
-  if (/\breset\b/.test(text) && /\b(?:theme|colors?)\b/.test(text)) {
-    return createLocalPlan("execute", "Reset theme colors", "Resetting theme colors.", [{ type: "themeAction", themeAction: "reset" }]);
-  }
-
-  const statisticsControl = buildStatisticsControl(transcript, context);
-  if (statisticsControl) {
-    const entityName = statisticsControl.entity?.name;
-    return createLocalPlan(
-      "execute",
-      entityName ? `Show statistics for ${entityName}` : "Update statistics view",
-      entityName ? `Showing statistics for ${entityName}.` : "Updating statistics.",
-      [statisticsControl.action],
-    );
-  }
-
-  return null;
-}
-
-function buildLocalActionPlanFromIntent(localIntent) {
-  if (!localIntent || typeof localIntent !== "object") return null;
-
-  if (localIntent.type === "scoreRound") {
-    const action = {
-      type: "scoreRound",
-      biddingTeam: localIntent.biddingTeam,
-      bidAmount: Number(localIntent.bidAmount),
-      points: Number(localIntent.points),
-      enterBidderPoints: localIntent.enterBidderPoints !== false,
-    };
-    const requiresConfirmation = Boolean(localIntent.requiresConfirmation);
-    return createLocalPlan(
-      requiresConfirmation ? "confirm" : "execute",
-      localIntent.summary || "Score round",
-      localIntent.ambiguity || localIntent.summary || "Record this score.",
-      [action],
-      requiresConfirmation,
-    );
-  }
-
-  if (localIntent.type === "undo") {
-    return createLocalPlan("execute", "Undo last hand", "Undoing the last hand.", [{ type: "undo" }]);
-  }
-
-  if (localIntent.type === "misdeal") {
-    return createLocalPlan("execute", "Misdeal, next dealer", "Moving to the next dealer.", [{ type: "misdeal" }]);
-  }
-
-  return null;
-}
-
-function buildLocalActionPlanFromTranscript(transcript, context = {}) {
-  const text = normalizeCommandText(transcript);
-  if (!text) return null;
-
-  if (/\b(?:never mind|cancel that|do nothing)\b/.test(text)) {
-    return createLocalPlan("execute", "No action", "No action taken.", [{ type: "noop" }]);
-  }
-
-  if (/\bredo\b/.test(text)) {
-    return createLocalPlan("execute", "Redo hand", "Redoing the last undone hand.", [{ type: "redo" }]);
-  }
-
-  if (/\b(?:undo|take back|go back)\b/.test(text)) {
-    return createLocalPlan("execute", "Undo last hand", "Undoing the last hand.", [{ type: "undo" }]);
-  }
-
-  if (/\bmisdeal\b/.test(text) || /\b(?:next|move|skip)\s+dealer\b/.test(text)) {
-    return createLocalPlan("execute", "Misdeal, next dealer", "Moving to the next dealer.", [{ type: "misdeal" }]);
-  }
-
-  if (/\b(?:new game|start over|reset game)\b/.test(text)) {
-    return createLocalPlan(
-      "confirm",
-      "Start a new game",
-      "Starting a new game will clear the current game. Confirm to proceed.",
-      [{ type: "newGame" }],
-      true,
-    );
-  }
-
-  if (/\bfreeze\b/.test(text) && /\bgame\b/.test(text)) {
-    return createLocalPlan(
-      "confirm",
-      "Freeze current game",
-      "Confirm freezing the current game.",
-      [{ type: "freezeGame" }],
-      true,
-    );
-  }
-
-  if (/\bsave\b/.test(text) && /\bgame\b/.test(text)) {
-    return createLocalPlan("execute", "Save current game", "Saving the current game.", [{ type: "saveGame" }]);
-  }
-
-  const rematchDealerMatch = String(transcript || "").match(/\brematch\b.*?\b(?:with\s+)?(.+?)\s+(?:dealing|dealer)(?:\s+first)?\b/i);
-  if (rematchDealerMatch?.[1]?.trim()) {
-    const firstDealer = titleCaseName(rematchDealerMatch[1]);
-    return createLocalPlan(
-      "execute",
-      `Start a rematch with ${firstDealer} dealing first`,
-      `Starting a rematch with ${firstDealer} dealing first.`,
-      [{ type: "rematch", firstDealer }],
-    );
-  }
-
-  if (/\brematch\b/.test(text)) {
-    return createLocalPlan(
-      "confirm",
-      "Start a rematch",
-      "Confirm starting a rematch.",
-      [{ type: "rematch" }],
-      true,
-    );
-  }
-
-  const teamsMatch = String(transcript || "").match(/\bset\s+(?:the\s+)?teams?\s+(.+?)\s+(?:vs\.?|versus|against)\s+(.+)$/i);
-  if (teamsMatch) {
-    const parseTeam = value => String(value || "")
-      .split(/\s+and\s+/i)
-      .map(titleCaseName)
-      .filter(Boolean);
-    const usPlayers = parseTeam(teamsMatch[1]);
-    const demPlayers = parseTeam(teamsMatch[2]);
-    if (usPlayers.length === 2 && demPlayers.length === 2) {
-      return createLocalPlan(
-        "execute",
-        `Set teams to ${usPlayers.join(" and ")} versus ${demPlayers.join(" and ")}`,
-        "Updating both teams.",
-        [{ type: "setTeams", usPlayers, demPlayers }],
-      );
-    }
-  }
-
-  const settingPlan = buildLocalSettingPlan(transcript);
-  if (settingPlan) return settingPlan;
-
-  const expandedControlPlan = buildLocalExpandedControlPlan(transcript, context);
-  if (expandedControlPlan) return expandedControlPlan;
-
-  const modalPlan = buildLocalModalPlan(transcript);
-  if (modalPlan) return modalPlan;
-
-  const dealerPlan = buildLocalDealerPlan(transcript);
-  if (dealerPlan) return dealerPlan;
-
-  const paperGamePlan = buildLocalPaperGamePlan(transcript);
-  if (paperGamePlan) return paperGamePlan;
-
-  const editRoundMatch = String(transcript || "").match(/\b(?:edit|change|fix|set)\s+round\s+(\d+)\b/i);
-  if (editRoundMatch) {
-    const action = { type: "editRound", roundNumber: Number(editRoundMatch[1]) };
-    const bidMatch = String(transcript || "").match(/\bbid(?:\s+amount)?\s*(?:to|is|=)?\s*(-?\d+)\b/i);
-    const usMatch = String(transcript || "").match(/\b(?:us|our)\s+(?:score|total)\s*(?:to|is|=)?\s*(-?\d+)\b/i);
-    const demMatch = String(transcript || "").match(/\b(?:dem|their)\s+(?:score|total)\s*(?:to|is|=)?\s*(-?\d+)\b/i);
-    if (bidMatch) action.bidAmount = Number(bidMatch[1]);
-    if (usMatch) action.usTotal = Number(usMatch[1]);
-    if (demMatch) action.demTotal = Number(demMatch[1]);
-    if (bidMatch || usMatch || demMatch) {
-      return createLocalPlan(
-        "execute",
-        `Edit round ${action.roundNumber}`,
-        `Updating round ${action.roundNumber}.`,
-        [action],
-      );
-    }
-  }
-
-  if (/\b(?:pair one three|pair 1 3|pair 13|one three)\b/.test(text)) {
-    return createLocalPlan("execute", "Select dealer pair one-three", "Selecting dealer pair one-three.", [{ type: "selectDealerPair", pair: "13" }]);
-  }
-
-  if (/\b(?:pair two four|pair 2 4|pair 24|two four)\b/.test(text)) {
-    return createLocalPlan("execute", "Select dealer pair two-four", "Selecting dealer pair two-four.", [{ type: "selectDealerPair", pair: "24" }]);
-  }
-
-  if (/\btable talk\b/.test(text) && /\bpenalty\b/.test(text)) {
-    const team = resolveLocalTeam(text);
-    if (team) {
-      return createLocalPlan("execute", "Apply table-talk penalty", "Applying the table-talk penalty.", [{ type: "tableTalkPenalty", team }]);
-    }
-  }
-
-  if (/\bbid\b/.test(text) && !/\b(?:made|got|set|scored|scores|points?)\b/.test(text)) {
-    const team = resolveLocalTeam(text);
-    const bidAmount = extractFirstNumber(text);
-    if (team && bidAmount !== null) {
-      return createLocalPlan(
-        "execute",
-        `${team === "us" ? "Us" : "Dem"} bid ${bidAmount}`,
-        `Selecting ${team === "us" ? "Us" : "Dem"} bid ${bidAmount}.`,
-        [{ type: "selectBid", biddingTeam: team, bidAmount }],
-      );
-    }
-  }
-
-  return null;
-}
-
-function buildLocalActionPlan(payload) {
-  return buildLocalActionPlanFromIntent(payload.localIntent)
-    || buildLocalActionPlanFromTranscript(payload.transcript, payload.context);
-}
-
 function groundStatisticsEntityPlan(plan, payload) {
   const normalizedPlan = normalizePlan(plan);
-  const statisticsControl = buildStatisticsControl(payload?.transcript, payload?.context);
+  // Audio requests carry no transcript, so ground on what the planner heard.
+  const statisticsControl = buildStatisticsControl(
+    payload?.transcript || normalizedPlan.heardText,
+    payload?.context,
+  );
   if (!statisticsControl?.entity) return normalizedPlan;
 
   const groundedAction = statisticsControl.action;
-  const statsActionIndex = normalizedPlan.actions.findIndex(action => action.type === "setStatsControls");
-  const statisticsModalIndex = normalizedPlan.actions.findIndex(
+  const entityFields = {
+    statsView: statisticsControl.entity.mode,
+    entityMode: statisticsControl.entity.mode,
+    entityKey: statisticsControl.entity.key,
+  };
+  const actions = [...normalizedPlan.actions];
+  const statsActionIndex = actions.findIndex(action => action.type === "setStatsControls");
+  const statisticsModalIndex = actions.findIndex(
     action => action.type === "openModal" && action.target === "statistics",
   );
-  const actions = [...normalizedPlan.actions];
 
   if (statsActionIndex >= 0) {
-    actions[statsActionIndex] = {
-      ...groundedAction,
-      ...actions[statsActionIndex],
-      statsView: statisticsControl.entity.mode,
-      entityMode: statisticsControl.entity.mode,
-      entityKey: statisticsControl.entity.key,
-    };
+    actions[statsActionIndex] = { ...groundedAction, ...actions[statsActionIndex], ...entityFields };
   } else if (statisticsModalIndex >= 0) {
     actions[statisticsModalIndex] = groundedAction;
-  } else {
+  } else if (actions.length && actions.length < 5) {
+    actions.push(groundedAction);
+  } else if (!actions.length) {
+    const name = statisticsControl.entity.name;
     return {
-      ...createLocalPlan(
-        "execute",
-        `Show statistics for ${statisticsControl.entity.name}`,
-        `Showing statistics for ${statisticsControl.entity.name}.`,
-        [groundedAction],
-      ),
-      heardText: normalizedPlan.heardText,
-      ...(normalizedPlan.plannerModel ? { plannerModel: normalizedPlan.plannerModel } : {}),
-      ...(normalizedPlan.plannerRevision ? { plannerRevision: normalizedPlan.plannerRevision } : {}),
+      ...normalizedPlan,
+      status: "execute",
+      summary: `Show statistics for ${name}`,
+      message: `Showing statistics for ${name}.`,
+      requiresConfirmation: false,
+      actions: [groundedAction],
     };
   }
 
   return {
     ...normalizedPlan,
-    status: "execute",
-    requiresConfirmation: false,
+    status: normalizedPlan.requiresConfirmation ? "confirm" : "execute",
     actions,
   };
 }
 
-function shouldReplaceProviderPlanWithLocalFallback(plan) {
-  const normalizedPlan = normalizePlan(plan);
-  return normalizedPlan.status === "clarify"
-    || normalizedPlan.status === "unsupported"
-    || normalizedPlan.actions.length === 0;
+function getOpenRouterMaxAttempts() {
+  const configuredAttempts = Number(process.env.OPENROUTER_MAX_ATTEMPTS);
+  if (!Number.isFinite(configuredAttempts)) return DEFAULT_OPENROUTER_MAX_ATTEMPTS;
+  return Math.max(1, Math.min(4, Math.round(configuredAttempts)));
 }
 
-async function fetchOpenRouterPlan(payload, apiKey) {
+function getOpenRouterReasoningEffort() {
+  const configured = String(process.env.OPENROUTER_REASONING_EFFORT || "").trim().toLowerCase();
+  return OPENROUTER_REASONING_EFFORTS.has(configured) ? configured : DEFAULT_OPENROUTER_REASONING_EFFORT;
+}
+
+function getOpenRouterFallbackModels(primaryModel) {
+  const configuredModels = String(process.env.OPENROUTER_FALLBACK_MODELS || "")
+    .split(",")
+    .map(model => model.trim())
+    .filter(Boolean);
+  return [...new Set([
+    ...(configuredModels.length ? configuredModels : DEFAULT_OPENROUTER_FALLBACK_MODELS),
+  ])]
+    .filter(model => model !== primaryModel)
+    .slice(0, 3);
+}
+
+function shouldRetryOpenRouterError(error, attempt, maxAttempts) {
+  if (attempt >= maxAttempts) return false;
+  const statusCode = Number(error?.statusCode) || 0;
+  return statusCode === 408
+    || statusCode === 429
+    || statusCode >= 500
+    || /provider returned error/i.test(String(error?.message || ""));
+}
+
+function createOpenRouterError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.isOpenRouterFailure = true;
+  return error;
+}
+
+async function fetchOpenRouterPlan(payload, apiKey, timeoutMs = OPENROUTER_ATTEMPT_TIMEOUT_MS) {
   const primaryModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
   const fallbackModels = getOpenRouterFallbackModels(primaryModel);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
+  let responseText;
   try {
     response = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
       method: "POST",
@@ -1302,21 +729,27 @@ async function fetchOpenRouterPlan(payload, apiKey) {
         messages: buildOpenRouterMessages(payload),
         temperature: 0,
         max_tokens: 700,
-        reasoning: { effort: DEFAULT_OPENROUTER_REASONING_EFFORT },
+        reasoning: { effort: getOpenRouterReasoningEffort() },
         // Gemini rejects the complete action schema as too complex for constrained
         // decoding. JSON object mode still guarantees parseable JSON, while
         // normalizePlan enforces the server-owned action allowlist below.
         response_format: { type: "json_object" },
         provider: { require_parameters: true },
       }),
+      signal: controller.signal,
     });
+    responseText = await response.text();
   } catch (error) {
+    if (controller.signal.aborted) {
+      throw createOpenRouterError(`OpenRouter did not answer within ${timeoutMs} ms.`, 504);
+    }
     error.statusCode = Number(error.statusCode) || 503;
     error.isOpenRouterFailure = true;
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 
-  const responseText = await response.text();
   let responseJson = {};
   try {
     responseJson = responseText ? JSON.parse(responseText) : {};
@@ -1325,18 +758,17 @@ async function fetchOpenRouterPlan(payload, apiKey) {
   }
 
   if (!response.ok) {
-    const message = responseJson?.error?.message || `OpenRouter failed with HTTP ${response.status}.`;
-    const error = new Error(message);
-    error.statusCode = response.status;
-    error.isOpenRouterFailure = true;
-    throw error;
+    throw createOpenRouterError(
+      responseJson?.error?.message || `OpenRouter failed with HTTP ${response.status}.`,
+      response.status,
+    );
   }
 
   if (responseJson?.error) {
-    const error = new Error(responseJson.error.message || "OpenRouter returned an in-band provider error.");
-    error.statusCode = Number(responseJson.error.code) || 502;
-    error.isOpenRouterFailure = true;
-    throw error;
+    throw createOpenRouterError(
+      responseJson.error.message || "OpenRouter returned an in-band provider error.",
+      Number(responseJson.error.code) || 502,
+    );
   }
 
   const content = responseJson?.choices?.[0]?.message?.content;
@@ -1345,15 +777,12 @@ async function fetchOpenRouterPlan(payload, apiKey) {
     : extractJsonObject(content);
 
   if (!parsedPlan) {
-    const error = new Error("OpenRouter returned an invalid action plan.");
-    error.statusCode = 502;
-    error.isOpenRouterFailure = true;
-    throw error;
+    throw createOpenRouterError("OpenRouter returned an invalid action plan.", 502);
   }
 
   return {
     ...normalizePlan(parsedPlan, payload.transcript),
-    plannerModel: primaryModel.slice(0, 120),
+    plannerModel: String(responseJson.model || primaryModel).slice(0, 120),
     plannerRevision: VOICE_COMMAND_REVISION,
   };
 }
@@ -1368,13 +797,18 @@ async function requestOpenRouterPlan(payload) {
   }
 
   const maxAttempts = getOpenRouterMaxAttempts();
+  const deadline = Date.now() + VOICE_PLAN_TIME_BUDGET_MS;
   let lastError = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const remainingMs = deadline - Date.now();
     try {
-      return await fetchOpenRouterPlan(payload, apiKey);
+      return await fetchOpenRouterPlan(payload, apiKey, Math.min(OPENROUTER_ATTEMPT_TIMEOUT_MS, remainingMs));
     } catch (error) {
       lastError = error;
-      if (!shouldRetryOpenRouterError(error, attempt, maxAttempts)) break;
+      if (!shouldRetryOpenRouterError(error, attempt, maxAttempts)
+          || deadline - Date.now() < MIN_RETRY_TIME_MS) {
+        break;
+      }
     }
   }
   throw lastError;
@@ -1389,56 +823,42 @@ module.exports = async function handler(request, response) {
     return response.status(204).end();
   }
 
+  // The app sends a bodiless GET while the mic is held so the connection and
+  // function instance are warm by the time the recording is uploaded.
+  if (request.method === "GET" || request.method === "HEAD") {
+    return response.status(204).end();
+  }
+
   if (request.method !== "POST") {
-    response.setHeader("Allow", "POST, OPTIONS");
+    response.setHeader("Allow", "GET, POST, OPTIONS");
     return response.status(405).json({ error: "Method not allowed" });
   }
 
-  let payload = null;
   try {
     const bodyBuffer = await readRequestBody(request);
-    payload = parseRequestPayload(bodyBuffer, request.headers?.["content-type"]);
+    const payload = parseRequestPayload(bodyBuffer, request.headers?.["content-type"]);
     const plan = groundStatisticsEntityPlan(await requestOpenRouterPlan(payload), payload);
-    if (shouldUseLocalCommandFallback() && shouldReplaceProviderPlanWithLocalFallback(plan)) {
-      const fallbackPlan = buildLocalActionPlan(payload);
-      if (fallbackPlan) {
-        return response.status(200).json({
-          plan: {
-            ...normalizePlan(fallbackPlan, payload.transcript),
-            plannerModel: "local-fallback",
-            plannerRevision: VOICE_COMMAND_REVISION,
-          },
-        });
-      }
-    }
     return response.status(200).json({ plan });
   } catch (error) {
-    if (payload && shouldUseLocalCommandFallback()) {
-      const fallbackPlan = buildLocalActionPlan(payload);
-      if (fallbackPlan) {
-        return response.status(200).json({
-          plan: {
-            ...normalizePlan(fallbackPlan, payload.transcript),
-            plannerModel: "local-fallback",
-            plannerRevision: VOICE_COMMAND_REVISION,
-          },
-        });
-      }
-    }
-
-    const statusCode = error.isOpenRouterFailure ? 502 : Number(error.statusCode) || 500;
+    const statusCode = error.isOpenRouterFailure
+      ? (error.statusCode === 504 ? 504 : 502)
+      : Number(error.statusCode) || 500;
     console.error("voice-score-command failed", {
       code: error.code || "VOICE_COMMAND_FAILED",
       statusCode,
       providerFailure: Boolean(error.isOpenRouterFailure),
       message: String(error.message || "Unknown voice command failure.").slice(0, 240),
     });
-    const safeMessage = statusCode >= 500
-      ? "Voice command planning is temporarily unavailable. Please try again."
-      : error.message;
+    const safeMessage = statusCode === 504
+      ? "Voice planning took too long. Please try again."
+      : statusCode >= 500
+        ? "Voice command planning is temporarily unavailable. Please try again."
+        : error.message;
     return response.status(statusCode).json({ error: safeMessage });
   }
 };
 
 module.exports.ACTION_SCHEMA = ACTION_SCHEMA;
-module.exports.buildLocalActionPlan = buildLocalActionPlan;
+module.exports.VOICE_TOOL_DESCRIPTIONS = VOICE_TOOL_DESCRIPTIONS;
+module.exports.buildSystemPrompt = buildSystemPrompt;
+module.exports.normalizePlan = normalizePlan;

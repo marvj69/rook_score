@@ -7,7 +7,8 @@ import { minify } from "terser";
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
 const moduleFiles = require("./app-module-files.cjs");
-const lazyVoiceModulePath = "js/modules/09-voice-scoring.js";
+// Voice modules load lazily, in this order, as one bundle.
+const lazyVoiceModulePaths = ["js/modules/09-voice-tools.js", "js/modules/09-voice-scoring.js"];
 
 async function buildBundle(relativePaths, outputPath, description) {
   const chunks = await Promise.all(
@@ -40,11 +41,11 @@ async function buildBundle(relativePaths, outputPath, description) {
   await writeFile(join(rootDir, outputPath), `${result.code}\n`, "utf8");
 }
 
-const coreModuleFiles = moduleFiles.filter(relativePath => relativePath !== lazyVoiceModulePath);
-const voiceModuleFiles = moduleFiles.filter(relativePath => relativePath === lazyVoiceModulePath);
+const coreModuleFiles = moduleFiles.filter(relativePath => !lazyVoiceModulePaths.includes(relativePath));
+const voiceModuleFiles = moduleFiles.filter(relativePath => lazyVoiceModulePaths.includes(relativePath));
 
-if (voiceModuleFiles.length !== 1) {
-  throw new Error(`Expected one lazy voice module, found ${voiceModuleFiles.length}.`);
+if (voiceModuleFiles.join() !== lazyVoiceModulePaths.join()) {
+  throw new Error(`Expected lazy voice modules ${lazyVoiceModulePaths.join(", ")}, found ${voiceModuleFiles.join(", ")}.`);
 }
 
 await Promise.all([

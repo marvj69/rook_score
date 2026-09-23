@@ -62,11 +62,11 @@ service cloud.firestore {
         && data.context.settings is map
         && data.target is map
         && data.target.keys().hasOnly(['status', 'requiresConfirmation', 'actions'])
-        && data.target.status in ['execute', 'confirm', 'clarify', 'unsupported']
+        && data.target.status in ['execute', 'confirm', 'clarify', 'answer', 'unsupported']
         && data.target.requiresConfirmation is bool
         && data.target.actions is list
         && data.target.actions.size() <= 5
-        && data.outcome in ['success', 'failed', 'cancelled', 'clarify', 'unsupported']
+        && data.outcome in ['success', 'failed', 'cancelled', 'clarify', 'unsupported', 'answered']
         && data.model is string
         && data.model.size() <= 120
         && data.revision is string

@@ -330,12 +330,10 @@ body.liquid-glass .version-badge {
 body.liquid-glass .voice-score-button {
   box-shadow: var(--shadow-3d-sm), var(--shadow-glow-primary);
 }
+/* The mic renders outside #app, so it stays usable over open panels and can
+   answer their prompts by voice. It sits below the save toast. */
 .modal-open .voice-score-control {
-  opacity: 0;
-  filter: blur(3px) grayscale(0.2) brightness(0.7);
-  transform: translateY(-6px);
-  pointer-events: none;
-  transition: opacity 0.2s var(--smooth), filter 0.2s var(--smooth), transform 0.2s var(--smooth);
+  z-index: 10010;
 }
 
 @media (max-width: 640px) {
@@ -349,6 +347,25 @@ body.liquid-glass .voice-score-button {
   .voice-score-control {
     right: calc(0.75rem + env(safe-area-inset-right, 0px));
     bottom: calc(0.75rem + var(--safe-area-inset-bottom-effective));
+  }
+  /* Phone dialogs (confirmations, notices, game over) are bottom sheets whose
+     buttons sit where the mic does, so move the mic under the version badge. */
+  body:has(.dialog-modal:not(.hidden)) .voice-score-control {
+    top: calc(3.25rem + var(--safe-area-inset-top-effective));
+    bottom: auto;
+  }
+  body:has(.dialog-modal:not(.hidden)) .voice-score-status {
+    top: calc(100% + 0.55rem);
+    bottom: auto;
+  }
+  /* Full-height sheets keep the mic bottom-right: let their lists scroll
+     clear of it and keep the game-detail buttons out from under it. */
+  body:has(#voiceScoreHost .voice-score-control) :is(#savedGamesModal .library-scroll, .stats-modal__scroll) {
+    /* The phone stats sheet sets its padding with !important. */
+    padding-bottom: calc(5.5rem + var(--safe-area-inset-bottom-effective)) !important;
+  }
+  body:has(#voiceScoreHost .voice-score-control) .gd-actions {
+    padding-right: 5.5rem;
   }
 }
 

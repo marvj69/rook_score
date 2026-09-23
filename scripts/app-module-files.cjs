@@ -12,6 +12,7 @@ module.exports = [
   "js/modules/07-paper-game-photo.js",
   "js/modules/08-game-actions-logic.js",
   "js/modules/09-voice-loader.js",
+  "js/modules/09-voice-tools.js",
   "js/modules/09-voice-scoring.js",
   "js/modules/09-settings-validation-misc.js",
   "js/modules/10-probability-breakdown.js",

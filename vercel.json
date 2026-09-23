@@ -1,4 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "functions": {
+    "api/voice-score-command.js": {
+      "maxDuration": 20
+    }
+  }
 }
