@@ -241,12 +241,41 @@ function closeModal(modalId) {
   document.getElementById(modalId)?.classList.add("hidden");
   deactivateModalEnvironment();
 }
+// Bottom sheets slide down on phones before hiding; everywhere else they close immediately.
+function closeSheetModal(modalId) {
+  const modal = document.getElementById(modalId);
+  const shell = modal?.querySelector(".stats-modal__shell");
+  const matches = (query) => typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const canAnimate = modal && shell && !modal.classList.contains("hidden")
+    && modal.dataset.sheetDismissed !== "true"
+    && matches("(max-width: 640px)") && !matches("(prefers-reduced-motion: reduce)");
+  if (!canAnimate) {
+    cancelSheetClose(modalId);
+    closeModal(modalId);
+    return;
+  }
+  if (modal.sheetCloseTimer) return;
+  modal.classList.add("is-closing");
+  modal.sheetCloseTimer = setTimeout(() => {
+    cancelSheetClose(modalId);
+    closeModal(modalId);
+  }, 240);
+}
+function cancelSheetClose(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  clearTimeout(modal.sheetCloseTimer);
+  modal.sheetCloseTimer = null;
+  modal.classList.remove("is-closing");
+}
 function openSavedGamesModal() {
+  cancelSheetClose("savedGamesModal");
   updateGamesCount();
   switchGamesTab('completed'); // Default to completed games
   openModal("savedGamesModal");
+  ensureStatsSheetGesture("savedGamesModal", closeSavedGamesModal);
 }
-function closeSavedGamesModal() { closeModal("savedGamesModal"); }
+function closeSavedGamesModal() { closeSheetModal("savedGamesModal"); }
 function openConfirmationModal(message, yesCb, noCb) {
   document.getElementById("confirmationModalMessage").textContent = message;
   confirmationCallback = yesCb; noCallback = noCb;
@@ -500,8 +529,16 @@ function closeStatisticsModal() {
   document.getElementById("statisticsModalContent").innerHTML = "";
   closeEntityStatisticsModal();
 }
-function openViewSavedGameModal() { openModal("viewSavedGameModal"); }
-function closeViewSavedGameModal() { closeModal("viewSavedGameModal"); openModal("savedGamesModal"); } // Reopen parent
+function openViewSavedGameModal() {
+  cancelSheetClose("viewSavedGameModal");
+  openModal("viewSavedGameModal");
+  ensureStatsSheetGesture("viewSavedGameModal", closeViewSavedGameModal);
+}
+function closeViewSavedGameModal() {
+  const libraryModal = document.getElementById("savedGamesModal");
+  if (libraryModal?.classList.contains("hidden")) openModal("savedGamesModal"); // Reopen parent
+  closeSheetModal("viewSavedGameModal");
+}
 
 function openZeroPointsModal(callback) {
   let zeroPointsCallback = callback;

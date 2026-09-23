@@ -92,52 +92,68 @@
     <div id="saveIndicator" class="hidden">Saved</div>
 
     <!-- Saved Games Modal -->
-    <div id="savedGamesModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 modal" role="dialog" aria-modal="true" aria-labelledby="savedGamesTitle" tabindex="-1">
-      <div class="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden dark:bg-gray-800 flex flex-col" style="max-height: 85vh;">
-        <header class="border-b border-gray-200 dark:border-gray-700">
-          <div class="flex justify-between items-center px-6 pt-5 pb-2">
-            <h3 id="savedGamesTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Game Library</h3>
-            <button id="closeSavedGamesModalBtn" class="text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1 transition-colors dark:text-gray-400" aria-label="Close Saved Games Modal" type="button">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+    <div id="savedGamesModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 modal stats-modal library-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="savedGamesTitle" tabindex="-1">
+      <div class="stats-modal__shell library-shell relative mx-auto my-4 w-full max-w-xl overflow-hidden flex flex-col">
+        <div class="stats-sheet-grip" data-sheet-drag aria-hidden="true"><span class="stats-sheet-grip__bar"></span></div>
+        <header class="library-header">
+          <div class="library-header__row" data-sheet-drag>
+            <h3 id="savedGamesTitle" class="library-title">
+              <span class="library-title__icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h7"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 15l2 2 3-4"/></svg></span>
+              Game Library
+            </h3>
+            <button id="closeSavedGamesModalBtn" class="stats-modal__close library-close" aria-label="Close Game Library" type="button">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
-          <div class="flex px-6">
-            <button id="completedGamesTab" class="py-3 px-4 border-b-2 border-blue-600 text-blue-600 font-medium dark:text-blue-400 dark:border-blue-400 relative" onclick="switchGamesTab('completed')">
-              Completed Games
-              <span class="absolute top-0 right-0 transform translate-x-1/3 -translate-y-1/2 bg-blue-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" id="completedGamesCount">0</span>
+          <div class="stats-segmented library-segmented" role="tablist" aria-label="Game type" data-active="completed">
+            <button id="completedGamesTab" type="button" class="stats-segmented__option" role="tab" aria-selected="true" aria-pressed="true" aria-controls="completedGamesSection" onclick="switchGamesTab('completed')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8m-4-4v4m-6-9a6 6 0 0012 0V4H6v8z"/></svg>
+              <span>Completed</span>
+              <span class="library-count" id="completedGamesCount">0</span>
             </button>
-            <button id="freezerGamesTab" class="py-3 px-4 border-b-2 border-transparent text-gray-500 font-medium dark:text-gray-400 relative" onclick="switchGamesTab('freezer')">
-              Freezer Games
-              <span class="absolute top-0 right-0 transform translate-x-1/3 -translate-y-1/2 bg-gray-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" id="freezerGamesCount">0</span>
+            <button id="freezerGamesTab" type="button" class="stats-segmented__option" role="tab" aria-selected="false" aria-pressed="false" aria-controls="freezerGamesSection" onclick="switchGamesTab('freezer')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2v20M4.9 6.5l14.2 11M4.9 17.5l14.2-11M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></svg>
+              <span>Frozen</span>
+              <span class="library-count" id="freezerGamesCount">0</span>
             </button>
+          </div>
+          <div class="library-toolbar">
+            <label class="library-search">
+              <span class="sr-only">Search games</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="library-search__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
+              <input type="search" id="gameSearchInput" placeholder="Search games" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search" class="library-search__input" oninput="filterGames()" />
+              <button type="button" id="gameSearchClearBtn" class="library-search__clear hidden" aria-label="Clear search" onclick="clearGameSearch()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </label>
+            <label class="library-sort">
+              <span class="sr-only">Sort games</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="library-sort__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h13M3 12h9M3 17h5M17 10v10m0 0l-3-3m3 3l3-3"/></svg>
+              <select id="gameSortSelect" class="library-sort__select" onchange="sortGames()">
+                <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="highest">High score</option><option value="lowest">Low score</option>
+              </select>
+            </label>
           </div>
         </header>
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 flex flex-col sm:flex-row gap-3">
-          <div class="relative flex-grow">
-            <input type="text" id="gameSearchInput" placeholder="Search games..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:border-gray-500 dark:text-white dark:focus:ring-blue-400" oninput="filterGames()" />
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </div>
-          <div class="sm:w-40">
-            <select id="gameSortSelect" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-600 dark:border-gray-500 dark:text-white dark:focus:ring-blue-400" onchange="sortGames()">
-              <option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="highest">Highest Score</option><option value="lowest">Lowest Score</option>
-            </select>
-          </div>
-        </div>
-        <div class="flex-grow overflow-y-auto min-h-0 p-6 bg-white dark:bg-gray-800">
-          <section id="completedGamesSection" class="space-y-4">
-            <div id="savedGamesList" class="grid grid-cols-1 gap-4"></div>
-            <div id="noCompletedGamesMessage" class="hidden py-8 text-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-              <p class="mt-2 text-gray-600 dark:text-gray-400">No completed games found</p>
-              <button onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg transition-colors">Start a New Game</button>
+        <div id="savedGamesScroll" class="library-scroll no-scrollbar flex-1 min-h-0">
+          <section id="completedGamesSection" role="tabpanel" aria-labelledby="completedGamesTab">
+            <div id="savedGamesList" class="library-list"></div>
+            <div id="noCompletedGamesMessage" class="hidden stats-empty">
+              <span class="stats-empty__icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8m-4-4v4m-6-9a6 6 0 0012 0V4H6v8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6H4a2 2 0 002 4m12-4h2a2 2 0 01-2 4"/></svg></span>
+              <h4 class="stats-empty__title">No finished games yet</h4>
+              <p class="stats-empty__body">Save a game when it ends and it will show up here with its full round history.</p>
+              <button type="button" onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="library-empty-cta">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
+                Start a New Game
+              </button>
             </div>
           </section>
-          <section id="freezerGamesSection" class="space-y-4 hidden">
-            <div id="freezerGamesList" class="grid grid-cols-1 gap-4"></div>
-            <div id="noFreezerGamesMessage" class="hidden py-8 text-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-              <p class="mt-2 text-gray-600 dark:text-gray-400">No freezer games found</p>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-500">Freeze a game to continue it later</p>
+          <section id="freezerGamesSection" class="hidden" role="tabpanel" aria-labelledby="freezerGamesTab">
+            <div id="freezerGamesList" class="library-list"></div>
+            <div id="noFreezerGamesMessage" class="hidden stats-empty">
+              <span class="stats-empty__icon library-empty-icon--frozen" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2v20M4.9 6.5l14.2 11M4.9 17.5l14.2-11M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></svg></span>
+              <h4 class="stats-empty__title">Nothing in the freezer</h4>
+              <p class="stats-empty__body">Use Freeze Game from the menu to park a game mid-play and pick it back up later.</p>
             </div>
           </section>
         </div>
@@ -218,15 +234,18 @@
     </div>
 
     <!-- View Saved Game Modal -->
-    <div id="viewSavedGameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden overflow-y-auto z-50 modal stats-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle" style="-webkit-overflow-scrolling: touch;" tabindex="-1">
-      <div class="stats-modal__shell relative mx-auto my-4 w-full max-w-lg bg-white rounded-2xl shadow-xl dark:bg-gray-800 overflow-hidden flex flex-col" style="max-height: 90vh;">
-        <header class="stats-modal__header sticky top-0 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 sm:px-6 py-3.5 flex justify-between items-center">
-          <h3 id="viewSavedGameTitle" class="text-lg sm:text-xl font-bold text-gray-800 dark:text-white">Game Details</h3>
-          <button id="closeViewSavedGameModalBtn" class="stats-modal__close text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-2 -mr-2" aria-label="Close View Saved Game Modal" type="button">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+    <div id="viewSavedGameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 modal stats-modal library-modal flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="viewSavedGameTitle" tabindex="-1">
+      <div class="stats-modal__shell library-shell relative mx-auto my-4 w-full max-w-lg overflow-hidden flex flex-col">
+        <div class="stats-sheet-grip" data-sheet-drag aria-hidden="true"><span class="stats-sheet-grip__bar"></span></div>
+        <header data-sheet-drag class="library-header library-header--details">
+          <div class="library-header__row">
+            <h3 id="viewSavedGameTitle" class="library-title library-title--details">Game Details</h3>
+            <button id="closeViewSavedGameModalBtn" class="stats-modal__close library-close" aria-label="Close Game Details" type="button">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
         </header>
-        <div id="viewSavedGameDetails" class="stats-modal__scroll p-4 sm:p-6 space-y-6 overflow-y-auto no-scrollbar flex-1 min-h-0"></div>
+        <div id="viewSavedGameDetails" class="library-scroll no-scrollbar flex-1 min-h-0"></div>
       </div>
     </div>
 
