@@ -4508,7 +4508,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.63";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.64";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
@@ -4611,14 +4611,34 @@ test('bug reports stay in the app and submit through the backend', () => {
   assert.match(apiSource, /"Idempotency-Key": `bug-report\/\$\{report\.reportId\}`/);
 });
 
-test('standard scrollable modals share the About modal height cap', () => {
+test('About, Settings, and Resume Paper Game open as swipeable bottom sheets', () => {
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  const menuSource = readFileSync(path.join(repoRoot, 'js/modules/07-menu-modal.js'), 'utf8');
+
+  for (const modalId of ['aboutModal', 'resumeGameModal', 'settingsModal']) {
+    const modalStart = htmlSource.indexOf(`id="${modalId}"`);
+    assert.notEqual(modalStart, -1, `${modalId} should exist`);
+    const opening = htmlSource.slice(modalStart, modalStart + 1200);
+    assert.match(opening, /class="[^"]*\bstats-modal library-modal sheet-modal\b/, `${modalId} should be a sheet`);
+    assert.match(opening, /class="stats-modal__shell library-shell sheet-shell /, `${modalId} should use the sheet shell`);
+    assert.match(opening, /class="stats-sheet-grip" data-sheet-drag/, `${modalId} should have a drag grip`);
+  }
+  assert.match(menuSource, /openSheetModal\("aboutModal", closeAboutModal\)/);
+  assert.match(menuSource, /openSheetModal\("settingsModal", closeSettingsModal\)/);
+  assert.match(menuSource, /openSheetModal\("resumeGameModal", closeResumeGameModal\)/);
+  assert.match(menuSource, /closeSheetModal\("aboutModal"\)/);
+  assert.match(menuSource, /saveSettings\(\);\s*closeSheetModal\("settingsModal"\)/);
+  assert.match(menuSource, /closeSheetModal\("resumeGameModal"\)/);
+});
+
+test('standard scrollable modals share the bug report modal height cap', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const probabilitySource = readFileSync(
     path.join(repoRoot, 'js/modules/10-probability-breakdown.js'),
     'utf8',
   );
 
-  for (const modalId of ['aboutModal', 'bugReportModal', 'resumeGameModal', 'settingsModal']) {
+  for (const modalId of ['bugReportModal']) {
     const modalStart = htmlSource.indexOf(`id="${modalId}"`);
     assert.notEqual(modalStart, -1, `${modalId} should exist`);
     assert.match(
@@ -4835,11 +4855,11 @@ test('settings toggles use shared polished switch styling', () => {
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
   const settingsSource = readFileSync(path.join(repoRoot, 'js/modules/09-settings-validation-misc.js'), 'utf8');
 
-  assert.equal((htmlSource.match(/class="settings-switch ml-4"/g) || []).length, 6);
+  assert.equal((htmlSource.match(/<span class="settings-switch">/g) || []).length, 6);
   assert.match(htmlSource, /id="voiceSpokenRepliesToggle" class="settings-switch__input" checked/);
   assert.match(htmlSource, /id="experimentalFeaturesToggle"/);
-  assert.match(htmlSource, />Experimental Features<\/label>/);
-  assert.match(htmlSource, /id="voiceImprovementOptInContainer" class="hidden /);
+  assert.match(htmlSource, /<label class="sheet-row" for="experimentalFeaturesToggle">[\s\S]*?>Experimental Features</);
+  assert.match(htmlSource, /id="voiceImprovementOptInContainer" class="hidden sheet-row-set"/);
   assert.match(htmlSource, /id="voiceImprovementOptInToggle"/);
   assert.match(settingsSource, /settingsContainer\.classList\.toggle\("hidden", !isExperimentalFeaturesEnabled\(\)\)/);
   assert.doesNotMatch(htmlSource, /peer-checked:after:translate-x-7/);
@@ -4868,8 +4888,8 @@ test('experimental paper game photo import is camera-ready and gated by the shar
 
 test('settings exposes export and import game data controls in that order', () => {
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
-  const exportIndex = htmlSource.indexOf('>Export Game Data</button>');
-  const importIndex = htmlSource.indexOf('>Import Game Data</button>');
+  const exportIndex = htmlSource.indexOf('>Export Game Data</span>');
+  const importIndex = htmlSource.indexOf('>Import Game Data</span>');
 
   assert.ok(exportIndex >= 0);
   assert.ok(importIndex > exportIndex);

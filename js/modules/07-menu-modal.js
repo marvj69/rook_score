@@ -286,6 +286,11 @@ function cancelSheetClose(modalId) {
   modal.sheetCloseTimer = null;
   modal.classList.remove("is-closing");
 }
+function openSheetModal(modalId, closeFn) {
+  cancelSheetClose(modalId);
+  openModal(modalId);
+  ensureStatsSheetGesture(modalId, closeFn);
+}
 function openSavedGamesModal() {
   cancelSheetClose("savedGamesModal");
   updateGamesCount();
@@ -476,7 +481,7 @@ function openResumeGameModal() {
   if (usScoreInput) usScoreInput.value = totals.us;
   if (demScoreInput) demScoreInput.value = totals.dem;
 
-  openModal("resumeGameModal");
+  openSheetModal("resumeGameModal", closeResumeGameModal);
 }
 function closeResumeGameModal() {
   if (typeof cancelPaperGamePhotoScan === "function") cancelPaperGamePhotoScan();
@@ -485,7 +490,7 @@ function closeResumeGameModal() {
     errorEl.textContent = "";
     errorEl.classList.add("hidden");
   }
-  closeModal("resumeGameModal");
+  closeSheetModal("resumeGameModal");
 }
 function handleResumeGameSubmit(event) {
   event.preventDefault();
@@ -589,14 +594,14 @@ function openSettingsModal() {
   // Load all settings using the common function
   loadSettings();
 
-  openModal("settingsModal");
+  openSheetModal("settingsModal", closeSettingsModal);
 }
-function closeSettingsModal() { 
-  saveSettings(); 
-  closeModal("settingsModal"); 
+function closeSettingsModal() {
+  saveSettings();
+  closeSheetModal("settingsModal");
 }
-function openAboutModal() { openModal("aboutModal"); }
-function closeAboutModal() { closeModal("aboutModal"); }
+function openAboutModal() { openSheetModal("aboutModal", closeAboutModal); }
+function closeAboutModal() { closeSheetModal("aboutModal"); }
 function openStatisticsModal() { renderStatisticsContent(); openModal("statisticsModal"); }
 function closeStatisticsModal() {
   closeModal("statisticsModal");
