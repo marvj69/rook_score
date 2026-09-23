@@ -1242,7 +1242,7 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   .stats-sheet-grip {
     display: flex; align-items: center; justify-content: center;
     padding: 0.55rem 0 0.15rem; flex-shrink: 0; cursor: grab;
-    background: inherit;
+    background: transparent;
   }
   .stats-sheet-grip__bar {
     width: 2.6rem; height: 0.32rem; border-radius: var(--radius-full);
