@@ -77,6 +77,21 @@ function focusNextDealerField(currentInputId) {
   window.setTimeout(() => submitButton?.focus(), 0);
 }
 
+// Shows an inline error under the seats and outlines the seats that caused it.
+function setDealerOrderError(message = "", invalidInputIds = []) {
+  const errorEl = document.getElementById("dealerOrderError");
+  if (errorEl) {
+    errorEl.textContent = message;
+    errorEl.classList.toggle("hidden", !message);
+  }
+  DEALER_INPUT_IDS.forEach((inputId) => {
+    const input = getDealerInput(inputId);
+    const isInvalid = invalidInputIds.includes(inputId);
+    input?.closest?.(".dealer-seat")?.classList.toggle("is-invalid", isInvalid);
+    input?.setAttribute?.("aria-invalid", isInvalid ? "true" : "false");
+  });
+}
+
 function hideDealerSuggestionsExcept(activeInputId = "") {
   DEALER_INPUT_IDS.forEach((inputId) => {
     if (inputId === activeInputId) return;
@@ -102,7 +117,7 @@ function renderDealerSuggestionItems(container, suggestions, onSelect) {
   }
 
   container.innerHTML = suggestions
-    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option block w-full px-4 py-2 text-left text-sm text-gray-700 transition-colors focus:bg-blue-50 focus:outline-none dark:text-white dark:focus:bg-gray-600" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
+    .map((name, index) => `<button type="button" id="${container.id}Option${index}" role="option" class="dealer-suggestion-option" data-suggested-name="${escapeAttribute(name)}">${escapeHtml(name)}</button>`)
     .join("");
   setDealerSuggestionsVisibility(container, true);
 
@@ -156,7 +171,10 @@ function createDealerSuggestionController(inputId) {
     updateSuggestions();
     scrollDealerElementIntoView(input);
   };
-  const handleInput = () => updateSuggestions();
+  const handleInput = () => {
+    setDealerOrderError("");
+    updateSuggestions();
+  };
   const handleKeydown = (event) => {
     if (event.key === "Escape") {
       setDealerSuggestionsVisibility(container, false);
@@ -344,6 +362,7 @@ function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
 function openDealerOrderModal() {
   const form = document.getElementById("dealerOrderForm");
   if (form) form.reset();
+  setDealerOrderError("");
   refreshPlayerSuggestions();
   setupDealerNameSuggestions();
   openModal("dealerOrderModal");
@@ -392,20 +411,25 @@ function handleDealerPairSelection(pair) {
 }
 function handleDealerOrderSubmit(event) {
   event.preventDefault();
-  const dealer1 = sanitizePlayerName(document.getElementById("dealer1")?.value || "");
-  const dealer2 = sanitizePlayerName(document.getElementById("dealer2")?.value || "");
-  const dealer3 = sanitizePlayerName(document.getElementById("dealer3")?.value || "");
-  const dealer4 = sanitizePlayerName(document.getElementById("dealer4")?.value || "");
-  
-  // Validate that all 4 dealers are entered
-  if (!dealer1 || !dealer2 || !dealer3 || !dealer4) {
-    showNoticeModal("Enter all four dealer names to continue.", { title: "Dealers needed", icon: "users" });
+  const dealers = DEALER_INPUT_IDS.map(getDealerInputName);
+
+  const emptyIds = DEALER_INPUT_IDS.filter((inputId, index) => !dealers[index]);
+  if (emptyIds.length) {
+    setDealerOrderError(
+      emptyIds.length === 1
+        ? `Enter a name for seat ${DEALER_INPUT_IDS.indexOf(emptyIds[0]) + 1}.`
+        : `Enter names for all four seats (${emptyIds.length} empty).`,
+      emptyIds
+    );
+    getDealerInput(emptyIds[0])?.focus();
     return;
   }
-  
-  const dealers = [dealer1, dealer2, dealer3, dealer4];
-  if (hasDuplicateDealerNames(dealers)) {
-    showNoticeModal("Each dealer needs a different name.", { title: "Duplicate names", icon: "users" });
+
+  const keys = dealers.map(name => name.toLowerCase());
+  const duplicateIds = DEALER_INPUT_IDS.filter((inputId, index) => keys.indexOf(keys[index]) !== keys.lastIndexOf(keys[index]));
+  if (duplicateIds.length) {
+    setDealerOrderError("Each dealer needs a different name.", duplicateIds);
+    getDealerInput(duplicateIds[duplicateIds.length - 1])?.focus();
     return;
   }
 
