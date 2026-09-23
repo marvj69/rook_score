@@ -134,9 +134,11 @@ for (const bundled of [false, true]) {
     app.run(`state = normalizeLoadedGameTimerState(${JSON.stringify(saved)});`);
     assert.equal(app.run('getCurrentGameTime(state)'), 65000, 'reload restores all hidden time');
     app.advance(15000);
+    app.event('document', 'pointerdown');
     [...app.intervals.values()][0]();
-    assert.equal(JSON.parse(app.localStorage.getItem('activeGameState')).accumulatedTime, 80000);
-    app.run('state = buildCurrentGameTimerCheckpoint(state); updateState({ gameOver: true });');
+    const touched = app.localStorage.getItem('activeGameState');
+    assert.equal(app.run(`getCurrentGameTime(normalizeLoadedGameTimerState(${touched}))`), 80000, 'ticks persist the latest touch');
+    app.run('state = settleCurrentGameTimer(state); updateState({ gameOver: true });');
     assert.equal(app.intervals.size, 0);
     app.advance(10000);
     assert.equal(app.run('getCurrentGameTime(state)'), 80000);

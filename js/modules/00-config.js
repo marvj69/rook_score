@@ -48,6 +48,7 @@ const DEFAULT_STATE = {
   timerLastActivityAt: null,
   timerPaused: false,
   timerSkippedMs: 0,
+  timerVersion: null,
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
   misdealCount: 0,

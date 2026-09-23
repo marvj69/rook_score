@@ -753,85 +753,57 @@ test('calculateSafeTimeAccumulation preserves full active play time and rejects 
   assert.equal(isStartTimestampActive(null), false);
 });
 
-test('current game timer checkpoints count background time exactly once', () => {
+test('current game timer checkpoints never change the counted time', () => {
   const startedAt = new Date('2026-01-01T12:00:00.000Z').valueOf();
   const game = {
     rounds: [{ bidAmount: 120 }],
     gameOver: false,
     timerStarted: true,
+    timerVersion: 3,
     accumulatedTime: 60_000,
     startTime: startedAt,
+    timerLastActivityAt: startedAt,
     timerLastSavedAt: startedAt,
   };
 
   const firstCheckpoint = buildCurrentGameTimerCheckpoint(game, startedAt + 30_000);
-  assert.equal(firstCheckpoint.accumulatedTime, 90_000);
-  assert.equal(firstCheckpoint.startTime, startedAt + 30_000);
+  assert.equal(firstCheckpoint.accumulatedTime, 60_000);
+  assert.equal(firstCheckpoint.startTime, startedAt);
+  assert.equal(getCurrentGameTime(firstCheckpoint, startedAt + 30_000), 90_000);
 
-  const secondCheckpoint = buildCurrentGameTimerCheckpoint(firstCheckpoint, startedAt + 75_000);
-  assert.equal(secondCheckpoint.accumulatedTime, 135_000);
-  assert.equal(secondCheckpoint.startTime, startedAt + 75_000);
-
-  const backgroundCheckpoint = buildCurrentGameTimerCheckpoint(secondCheckpoint, startedAt + 80_000);
-  assert.equal(backgroundCheckpoint.accumulatedTime, 140_000);
-  assert.equal(backgroundCheckpoint.startTime, startedAt + 80_000);
-  assert.equal(backgroundCheckpoint.timerStarted, true);
-
-  const foregroundCheckpoint = buildCurrentGameTimerCheckpoint(backgroundCheckpoint, startedAt + 380_000);
-  assert.equal(foregroundCheckpoint.accumulatedTime, 440_000);
-  assert.equal(foregroundCheckpoint.startTime, startedAt + 380_000);
+  const secondCheckpoint = buildCurrentGameTimerCheckpoint(firstCheckpoint, startedAt + 380_000);
+  assert.equal(secondCheckpoint.timerStarted, true);
+  assert.equal(getCurrentGameTime(secondCheckpoint, startedAt + 380_000), 440_000);
 });
 
-test('loaded game timers bound away time and preserve the original activity deadline', () => {
+test('loaded game timers leave out long breaks and keep short absences', () => {
   const savedAt = new Date('2026-01-01T12:00:00.000Z').valueOf();
-  const reopenedAt = savedAt + (45 * 60_000);
-  const modernSnapshot = {
+  const snapshot = {
     rounds: [{ bidAmount: 120 }],
     gameOver: false,
     timerStarted: true,
+    timerVersion: 3,
     accumulatedTime: 180_000,
     startTime: savedAt,
+    timerLastActivityAt: savedAt,
     timerLastSavedAt: savedAt,
   };
 
-  const resumed = normalizeLoadedGameTimerState(modernSnapshot, reopenedAt);
-  assert.equal(resumed.accumulatedTime, 180_000 + (20 * 60_000));
-  assert.equal(resumed.startTime, reopenedAt);
-  assert.equal(resumed.timerStarted, true);
-  assert.equal(hasStartedCurrentGameTimer(resumed), true);
-  assert.equal(shouldRunCurrentGameTimer(resumed), true);
-  assert.equal(getCurrentGameTime(resumed, reopenedAt + 20_000), 180_000 + (20 * 60_000));
+  const shortAbsence = normalizeLoadedGameTimerState(snapshot, savedAt + (10 * 60_000));
+  assert.equal(getCurrentGameTime(shortAbsence, savedAt + (10 * 60_000)), 180_000 + (10 * 60_000));
+  assert.equal(hasStartedCurrentGameTimer(shortAbsence), true);
+  assert.equal(shouldRunCurrentGameTimer(shortAbsence), true);
 
-  const oldHiddenSnapshot = normalizeLoadedGameTimerState({
-    ...modernSnapshot,
-    startTime: null,
-  }, reopenedAt);
-  assert.equal(oldHiddenSnapshot.accumulatedTime, 180_000 + (20 * 60_000));
-  assert.equal(oldHiddenSnapshot.startTime, reopenedAt);
-
-  const checkpointedAgain = normalizeLoadedGameTimerState(resumed, reopenedAt + 20_000);
-  assert.equal(checkpointedAgain.accumulatedTime, 180_000 + (20 * 60_000));
+  const longBreak = normalizeLoadedGameTimerState(snapshot, savedAt + (45 * 60_000));
+  assert.equal(getCurrentGameTime(longBreak, savedAt + (45 * 60_000)), 180_000);
 
   const completed = normalizeLoadedGameTimerState({
-    ...modernSnapshot,
+    ...snapshot,
     gameOver: true,
     startTime: null,
-  }, reopenedAt);
+  }, savedAt + (45 * 60_000));
   assert.equal(completed.startTime, null);
   assert.equal(shouldRunCurrentGameTimer(completed), false);
-});
-
-test('legacy timer recovery uses the same idle bound', () => {
-  const now = new Date('2026-01-01T12:00:00.000Z').valueOf();
-  const legacy = normalizeLoadedGameTimerState({
-    rounds: [{ bidAmount: 120 }],
-    gameOver: false,
-    accumulatedTime: 60_000,
-    startTime: now - (5 * 60 * 60 * 1000),
-  }, now);
-
-  assert.equal(legacy.accumulatedTime, 60_000 + (20 * 60_000));
-  assert.equal(legacy.startTime, now);
 });
 
 test('formatDuration keeps compact minute and hour labels', () => {
@@ -4558,11 +4530,14 @@ test('current game timer is visible, starts with play, and keeps counting across
   assert.match(actionsSource, /function handleMisdeal[\s\S]*ensureCurrentGameTimerStarted\(\)/);
   assert.match(stateSource, /CURRENT_GAME_TIMER_CHECKPOINT_MS = 15 \* 1000/);
   assert.match(stateSource, /function checkpointCurrentGameTimer\(/);
-  assert.match(stateSource, /document\.addEventListener\("visibilitychange"[\s\S]*checkpointCurrentGameTimer\(\)/);
-  assert.match(stateSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*?checkpointCurrentGameTimer\(\)/);
-  assert.match(stateSource, /window\.addEventListener\("pageshow", \(\) => \{[\s\S]*?checkpointCurrentGameTimer\(\)/);
+  assert.match(stateSource, /const onLifecycle = \(\) => \{[\s\S]*?checkpointCurrentGameTimer\(\)/);
+  assert.match(stateSource, /document\.addEventListener\("visibilitychange", onLifecycle\)/);
+  assert.match(stateSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*?onLifecycle\(\)/);
+  assert.match(stateSource, /window\.addEventListener\("pageshow", \(\) => \{[\s\S]*?onLifecycle\(\)/);
   assert.doesNotMatch(stateSource, /pauseCurrentGameTimer|resumeCurrentGameTimer|pauseTimer/);
   assert.match(stateSource, /saveCurrentGameState\(\{ sync: false, showIndicator: false, now \}\)/);
+  assert.match(stateSource, /CURRENT_GAME_TIMER_BREAK_MS = 30 \* 60 \* 1000/);
+  assert.match(stateSource, /document\.addEventListener\("pointerdown", onInput/);
   assert.match(initializationSource, /initializeCurrentGameTimer\(\);/);
   assert.match(cssSource, /\.history-game-timer\s*\{/);
   assert.match(cssSource, /font-size:\s*0\.66rem/);
@@ -4572,7 +4547,7 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.56";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.57";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
