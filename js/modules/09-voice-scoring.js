@@ -2144,7 +2144,8 @@ function processLocalVoiceScoreIntent(intent) {
         closeConfirmationModal();
         applyVoiceScoreIntent(intent);
       },
-      closeConfirmationModal
+      closeConfirmationModal,
+      { title: "Confirm voice command", confirmLabel: "Apply", icon: "mic" }
     );
     return true;
   }
@@ -2195,7 +2196,8 @@ async function applyVoiceScorePlan(plan, transcript, localIntent) {
       () => {
         closeConfirmationModal();
         recordVoiceImprovementSample(normalizedPlan, "cancelled", improvementSnapshot);
-      }
+      },
+      { title: "Confirm voice command", confirmLabel: "Apply", icon: "mic" }
     );
     return true;
   }

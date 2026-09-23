@@ -623,28 +623,29 @@ function renderHistoryCard() {
 }
 function renderGameOverOverlay() {
   if (!state.gameOver) return "";
-  const winnerLabel = state.winner === "us" ? (state.usTeamName || "Us") : (state.winner === "dem" ? (state.demTeamName || "Dem") : "It's a Tie");
-  const winnerDisplay = escapeHtmlValue(winnerLabel);
+  const isTie = state.winner !== "us" && state.winner !== "dem";
+  const winnerLabel = state.winner === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
+  const headline = isTie ? "It's a Tie" : `${escapeHtmlValue(winnerLabel)} Wins!`;
   const victoryMethodDisplay = escapeHtmlValue(state.victoryMethod || 'Game Ended');
   return `
-<div data-overlay="gameover"
-     class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-md flex items-center justify-center p-4"
-     style="z-index:49; animation: fadeIn 0.3s ease-out;"
-     role="alertdialog" aria-labelledby="gameOverTitle" aria-modal="true">
-      <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl text-center border-2 border-yellow-400 dark:border-yellow-600" style="animation: popBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;">
-        <div class="p-6">
-          <h2 id="gameOverTitle" class="text-4xl font-black mb-2 animate-fadeIn text-gray-800 dark:text-white" style="text-shadow: 0 4px 0 rgba(0,0,0,0.15);">Game Over!</h2>
-          <p class="text-2xl font-extrabold mb-1 animate-fadeIn text-gray-700 dark:text-white" style="text-shadow: 0 2px 0 rgba(0,0,0,0.1);">${winnerDisplay} Wins!</p>
-          <p class="text-sm mb-6 animate-fadeIn text-gray-500 dark:text-gray-400 font-semibold">(${victoryMethodDisplay})</p>
-          <div class="flex space-x-3 justify-center flex-wrap gap-2">
-            <button onclick="handleGameOverFixClick(event)" class="bg-gray-200 text-gray-800 px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400 transition dark:bg-gray-700 dark:text-white dark:focus:ring-gray-500 threed font-bold text-sm" type="button">Fix Score</button>
-            <button onclick="handleGameOverSaveClick(event)" class="bg-green-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 transition dark:bg-green-500 dark:focus:ring-green-400 threed font-bold text-sm" type="button">Save Game</button>
-            <button onclick="handleGameOverRematchClick(event)" class="bg-purple-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500 transition dark:bg-purple-500 dark:focus:ring-purple-400 threed font-bold text-sm" type="button">Rematch</button>
-            <button onclick="handleNewGame()" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition dark:bg-blue-500 dark:focus:ring-blue-400 threed font-bold text-sm" type="button">New Game</button>
-          </div>
-        </div>
+<div data-overlay="gameover" class="dialog-modal dialog-modal--gameover" role="alertdialog" aria-labelledby="gameOverTitle" aria-describedby="gameOverWinner" aria-modal="true">
+  <div class="dialog-card dialog-card--gold">
+    <div class="dialog-body">
+      <span class="dialog-icon dialog-icon--lg" aria-hidden="true">${getDialogIconSvg("trophy")}</span>
+      <p id="gameOverTitle" class="dialog-eyebrow">Game Over</p>
+      <h2 id="gameOverWinner" class="dialog-title dialog-title--xl">${headline}</h2>
+      <span class="dialog-chip">${victoryMethodDisplay}</span>
+    </div>
+    <div class="dialog-actions dialog-actions--stack">
+      <button onclick="handleGameOverSaveClick(event)" class="dialog-btn dialog-btn--primary" type="button">Save Game</button>
+      <div class="dialog-actions" style="padding: 0;">
+        <button onclick="handleGameOverFixClick(event)" class="dialog-btn dialog-btn--secondary dialog-btn--sm" type="button">Fix Score</button>
+        <button onclick="handleGameOverRematchClick(event)" class="dialog-btn dialog-btn--secondary dialog-btn--sm" type="button">Rematch</button>
+        <button onclick="handleNewGame()" class="dialog-btn dialog-btn--secondary dialog-btn--sm" type="button">New Game</button>
       </div>
-    </div>`;
+    </div>
+  </div>
+</div>`;
 }
 // (renderReadOnlyGameDetails, renderSavedGames, renderFreezerGames, renderStatisticsContent, renderTeamStatsTable - these remain substantial and are called by modal openers)
 function renderReadOnlyGameDetails(game, originalIndex = null) {

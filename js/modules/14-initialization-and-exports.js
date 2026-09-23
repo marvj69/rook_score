@@ -98,7 +98,8 @@ document.addEventListener("DOMContentLoaded", () => {
     resumeGameModal: closeResumeGameModal,
 	    settingsModal: closeSettingsModal,
 	    themeModal: () => closeThemeModal(null),
-	    confirmationModal: closeConfirmationModal,
+	    confirmationModal: dismissConfirmationModal,
+	    noticeModal: closeNoticeModal,
 	    presetEditorModal: closePresetEditorModal,
 	    tableTalkModal: closeTableTalkModal,
 	    probabilityModal: closeProbabilityModal,
@@ -113,6 +114,16 @@ document.addEventListener("DOMContentLoaded", () => {
         handler();
       }
     });
+  });
+
+  // Escape dismisses the top-most dialog (notices sit above confirmations).
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const dialogId = ["noticeModal", "confirmationModal"]
+      .find(id => document.getElementById(id)?.classList.contains("hidden") === false);
+    if (!dialogId) return;
+    e.preventDefault();
+    modalCloseHandlers[dialogId]();
   });
 });
 
@@ -173,9 +184,10 @@ function undoPenaltyFlag() {
 function handleTeamSelectionCancel() {
   if (state.gameOver) {
     openConfirmationModal(
-      'The game is completed. Canceling will erase this game. Are you sure?',
+      'This game is finished. Canceling now erases it instead of saving it.',
       () => { closeTeamSelectionModal(); resetGame(); closeConfirmationModal(); },
-      closeConfirmationModal
+      closeConfirmationModal,
+      { title: "Erase this game?", confirmLabel: "Erase game", cancelLabel: "Keep game", tone: "danger" }
     );
   } else {
     closeTeamSelectionModal();
