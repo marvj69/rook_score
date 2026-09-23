@@ -276,8 +276,34 @@ function openSavedGamesModal() {
   ensureStatsSheetGesture("savedGamesModal", closeSavedGamesModal);
 }
 function closeSavedGamesModal() { closeSheetModal("savedGamesModal"); }
-function openConfirmationModal(message, yesCb, noCb) {
-  document.getElementById("confirmationModalMessage").textContent = message;
+const DIALOG_TONES = ["info", "warning", "danger", "success", "frost", "gold"];
+// Icons live in the #dialog-icon-* SVG sprite in index.html.
+function getDialogIconSvg(name) {
+  return `<svg aria-hidden="true"><use href="#dialog-icon-${name}"/></svg>`;
+}
+
+function setDialogTone(card, tone) {
+  if (!card?.classList) return;
+  DIALOG_TONES.forEach(name => card.classList.toggle(`dialog-card--${name}`, name === tone));
+}
+
+// Fills a dialog's title, message, icon, and tone. Returns false when the markup is missing.
+function fillDialog(prefix, message, { title, tone = "info", icon } = {}) {
+  const messageEl = document.getElementById(`${prefix}Message`);
+  if (!messageEl) return false;
+  messageEl.textContent = message;
+  const titleEl = document.getElementById(`${prefix}Title`);
+  if (titleEl && title) titleEl.textContent = title;
+  const iconEl = document.getElementById(`${prefix}Icon`);
+  if (iconEl) iconEl.innerHTML = getDialogIconSvg(icon || { danger: "trash", success: "check", frost: "snowflake" }[tone] || tone);
+  setDialogTone(document.getElementById(`${prefix}Card`), tone);
+  return true;
+}
+
+// options: { title, confirmLabel, cancelLabel, tone: "info" | "warning" | "danger" | "frost", icon }
+function openConfirmationModal(message, yesCb, noCb, options = {}) {
+  const { confirmLabel = "Confirm", cancelLabel = "Cancel", tone = "info", icon } = options;
+  fillDialog("confirmationModal", message, { title: options.title || "Are you sure?", tone, icon });
   confirmationCallback = yesCb; noCallback = noCb;
   openModal("confirmationModal");
   // Re-bind buttons to avoid multiple listeners if not careful
@@ -285,10 +311,34 @@ function openConfirmationModal(message, yesCb, noCb) {
   const noBtn = document.getElementById("noModalButton");
   const newYes = yesBtn.cloneNode(true); yesBtn.parentNode.replaceChild(newYes, yesBtn);
   const newNo = noBtn.cloneNode(true); noBtn.parentNode.replaceChild(newNo, noBtn);
+  newYes.textContent = confirmLabel;
+  newNo.textContent = cancelLabel;
   newYes.addEventListener("click", (e) => { e.stopPropagation(); if (confirmationCallback) confirmationCallback(); });
   newNo.addEventListener("click", (e) => { e.stopPropagation(); if (noCallback) noCallback(); });
+  // Destructive prompts land on Cancel so a stray Enter can't delete anything.
+  (tone === "danger" ? newNo : newYes).focus?.();
 }
 function closeConfirmationModal() { closeModal("confirmationModal"); confirmationCallback = null; noCallback = null; }
+// Backdrop tap / Escape: behave like Cancel so callers can react to the dismissal.
+function dismissConfirmationModal() {
+  if (typeof noCallback === "function") noCallback();
+  else closeConfirmationModal();
+}
+
+// In-app replacement for window.alert(). options: { title, tone, icon, buttonLabel }
+function showNoticeModal(message, options = {}) {
+  const { tone = "warning", icon, buttonLabel = "Got it" } = options;
+  if (!fillDialog("noticeModal", message, { title: options.title || "Heads up", tone, icon })) {
+    window.alert?.(message);
+    return;
+  }
+  const button = document.getElementById("noticeModalButton");
+  if (button) button.textContent = buttonLabel;
+  openModal("noticeModal");
+  button?.focus?.();
+}
+function closeNoticeModal() { closeModal("noticeModal"); }
+
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
 function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
 function openDealerOrderModal() {
@@ -349,13 +399,13 @@ function handleDealerOrderSubmit(event) {
   
   // Validate that all 4 dealers are entered
   if (!dealer1 || !dealer2 || !dealer3 || !dealer4) {
-    alert("Please enter all 4 dealer names to continue.");
+    showNoticeModal("Enter all four dealer names to continue.", { title: "Dealers needed", icon: "users" });
     return;
   }
   
   const dealers = [dealer1, dealer2, dealer3, dealer4];
   if (hasDuplicateDealerNames(dealers)) {
-    alert("Each dealer needs a different name.");
+    showNoticeModal("Each dealer needs a different name.", { title: "Duplicate names", icon: "users" });
     return;
   }
 
@@ -421,7 +471,7 @@ function handleResumeGameSubmit(event) {
       errorEl.textContent = message;
       errorEl.classList.remove("hidden");
     } else {
-      alert(message);
+      showNoticeModal(message, { title: "Check the score" });
     }
   };
 

@@ -293,8 +293,14 @@ function closeThemeModal(event) {
 function showSaveIndicator(message = "Saved") {
   const el = document.getElementById("saveIndicator");
   if (!el) return;
+  clearTimeout(el.hideTimer);
+  clearTimeout(el.removeTimer);
   el.textContent = message;
-  el.classList.remove("hidden", "bg-red-600"); // Remove error class if present
-  el.classList.add("show");
-  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.classList.add("hidden"), 150); }, 1000);
+  el.classList.remove("hidden");
+  // Wait a frame after un-hiding so the slide-in transition runs.
+  (window.requestAnimationFrame || setTimeout)(() => el.classList.add("show"));
+  el.hideTimer = setTimeout(() => {
+    el.classList.remove("show");
+    el.removeTimer = setTimeout(() => el.classList.add("hidden"), 300);
+  }, 1800);
 }

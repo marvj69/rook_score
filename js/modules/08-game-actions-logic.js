@@ -15,32 +15,25 @@ function openTableTalkModal() {
   const demTeamDisplay = escapeHtml(demTeamName);
 
   const modalHtml = `
-    <div id="tableTalkModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="tableTalkModalTitle">
-      <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-xl shadow-lg">
-        <div class="p-6">
-          <h2 id="tableTalkModalTitle" class="text-xl font-bold mb-4 text-gray-800 dark:text-white text-center">Table Talk Penalty</h2>
-          <p class="text-gray-600 dark:text-gray-300 mb-6 text-center">Which team engaged in table talk during this round?</p>
-          <div class="space-y-3">
-            <button 
-              onclick="applyTableTalkPenalty('us')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
-              style="background-color: var(--primary-color);">
-              ${usTeamDisplay}
-            </button>
-            <button 
-              onclick="applyTableTalkPenalty('dem')" 
-              class="w-full text-white px-4 py-3 rounded-xl font-medium focus:outline-none transition threed"
-              style="background-color: var(--accent-color);">
-              ${demTeamDisplay}
-            </button>
-          </div>
-          <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-            <button 
-              onclick="closeTableTalkModal()" 
-              class="w-full bg-gray-100 text-gray-800 px-4 py-2 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">
-              Cancel
-            </button>
-          </div>
+    <div id="tableTalkModal" class="modal dialog-modal" style="z-index: 9000;" role="dialog" aria-modal="true" aria-labelledby="tableTalkModalTitle" aria-describedby="tableTalkModalMessage" tabindex="-1">
+      <div class="dialog-card dialog-card--danger">
+        <div class="dialog-body">
+          <span class="dialog-icon" aria-hidden="true">${getDialogIconSvg("flag")}</span>
+          <h2 id="tableTalkModalTitle" class="dialog-title">Table Talk Penalty</h2>
+          <p id="tableTalkModalMessage" class="dialog-message">Which team engaged in table talk during this round?</p>
+        </div>
+        <div class="dialog-choices">
+          <button type="button" onclick="applyTableTalkPenalty('us')" class="dialog-choice dialog-choice--us">
+            <span class="dialog-choice__swatch" aria-hidden="true"></span>
+            <span class="dialog-choice__label">${usTeamDisplay}</span>
+          </button>
+          <button type="button" onclick="applyTableTalkPenalty('dem')" class="dialog-choice dialog-choice--dem">
+            <span class="dialog-choice__swatch" aria-hidden="true"></span>
+            <span class="dialog-choice__label">${demTeamDisplay}</span>
+          </button>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" onclick="closeTableTalkModal()" class="dialog-btn dialog-btn--secondary">Cancel</button>
         </div>
       </div>
     </div>`;
@@ -85,7 +78,8 @@ function applyTableTalkPenalty(flaggedTeam) {
       closeConfirmationModal();
       showSaveIndicator(`Penalty applied to ${teamName}`);
     },
-    closeConfirmationModal // NO
+    closeConfirmationModal, // NO
+    { title: "Apply table-talk penalty?", confirmLabel: "Apply penalty", tone: "danger", icon: "flag" }
   );
 }
 
@@ -660,13 +654,14 @@ function handleMisdeal() {
 }
 function handleNewGame() {
   openConfirmationModal(
-    "Start a new game? Unsaved progress will be lost.",
+    "Unsaved progress on the current game will be lost.",
     () => {
 closeTeamSelectionModal();
 resetGame();
 closeConfirmationModal();
     },
-    closeConfirmationModal
+    closeConfirmationModal,
+    { title: "Start a new game?", confirmLabel: "New game", tone: "warning", icon: "refresh" }
   );
 }
 
@@ -744,7 +739,7 @@ async function startRematchWithFirstDealer(firstDealer) {
   const shouldSavePriorGame = state.gameOver && state.rounds.length > 0;
   const nextState = buildRematchSetupState(state, firstDealer, getLocalStorage(PRO_MODE_KEY, false));
   if (!nextState) {
-    alert("Choose one of the current players to deal first.");
+    showNoticeModal("Choose one of the current players to deal first.", { title: "Pick a dealer", icon: "users" });
     return false;
   }
 
@@ -775,7 +770,7 @@ function handleRematchDealerSelection(firstDealer) {
 function openRematchDealerModal() {
   const dealerCandidates = getRematchDealerCandidates(state);
   if (dealerCandidates.length !== 4) {
-    alert("Add four players or a dealing order before starting a same-player rematch.");
+    showNoticeModal("Add four players or a dealing order before starting a same-player rematch.", { title: "Players needed", tone: "info", icon: "users" });
     return;
   }
 
@@ -783,21 +778,23 @@ function openRematchDealerModal() {
   closeRematchDealerModal(false);
 
   const buttonsHtml = dealerCandidates.map((dealer, index) => `
-    <button type="button"
-      class="w-full bg-white text-gray-800 px-4 py-3 rounded-xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 threed font-bold"
-      data-rematch-dealer-index="${index}">
-      ${escapeHtml(dealer)}
+    <button type="button" class="dialog-choice" data-rematch-dealer-index="${index}">
+      <span class="dialog-choice__index" aria-hidden="true">${index + 1}</span>
+      <span class="dialog-choice__label">${escapeHtml(dealer)}</span>
     </button>
   `).join("");
 
   const modalHtml = `
-    <div id="rematchDealerModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="rematchDealerTitle" tabindex="-1">
-      <div class="bg-white w-full max-w-md rounded-2xl shadow-xl dark:bg-gray-800">
-        <div class="p-6">
-          <h2 id="rematchDealerTitle" class="text-2xl font-black mb-2 text-gray-800 dark:text-white text-center">Choose First Dealer</h2>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 text-center">Same players, fresh score.</p>
-          <div class="grid grid-cols-1 gap-3">${buttonsHtml}</div>
-          <button type="button" id="cancelRematchDealerBtn" class="mt-5 w-full bg-gray-100 text-gray-800 px-4 py-2.5 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-gray-300 dark:bg-gray-700 dark:text-white transition threed">Cancel</button>
+    <div id="rematchDealerModal" class="modal dialog-modal" style="z-index: 9000;" role="dialog" aria-modal="true" aria-labelledby="rematchDealerTitle" aria-describedby="rematchDealerMessage" tabindex="-1">
+      <div class="dialog-card">
+        <div class="dialog-body">
+          <span class="dialog-icon" aria-hidden="true">${getDialogIconSvg("refresh")}</span>
+          <h2 id="rematchDealerTitle" class="dialog-title">Choose First Dealer</h2>
+          <p id="rematchDealerMessage" class="dialog-message">Same players, fresh score.</p>
+        </div>
+        <div class="dialog-choices dialog-choices--split">${buttonsHtml}</div>
+        <div class="dialog-actions">
+          <button type="button" id="cancelRematchDealerBtn" class="dialog-btn dialog-btn--secondary">Cancel</button>
         </div>
       </div>
     </div>`;
@@ -934,7 +931,7 @@ async function handleManualSaveGame() { // Called after team names confirmed or 
 }
 function handleFreezerGame() {
   if (state.gameOver || !state.rounds.length) {
-    alert("No active game to freeze."); return;
+    showNoticeModal("Play at least one round before freezing a game.", { title: "Nothing to freeze", tone: "frost", icon: "snowflake" }); return;
   }
   if (!state.usTeamName || !state.demTeamName) {
     pendingGameAction = "freeze";
@@ -955,9 +952,10 @@ function handleFreezerGame() {
 }
 function confirmFreeze() {
    openConfirmationModal(
-      "Freeze this game? It will be moved to Freezer Games and current game will reset.",
+      "It moves to Frozen games so you can resume it later, and the scoreboard resets.",
       async () => { closeConfirmationModal(); closeMenuOverlay(); await freezeCurrentGame(); },
-      closeConfirmationModal
+      closeConfirmationModal,
+      { title: "Freeze this game?", confirmLabel: "Freeze", tone: "frost", icon: "snowflake" }
   );
 }
 async function freezeCurrentGame() {
@@ -1029,7 +1027,7 @@ function loadFreezerGame(index) {
   const chosenLabel = chosen.name
     || `${getGameTeamDisplay(chosen, "us")} vs ${getGameTeamDisplay(chosen, "dem")} (${chosenTotals.us}–${chosenTotals.dem})`;
   openConfirmationModal(
-    `Resume ${chosenLabel}? The game on the scoreboard now will be replaced.`,
+    `${chosenLabel} will replace the game on the scoreboard now.`,
     () => {
       closeConfirmationModal();
       const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
@@ -1081,7 +1079,8 @@ function loadFreezerGame(index) {
       );
       confettiTriggered = false;
     },
-    closeConfirmationModal
+    closeConfirmationModal,
+    { title: "Resume this game?", confirmLabel: "Resume", icon: "play" }
   );
 }
 function viewSavedGame(originalIndex) { // originalIndex is from the full savedGames list
@@ -1101,7 +1100,7 @@ function viewSavedGame(originalIndex) { // originalIndex is from the full savedG
 }
 function deleteGame(storageKey, index, descriptor, onDeleted) {
   const items = getLocalStorage(storageKey);
-  openConfirmationModal(`Delete this ${descriptor}? This can't be undone.`, () => {
+  openConfirmationModal("This can't be undone.", () => {
     items.splice(index, 1);
     setLocalStorage(storageKey, items);
     if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game
@@ -1112,7 +1111,7 @@ function deleteGame(storageKey, index, descriptor, onDeleted) {
       updateGamesCount();
       renderGamesWithFilter();
     }
-  }, closeConfirmationModal);
+  }, closeConfirmationModal, { title: `Delete this ${descriptor}?`, confirmLabel: "Delete", tone: "danger" });
 }
 function deleteSavedGame(index) { deleteGame("savedGames", index, "completed game"); }
 function deleteViewedSavedGame(index) { deleteGame("savedGames", index, "completed game", closeViewSavedGameModal); }

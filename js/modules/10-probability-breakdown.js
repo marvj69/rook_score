@@ -489,30 +489,30 @@ function handleTeamSelectionSubmit(e) {
   ]);
 
   if (!usPlayers[0] || !usPlayers[1]) {
-    alert("Please enter both player names for Team 'Us'.");
+    showNoticeModal("Please enter both player names for Team 'Us'.", { title: "Check team names", icon: "users" });
     return;
   }
   if (!demPlayers[0] || !demPlayers[1]) {
-    alert("Please enter both player names for Team 'Dem'.");
+    showNoticeModal("Please enter both player names for Team 'Dem'.", { title: "Check team names", icon: "users" });
     return;
   }
   if (usPlayers[0].toLowerCase() === usPlayers[1].toLowerCase()) {
-    alert("Team 'Us' needs two different players.");
+    showNoticeModal("Team 'Us' needs two different players.", { title: "Check team names", icon: "users" });
     return;
   }
   if (demPlayers[0].toLowerCase() === demPlayers[1].toLowerCase()) {
-    alert("Team 'Dem' needs two different players.");
+    showNoticeModal("Team 'Dem' needs two different players.", { title: "Check team names", icon: "users" });
     return;
   }
 
   const usKey = buildTeamKey(usPlayers);
   const demKey = buildTeamKey(demPlayers);
   if (!usKey || !demKey) {
-    alert("Problem building team combinations. Please check the names and try again.");
+    showNoticeModal("Problem building team combinations. Please check the names and try again.", { title: "Check team names", icon: "users" });
     return;
   }
   if (usKey === demKey) {
-    alert("Both teams cannot have the same two players.");
+    showNoticeModal("Both teams cannot have the same two players.", { title: "Check team names", icon: "users" });
     return;
   }
 
