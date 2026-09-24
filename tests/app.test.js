@@ -2343,7 +2343,7 @@ test('voice score control is wired as a delegated hold-to-record button', () => 
   assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(cssSource, /\.modal-open \.voice-score-control\s*{\s*z-index: 10010;\s*}/);
-  assert.match(cssSource, /body:has\(\.dialog-modal:not\(\.hidden\)\) \.voice-score-control\s*{[^}]*bottom: auto;/s);
+  assert.match(cssSource, /body:has\(\.dialog-modal:not\(\.hidden\)\) \.voice-score-control,\s*body:has\(#scoreKeypadSheet\) \.voice-score-control\s*{[^}]*bottom: auto;/s);
   assert.doesNotMatch(renderSourceForVoice(), /renderLazyVoiceScoreControls/);
   assert.match(initSource, /initializeVoiceScoreModuleWhenEnabled\(\);/);
   assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);

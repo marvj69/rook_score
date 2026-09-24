@@ -296,7 +296,14 @@ function loadRuntimeModel() {
         throw new Error("Runtime model JSON failed validation.");
       }
 
-      const previousModelId = getActiveRuntimeModel().modelId;
+      const previous = getActiveRuntimeModel();
+      const previousModelId = previous.modelId;
+      // Identical to the model already in use: keep caches and the first render.
+      if (JSON.stringify(normalizeRuntimeModelArtifact(previous)) === JSON.stringify(normalized)) {
+        RUNTIME_MODEL_STATE.lastLoadChanged = false;
+        return previous;
+      }
+      RUNTIME_MODEL_STATE.lastLoadChanged = true;
       RUNTIME_MODEL_STATE.model = normalized;
       clearWinProbabilityCache();
       clearPersonalizationStateCache();

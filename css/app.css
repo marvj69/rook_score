@@ -118,6 +118,11 @@ body.liquid-glass::after {
   body.liquid-glass::after {
     animation: blobFloatReverse 26s ease-in-out infinite alternate;
   }
+  /* Nothing behind an open sheet needs to keep moving. */
+  body.liquid-glass.modal-open::before,
+  body.liquid-glass.modal-open::after {
+    animation-play-state: paused;
+  }
 }
 
 @keyframes cardPopIn {
@@ -213,7 +218,7 @@ html.dark .history-game-timer__value {
 .version-badge {
   position: fixed;
   top: calc(1rem + var(--safe-area-inset-top-effective));
-  right: 1rem;
+  right: calc(1rem + env(safe-area-inset-right, 0px));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -343,9 +348,7 @@ body.liquid-glass .voice-score-button {
 @media (max-width: 640px) {
   .version-badge {
     top: calc(0.75rem + var(--safe-area-inset-top-effective));
-    right: 0.75rem;
-    width: 26px;
-    height: 22px;
+    right: calc(0.75rem + env(safe-area-inset-right, 0px));
     font-size: 0.58rem;
   }
   .voice-score-control {
@@ -354,8 +357,13 @@ body.liquid-glass .voice-score-button {
   }
   /* Phone dialogs (confirmations, notices, game over) are bottom sheets whose
      buttons sit where the mic does, so move the mic under the version badge. */
-  body:has(.dialog-modal:not(.hidden)) .voice-score-control {
+  body:has(.dialog-modal:not(.hidden)) .voice-score-control,
+  body:has(#scoreKeypadSheet) .voice-score-control {
     top: calc(3.25rem + var(--safe-area-inset-top-effective));
+    bottom: auto;
+  }
+  body:has(#scoreKeypadSheet) .voice-score-status {
+    top: calc(100% + 0.55rem);
     bottom: auto;
   }
   body:has(.dialog-modal:not(.hidden)) .voice-score-status {
@@ -537,7 +545,7 @@ input[type="color"]:focus {
 .hamburger-menu {
   position: absolute;
   top: calc(20px + var(--safe-area-inset-top-effective));
-  left: 20px;
+  left: calc(20px + env(safe-area-inset-left, 0px));
   width: 32px;
   height: 26px;
   cursor: pointer;
@@ -2909,4 +2917,12 @@ html.dark body.liquid-glass .theme-swatch .theme-swatch__input,
 
 @media (prefers-reduced-motion: reduce) {
   .theme-preview__team, .theme-swatch, .theme-preset, .theme-preset__check { transition: none; }
+}
+
+/* Users who asked for less motion get instant entrances (same end state). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-pop, .animate-fadeIn, .probability-modal-content { animation: none; }
+  .animate-fadeOut { animation: none; opacity: 0; }
+  nav { transition: none; }
+  #app.modal-active { transition: none; }
 }

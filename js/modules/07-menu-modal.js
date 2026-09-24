@@ -229,12 +229,15 @@ function toggleMenu(e) {
   const icon = document.getElementById("hamburgerIcon");
   const overlay = document.getElementById("menuOverlay");
   const isOpen = menu.classList.toggle("show");
+  if ("inert" in menu) menu.inert = !isOpen;
   icon.classList.toggle("open", isOpen);
   overlay.classList.toggle("show", isOpen);
   document.body.classList.toggle("overflow-hidden", isOpen);
 }
 function closeMenuOverlay() {
-  document.getElementById("menu")?.classList.remove("show");
+  const menu = document.getElementById("menu");
+  menu?.classList.remove("show");
+  if (menu && "inert" in menu) menu.inert = true;
   document.getElementById("hamburgerIcon")?.classList.remove("open");
   document.getElementById("menuOverlay")?.classList.remove("show");
   document.body.classList.remove("overflow-hidden");
@@ -242,7 +245,10 @@ function closeMenuOverlay() {
 
 function activateModalEnvironment() {
   document.body.classList.add("modal-open");
-  document.getElementById("app")?.classList.add("modal-active");
+  const app = document.getElementById("app");
+  app?.classList.add("modal-active");
+  // Keep the blurred page out of the tab and screen-reader order while a sheet is open.
+  if (app && "inert" in app) app.inert = true;
 }
 
 function deactivateModalEnvironment() {
@@ -250,7 +256,9 @@ function deactivateModalEnvironment() {
     .some(modal => !modal.classList.contains("hidden"));
   if (!anyOpenModal) {
     document.body.classList.remove("modal-open");
-    document.getElementById("app")?.classList.remove("modal-active");
+    const app = document.getElementById("app");
+    app?.classList.remove("modal-active");
+    if (app && "inert" in app) app.inert = false;
   }
 }
 

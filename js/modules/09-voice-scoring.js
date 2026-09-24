@@ -11,6 +11,8 @@ const VOICE_SCORE_REQUEST_TIMEOUT_MS = 16000;
 const VOICE_SCORE_WARM_INTERVAL_MS = 60000;
 const VOICE_SCORE_AUDIO_BITS_PER_SECOND = 32000;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
+// A clarification question is only worth replaying for a few minutes.
+const VOICE_SCORE_CONVERSATION_TTL_MS = 5 * 60 * 1000;
 const VOICE_SCORE_LIBRARY_CONTEXT_LIMIT = 10;
 const VOICE_SCORE_STATISTICS_CONTEXT_LIMIT = 100;
 const VOICE_SCORE_SPEECH_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}voiceSpokenReplies`;
@@ -35,6 +37,7 @@ let voiceScorePermissionNoticeTimer = null;
 let voiceScoreRecordingTimer = null;
 let voiceScoreStreamIdleTimer = null;
 let voiceScoreConversation = [];
+let voiceScoreConversationUpdatedAt = 0;
 let voiceScoreOperationId = 0;
 let voiceScoreRequestController = null;
 let voiceScoreHeldPointerId = null;
@@ -692,11 +695,15 @@ function recordVoiceImprovementSample(plan, outcome, snapshot = null) {
 
 // --- Conversation memory ---
 function getVoiceScoreConversation() {
+  if (voiceScoreConversation.length && Date.now() - voiceScoreConversationUpdatedAt > VOICE_SCORE_CONVERSATION_TTL_MS) {
+    clearVoiceScoreConversation();
+  }
   return voiceScoreConversation.map(message => ({ ...message }));
 }
 
 function clearVoiceScoreConversation() {
   voiceScoreConversation = [];
+  voiceScoreConversationUpdatedAt = 0;
 }
 
 // Keeps clarification questions and answers so a short follow-up ("Carol",
@@ -719,6 +726,7 @@ function updateVoiceScoreConversation(plan, transcript) {
     { role: "user", content: cleanTranscript },
     { role: "assistant", content: reply },
   ].slice(-VOICE_SCORE_CONVERSATION_MAX_MESSAGES);
+  voiceScoreConversationUpdatedAt = Date.now();
   return getVoiceScoreConversation();
 }
 
@@ -1003,7 +1011,7 @@ function applyVoiceScoreStartPaperGame(action) {
   return `Started paper game at ${usScore} to ${demScore}.`;
 }
 
-function applyVoiceScoreSetTeams(action) {
+async function applyVoiceScoreSetTeams(action) {
   const usPlayers = ensurePlayersArray(action.usPlayers || state.usPlayers);
   const demPlayers = ensurePlayersArray(action.demPlayers || state.demPlayers);
   if (usPlayers.some(player => !player) || demPlayers.some(player => !player)) {
@@ -1028,6 +1036,11 @@ function applyVoiceScoreSetTeams(action) {
   addTeamIfNotExists(demPlayers, demTeamName);
   saveCurrentGameState();
   closeTeamSelectionModal();
+  // The prompt may have been opened by Save or Freeze; finish that action like the form submit does.
+  const pending = pendingGameAction;
+  pendingGameAction = null;
+  if (pending === "freeze") confirmFreeze();
+  else if (pending === "save") await handleManualSaveGame();
   return "Teams updated.";
 }
 
@@ -1073,8 +1086,10 @@ async function applyVoiceScoreAuthAction(action) {
     return "Signing out.";
   }
   if (typeof window.signInWithGoogle !== "function") throw new Error("Sign in is not available right now.");
-  await window.signInWithGoogle();
-  return "Opening sign in.";
+  // Without a user gesture the popup can be blocked; report that instead of claiming success.
+  const user = await window.signInWithGoogle();
+  if (!user) throw new Error("Sign in couldn't open. Use the menu to sign in.");
+  return "Signed in.";
 }
 
 function applyVoiceScoreConfirmationAction(action) {
@@ -1141,7 +1156,26 @@ function applyVoiceScoreGameLibraryAction(action) {
   throw new Error("That game-library action is not available.");
 }
 
+// Theme and preset sheets assume they were opened from Settings and re-show it
+// when they close; a voice action must not leave Settings open as a side effect.
+function withoutSettingsSheetSideEffect(run) {
+  const settings = document.getElementById("settingsModal");
+  const wasHidden = !settings || settings.classList.contains("hidden");
+  try {
+    return run();
+  } finally {
+    if (wasHidden && settings && !settings.classList.contains("hidden")) {
+      settings.classList.add("hidden");
+      if (typeof deactivateModalEnvironment === "function") deactivateModalEnvironment();
+    }
+  }
+}
+
 function applyVoiceScoreThemeColors(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreThemeColorsNow(action));
+}
+
+function applyVoiceScoreThemeColorsNow(action) {
   const usColor = sanitizeHexColor(action.usColor || "");
   const demColor = sanitizeHexColor(action.demColor || "");
   if (!usColor && !demColor) throw new Error("Say a valid hex color.");
@@ -1156,6 +1190,10 @@ function applyVoiceScoreThemeColors(action) {
 }
 
 function applyVoiceScoreThemeAction(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreThemeActionNow(action));
+}
+
+function applyVoiceScoreThemeActionNow(action) {
   const themeAction = action.themeAction;
   openThemeModal(null);
   if (themeAction === "randomize") {
@@ -1176,6 +1214,10 @@ function applyVoiceScoreThemeAction(action) {
 }
 
 function applyVoiceScoreBidPresets(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreBidPresetsNow(action));
+}
+
+function applyVoiceScoreBidPresetsNow(action) {
   const presets = Array.isArray(action.presets)
     ? action.presets.map(Number).filter(Number.isFinite)
     : [];

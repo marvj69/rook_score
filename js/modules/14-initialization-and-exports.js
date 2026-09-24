@@ -41,7 +41,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCurrentGameTimer();
   loadSettings(); // Load settings after game state
   scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []));
-  loadRuntimeModel().then(() => {
+  loadRuntimeModel().then((model) => {
+    // The fetched model usually matches the bundled one; only re-render when it differs.
+    if (!RUNTIME_MODEL_STATE.lastLoadChanged) return;
     scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
     scheduleRender();
   });
@@ -203,6 +205,7 @@ function handleTeamSelectionCancel() {
       { title: "Erase this game?", confirmLabel: "Erase game", cancelLabel: "Keep game", tone: "danger" }
     );
   } else {
+    pendingGameAction = null;
     closeTeamSelectionModal();
   }
 }
@@ -268,6 +271,7 @@ function handleTeamSelectionCancel() {
             shouldOpen = deltaX > -threshold;
         }
         menu.style.transition = "";
+        if ("inert" in menu) menu.inert = !shouldOpen;
         if (shouldOpen) {
             menu.classList.add("show");
             icon.classList.add("open");

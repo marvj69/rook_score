@@ -1069,7 +1069,7 @@ function loadFreezerGame(index) {
       const resumedAt = Date.now();
       // Restore all relevant game state aspects
       updateState({
-          rounds: chosen.rounds || [],
+          rounds: (Array.isArray(chosen.rounds) ? chosen.rounds : []).filter(round => round && typeof round === "object" && !Array.isArray(round)),
           startingTotals: sanitizeTotals(chosen.startingTotals),
           gameOver: false, // Frozen games are not over
           winner: null, victoryMethod: null,
