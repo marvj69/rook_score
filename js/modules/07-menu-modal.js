@@ -363,7 +363,12 @@ function showNoticeModal(message, options = {}) {
 function closeNoticeModal() { closeModal("noticeModal"); }
 
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
-function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
+function closeTeamSelectionModal() {
+  closeModal("teamSelectionModal");
+  // Save Game hides the game-over overlay before asking for names; bring it
+  // back if the prompt is dismissed so Save, Rematch, and New Game stay reachable.
+  if (state.gameOver) scheduleRender();
+}
 function openDealerOrderModal() {
   const form = document.getElementById("dealerOrderForm");
   if (form) form.reset();
@@ -392,7 +397,10 @@ function openDealerPairSelectionModal() {
   }
   openModal("dealerPairSelectionModal");
 }
-function closeDealerPairSelectionModal() { closeModal("dealerPairSelectionModal"); }
+function closeDealerPairSelectionModal() {
+  closeModal("dealerPairSelectionModal");
+  if (state.gameOver) scheduleRender();
+}
 function handleDealerPairSelection(pair) {
   closeDealerPairSelectionModal();
   

@@ -3,9 +3,10 @@
   "version": "2.1.0",
   "private": true,
   "scripts": {
-    "build": "npm run build:js && npm run build:css",
+    "build": "npm run build:js && npm run build:css && npm run build:sw",
     "build:js": "node scripts/build-js-bundle.mjs",
     "build:css": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c ./tailwind.config.cjs -i ./css/tailwind.input.css -o ./css/tailwind.css --minify",
+    "build:sw": "node scripts/stamp-service-worker.mjs",
     "test": "node --test tests/app.test.js tests/runtime-performance.test.js tests/training-data.test.mjs tests/timer.test.js",
     "training:normalize:live": "node scripts/export-live-rook-training-data.mjs",
     "training:candidate": "python3 'Logistic Regression Model/run_normalized_candidate.py'",

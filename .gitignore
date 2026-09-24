@@ -8,3 +8,9 @@ node_modules/
 __pycache__/
 *.py[cod]
 Logistic Regression Model/generated/
+
+# Local tooling and scratch directories
+.claude/
+tmp/
+.ruff_cache/
+public/

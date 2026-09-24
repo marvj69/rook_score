@@ -350,13 +350,14 @@ function isHistoryCellEditing(idx, field) {
 }
 function startHistoryEdit(idx, field) {
   updateState({ historyEdit: { idx, field }, error: "" });
-  setTimeout(() => {
+  // The input only exists after the render frame queued by updateState.
+  scheduleFrame(() => {
     const input = document.getElementById(`history-edit-${idx}-${field}`);
     if (input) {
       input.focus();
       input.select();
     }
-  }, 0);
+  });
 }
 function cancelHistoryEdit() {
   if (state.historyEdit) updateState({ historyEdit: null });
@@ -410,8 +411,15 @@ function computeGameOutcomeFromRounds(rounds) {
   return { gameOver, winner, victoryMethod };
 }
 function commitHistoryEdit(idx, field, rawValue) {
+  // A cancelled or already-committed edit re-enters here through the input's
+  // blur when the re-render removes it; there is nothing left to commit.
+  if (!isHistoryCellEditing(idx, field)) return;
   const rounds = Array.isArray(state.rounds) ? state.rounds : [];
   if (!rounds.length || !rounds[idx]) {
+    cancelHistoryEdit();
+    return;
+  }
+  if (String(rawValue ?? "").trim() === "") {
     cancelHistoryEdit();
     return;
   }

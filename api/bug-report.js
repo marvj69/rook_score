@@ -1,17 +1,19 @@
 "use strict";
 
-const { createHash, randomUUID } = require("node:crypto");
+const { randomUUID } = require("node:crypto");
+const {
+  assertBrowserOrigin,
+  createHttpError,
+  createRateLimiter,
+  getHeader,
+  setCorsHeaders,
+} = require("../lib/api-guards.js");
 
 const RESEND_EMAILS_URL = "https://api.resend.com/emails";
 const MAX_BODY_BYTES = 16 * 1024;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_REPORTS = 5;
-const DEFAULT_ALLOWED_ORIGINS = [
-  "https://marvj69.github.io",
-  "https://rook-score.vercel.app",
-  "https://rook-score-marvj69s-projects.vercel.app",
-  "https://rook-score-marvj69-marvj69s-projects.vercel.app",
-];
+const ALLOWED_ORIGIN_ENV_NAMES = ["BUG_REPORT_ALLOWED_ORIGINS"];
 const ALLOWED_CATEGORIES = new Set(["bug", "scoring", "performance", "suggestion", "other"]);
 const CATEGORY_LABELS = {
   bug: "Bug",
@@ -20,56 +22,11 @@ const CATEGORY_LABELS = {
   suggestion: "Suggestion",
   other: "Other",
 };
-const rateLimitBuckets = new Map();
-
-function createHttpError(statusCode, message, code = "INVALID_REQUEST") {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  error.code = code;
-  return error;
-}
-
-function getHeader(request, name) {
-  const headers = request.headers || {};
-  return headers[name.toLowerCase()] ?? headers[name] ?? "";
-}
-
-function getAllowedOrigins() {
-  const configuredOrigins = (process.env.BUG_REPORT_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map(origin => origin.trim())
-    .filter(Boolean);
-  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...configuredOrigins]);
-}
-
-function isAllowedOrigin(origin) {
-  if (getAllowedOrigins().has(origin)) return true;
-  if (process.env.VERCEL_ENV === "production") return false;
-  try {
-    const url = new URL(origin);
-    return url.protocol === "http:"
-      && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
-  } catch {
-    return false;
-  }
-}
-
-function setCorsHeaders(request, response) {
-  const origin = getHeader(request, "origin");
-  response.setHeader("Vary", "Origin");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Accept, Content-Type");
-  if (origin && isAllowedOrigin(origin)) {
-    response.setHeader("Access-Control-Allow-Origin", origin);
-  }
-}
-
-function assertAllowedOrigin(request) {
-  const origin = getHeader(request, "origin");
-  if (origin && !isAllowedOrigin(origin)) {
-    throw createHttpError(403, "This site is not allowed to submit bug reports.", "ORIGIN_NOT_ALLOWED");
-  }
-}
+const rateLimiter = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX_REPORTS,
+  message: "Too many reports were submitted. Please try again later.",
+});
 
 function readRequestBody(request) {
   if (request.body !== undefined && request.body !== null) {
@@ -278,32 +235,6 @@ function formatBugReportEmail(report) {
   ].join("\n");
 }
 
-function getClientRateLimitKey(request) {
-  const forwardedFor = String(getHeader(request, "x-forwarded-for") || "").split(",")[0].trim();
-  const clientAddress = forwardedFor || String(getHeader(request, "x-real-ip") || "unknown");
-  return createHash("sha256").update(clientAddress).digest("hex");
-}
-
-function enforceRateLimit(request, response, now = Date.now()) {
-  const key = getClientRateLimitKey(request);
-  const existing = rateLimitBuckets.get(key);
-  const bucket = !existing || now - existing.startedAt >= RATE_LIMIT_WINDOW_MS
-    ? { startedAt: now, count: 0 }
-    : existing;
-  bucket.count += 1;
-  rateLimitBuckets.set(key, bucket);
-
-  for (const [bucketKey, value] of rateLimitBuckets.entries()) {
-    if (now - value.startedAt >= RATE_LIMIT_WINDOW_MS) rateLimitBuckets.delete(bucketKey);
-  }
-
-  if (bucket.count > RATE_LIMIT_MAX_REPORTS) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MS - (now - bucket.startedAt)) / 1000));
-    response.setHeader("Retry-After", String(retryAfterSeconds));
-    throw createHttpError(429, "Too many reports were submitted. Please try again later.", "RATE_LIMITED");
-  }
-}
-
 async function sendBugReportEmail(report) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -355,12 +286,12 @@ async function sendBugReportEmail(report) {
 }
 
 async function handler(request, response) {
-  setCorsHeaders(request, response);
+  setCorsHeaders(request, response, { methods: "POST, OPTIONS", envNames: ALLOWED_ORIGIN_ENV_NAMES });
   response.setHeader("Cache-Control", "no-store, max-age=0");
   response.setHeader("X-Content-Type-Options", "nosniff");
 
   try {
-    assertAllowedOrigin(request);
+    assertBrowserOrigin(request, ALLOWED_ORIGIN_ENV_NAMES, "This site is not allowed to submit bug reports.");
 
     if (request.method === "OPTIONS") {
       return response.status(204).end();
@@ -377,7 +308,7 @@ async function handler(request, response) {
     }
 
     const report = validateBugReportPayload({ ...payload, reportId });
-    enforceRateLimit(request, response);
+    rateLimiter.enforce(request, response);
     await sendBugReportEmail(report);
     return response.status(200).json({ ok: true, reportId: report.reportId });
   } catch (error) {
@@ -398,4 +329,4 @@ async function handler(request, response) {
 
 module.exports = handler;
 module.exports.validateBugReportPayload = validateBugReportPayload;
-module.exports.resetRateLimitsForTests = () => rateLimitBuckets.clear();
+module.exports.resetRateLimitsForTests = () => rateLimiter.reset();

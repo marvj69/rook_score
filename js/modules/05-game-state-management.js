@@ -282,7 +282,7 @@ function updateState(newState) {
   scheduleRender();
 }
 function resetGame() {
-  const isProMode = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
+  const isProMode = Boolean(getLocalStorage(PRO_MODE_KEY, false));
   resetRenderAnimationState();
   updateState({
     ...DEFAULT_STATE,
@@ -327,7 +327,7 @@ loadedState = JSON.parse(storedStateString);
     completeLoadedState.isSubmittingRound = false;
     Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
-    completeLoadedState.showWinProbability = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"); // Add try-catch for this too
+    completeLoadedState.showWinProbability = Boolean(getLocalStorage(PRO_MODE_KEY, false));
     completeLoadedState.startingTotals = sanitizeTotals(completeLoadedState.startingTotals);
     updateState(completeLoadedState);
   } else {
@@ -339,7 +339,7 @@ loadedState = JSON.parse(storedStateString);
 ...DEFAULT_STATE,
 usTeamName: "", // Or load from a separate team name storage if you have one
 demTeamName: "",
-showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"), // Add try-catch here as well
+showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
 startTime: null,
 timerLastSavedAt: null
     });
@@ -368,7 +368,7 @@ function saveCurrentGameState({
     state.timerPaused = snapshot.timerPaused;
     state.timerVersion = snapshot.timerVersion;
     currentGameTimerLastCheckpointAt = snapshot.timerLastSavedAt;
-    setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
-    if (showIndicator) showSaveIndicator();
+    const stored = setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
+    if (showIndicator) showSaveIndicator(stored ? "Saved" : "Not saved: storage full");
   }
 }

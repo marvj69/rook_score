@@ -40,17 +40,10 @@ jobs:
         run: npm test
 
       - name: Verify generated assets are committed
-        run: git diff --exit-code -- js/app.bundle.js js/voice-score.bundle.js css/tailwind.css
+        run: git diff --exit-code -- js/app.bundle.js js/voice-score.bundle.js css/tailwind.css service-worker.js
 
       - name: Prepare Pages artifact
-        run: |
-          mkdir -p _pages/css _pages/icons _pages/js _pages/vendor
-          cp index.html manifest.json service-worker.js _pages/
-          cp css/app.css css/tailwind.css _pages/css/
-          cp icons/icon-192x192.png icons/icon-512x512.png _pages/icons/
-          cp js/analytics.js js/app.bundle.js js/voice-score.bundle.js js/firebase-init.js js/model_runtime_v2.json _pages/js/
-          cp vendor/canvas-confetti.min.js _pages/vendor/
-          touch _pages/.nojekyll
+        run: node scripts/stage-static-site.mjs _pages
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

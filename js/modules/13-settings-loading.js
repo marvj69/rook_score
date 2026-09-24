@@ -134,12 +134,27 @@ function migrateActiveGameStateTeams() {
   setLocalStorage(ACTIVE_GAME_KEY, updatedState);
 }
 
-function performTeamPlayerMigration() {
+// Data written by this version is already normalized, so the launch-time pass
+// (which walks and copies the whole library) runs once per device per storage
+// version. Cloud merges and backup imports force it because they can bring in
+// data from older versions.
+const TEAM_DATA_MIGRATION_MARKER_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}teamDataMigrationVersion`;
+
+function performTeamPlayerMigration({ force = false } = {}) {
+  const marker = String(TEAM_STORAGE_VERSION);
+  if (!force) {
+    try {
+      if (localStorage.getItem(TEAM_DATA_MIGRATION_MARKER_KEY) === marker) return;
+    } catch {
+      // Storage unavailable: fall through and migrate in memory as before.
+    }
+  }
   try {
     migrateTeamsCollection();
     migrateSavedGamesTeamData();
     migrateFreezerGamesTeamData();
     migrateActiveGameStateTeams();
+    try { localStorage.setItem(TEAM_DATA_MIGRATION_MARKER_KEY, marker); } catch {}
   } catch (err) {
     console.error('Team/player migration encountered an issue:', err);
   }

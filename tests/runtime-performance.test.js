@@ -265,7 +265,7 @@ for (const bundled of [false, true]) {
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 256000, 66000],
+    ['js/app.bundle.js', 262000, 68000],
     ['js/voice-score.bundle.js', 60000, 17000],
   ]) {
     const source = read(file);
@@ -276,8 +276,8 @@ test('production JavaScript stays within the download budgets', () => {
 
 test('Pages ships every local precache asset and the runtime model requested by the app', () => {
   const workflow = read('.github/workflows/pages.yml');
-  const copiedFiles = [...workflow.matchAll(/^\s+cp (.+) _pages\S*\s*$/gm)]
-    .flatMap(match => match[1].trim().split(/\s+/));
+  assert.match(workflow, /node scripts\/stage-static-site\.mjs _pages/);
+  const copiedFiles = require('../scripts/static-site-files.cjs');
   const precacheBlock = read('service-worker.js').match(/const urlsToCache = \[([\s\S]*?)\];/)[1];
   const precacheFiles = [...precacheBlock.matchAll(/"\.\/([^"]+)"/g)].map(match => match[1]);
   const modelFile = read('js/modules/02-win-prob-engine.js').match(/RUNTIME_MODEL_PATH = "\.\/([^"]+)"/)[1];

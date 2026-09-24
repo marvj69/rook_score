@@ -173,7 +173,11 @@ function sanitizeHexColor(colorString) {
   const withoutQuotes = trimmed.replace(/^['"]+|['"]+$/g, '');
   if (!withoutQuotes) return '';
   const candidate = withoutQuotes.startsWith('#') ? withoutQuotes : `#${withoutQuotes}`;
-  return isValidHexColor(candidate) ? candidate : '';
+  if (!isValidHexColor(candidate)) return '';
+  // Color inputs only accept the six-digit form; "#f00" would otherwise be read as black.
+  return candidate.length === 4
+    ? `#${candidate[1]}${candidate[1]}${candidate[2]}${candidate[2]}${candidate[3]}${candidate[3]}`.toLowerCase()
+    : candidate.toLowerCase();
 }
 
 function initializeCustomThemeColors() {
@@ -194,7 +198,7 @@ function initializeCustomThemeColors() {
     if (body) body.style.setProperty('--primary-color', usColor);
     if (usPicker) usPicker.value = usColor;
   } else {
-    if (storedUsColor !== null) { // Warn only when a value existed
+    if (localStorage.getItem('customUsColor') !== null) { // Warn only when a value existed
       console.warn(`Invalid customUsColor ("${storedUsColor}") in localStorage. Using default.`);
       removeLocalStorageKey('customUsColor');
     }
@@ -208,7 +212,7 @@ function initializeCustomThemeColors() {
     if (body) body.style.setProperty('--accent-color', demColor);
     if (demPicker) demPicker.value = demColor;
   } else {
-    if (storedDemColor !== null) {
+    if (localStorage.getItem('customDemColor') !== null) {
       console.warn(`Invalid customDemColor ("${storedDemColor}") in localStorage. Using default.`);
       removeLocalStorageKey('customDemColor');
     }

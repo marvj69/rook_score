@@ -1,0 +1,22 @@
+# The deployed site is staged into public/ by scripts/stage-static-site.mjs
+# (see vercel.json), so nothing else in the repository is ever served. These
+# patterns just keep tooling, tests, and training data out of the upload.
+.github/
+.claude/
+.ruff_cache/
+Logistic Regression Model/
+tests/
+tmp/
+__pycache__/
+*.log
+*.py
+*.pyc
+.DS_Store
+firestore.rules
+firebase.json
+tailwind.config.cjs
+ReadMe.md
+LICENSE.md
+css/tailwind.input.css
+js/app.js
+js/model_runtime_v1.json

@@ -1,43 +1,32 @@
-const DEFAULT_ALLOWED_ORIGINS = [
-  "https://marvj69.github.io",
-  "https://rook-score.vercel.app",
-  "https://rook-score-marvj69s-projects.vercel.app",
-  "https://rook-score-marvj69-marvj69s-projects.vercel.app",
+const { assertBrowserOrigin, createRateLimiter, setCorsHeaders } = require("../lib/api-guards.js");
+
+const ALLOWED_ORIGIN_ENV_NAMES = [
+  "PAPER_GAME_PHOTO_ALLOWED_ORIGINS",
+  "VOICE_SCORE_ALLOWED_ORIGINS",
+  "FIREBASE_CONFIG_ALLOWED_ORIGINS",
 ];
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 20;
+const rateLimiter = createRateLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX_REQUESTS,
+  message: "Too many photo scans. Please wait a few minutes and try again.",
+});
 
 const DEFAULT_OPENROUTER_MODEL = "google/gemini-3.1-flash-lite";
 const DEFAULT_OPENROUTER_FALLBACK_MODELS = ["google/gemini-2.5-flash"];
 const DEFAULT_OPENROUTER_REASONING_EFFORT = "low";
 const DEFAULT_OPENROUTER_MAX_ATTEMPTS = 2;
+// A vision call is abandoned after this long, and the whole scan (including one
+// retry) must finish inside the budget so the function never runs to its
+// platform limit while the user waits.
+const OPENROUTER_ATTEMPT_TIMEOUT_MS = 12000;
+const PHOTO_SCAN_TIME_BUDGET_MS = 17000;
+const MIN_RETRY_TIME_MS = 4000;
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const PAPER_GAME_PHOTO_REVISION = "bottom-score-row-v1";
-
-function getAllowedOrigins() {
-  const configuredOrigins = (
-    process.env.PAPER_GAME_PHOTO_ALLOWED_ORIGINS
-    || process.env.VOICE_SCORE_ALLOWED_ORIGINS
-    || process.env.FIREBASE_CONFIG_ALLOWED_ORIGINS
-    || ""
-  )
-    .split(",")
-    .map(origin => origin.trim())
-    .filter(Boolean);
-
-  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...configuredOrigins]);
-}
-
-function setCorsHeaders(request, response) {
-  const origin = request.headers?.origin;
-  response.setHeader("Vary", "Origin");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Accept, Content-Type");
-
-  if (origin && getAllowedOrigins().has(origin)) {
-    response.setHeader("Access-Control-Allow-Origin", origin);
-  }
-}
 
 function readRequestBody(request, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
@@ -311,10 +300,13 @@ function shouldRetryOpenRouterError(error, attempt, maxAttempts) {
     || /provider returned error/i.test(String(error?.message || ""));
 }
 
-async function fetchOpenRouterScan(photo, apiKey) {
+async function fetchOpenRouterScan(photo, apiKey, timeoutMs = OPENROUTER_ATTEMPT_TIMEOUT_MS) {
   const primaryModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
   const fallbackModels = getOpenRouterFallbackModels(primaryModel);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let openRouterResponse;
+  let responseText;
 
   try {
     openRouterResponse = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
@@ -335,14 +327,23 @@ async function fetchOpenRouterScan(photo, apiKey) {
         response_format: { type: "json_object" },
         provider: { require_parameters: true },
       }),
+      signal: controller.signal,
     });
+    responseText = await openRouterResponse.text();
   } catch (error) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error(`OpenRouter did not answer within ${timeoutMs} ms.`);
+      timeoutError.statusCode = 504;
+      timeoutError.isOpenRouterFailure = true;
+      throw timeoutError;
+    }
     error.statusCode = Number(error.statusCode) || 503;
     error.isOpenRouterFailure = true;
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 
-  const responseText = await openRouterResponse.text();
   let responseJson = {};
   try {
     responseJson = responseText ? JSON.parse(responseText) : {};
@@ -353,7 +354,11 @@ async function fetchOpenRouterScan(photo, apiKey) {
       responseJson?.error?.message
       || `OpenRouter failed with HTTP ${openRouterResponse.status}.`,
     );
-    error.statusCode = openRouterResponse.status || Number(responseJson?.error?.code) || 502;
+    // An in-band provider error arrives with HTTP 200, so it must not inherit
+    // that status or the retry/fallback logic would never engage.
+    error.statusCode = openRouterResponse.ok
+      ? (Number(responseJson?.error?.code) || 502)
+      : (openRouterResponse.status || 502);
     error.isOpenRouterFailure = true;
     throw error;
   }
@@ -386,48 +391,62 @@ async function requestOpenRouterScan(photo) {
   }
 
   const maxAttempts = getOpenRouterMaxAttempts();
+  const deadline = Date.now() + PHOTO_SCAN_TIME_BUDGET_MS;
   let lastError = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const remainingMs = deadline - Date.now();
     try {
-      return await fetchOpenRouterScan(photo, apiKey);
+      return await fetchOpenRouterScan(photo, apiKey, Math.max(1, Math.min(OPENROUTER_ATTEMPT_TIMEOUT_MS, remainingMs)));
     } catch (error) {
       lastError = error;
-      if (!shouldRetryOpenRouterError(error, attempt, maxAttempts)) break;
+      if (!shouldRetryOpenRouterError(error, attempt, maxAttempts)
+          || deadline - Date.now() < MIN_RETRY_TIME_MS) {
+        break;
+      }
     }
   }
   throw lastError;
 }
 
 module.exports = async function handler(request, response) {
-  setCorsHeaders(request, response);
+  setCorsHeaders(request, response, { methods: "POST, OPTIONS", envNames: ALLOWED_ORIGIN_ENV_NAMES });
   response.setHeader("Cache-Control", "no-store, max-age=0");
   response.setHeader("X-Paper-Game-Photo-Revision", PAPER_GAME_PHOTO_REVISION);
 
-  if (request.method === "OPTIONS") {
-    return response.status(204).end();
-  }
-
-  if (request.method !== "POST") {
-    response.setHeader("Allow", "POST, OPTIONS");
-    return response.status(405).json({ error: "Method not allowed" });
-  }
-
   try {
+    assertBrowserOrigin(request, ALLOWED_ORIGIN_ENV_NAMES, "This site is not allowed to scan score sheets.");
+
+    if (request.method === "OPTIONS") {
+      return response.status(204).end();
+    }
+
+    if (request.method !== "POST") {
+      response.setHeader("Allow", "POST, OPTIONS");
+      return response.status(405).json({ error: "Method not allowed" });
+    }
+
+    rateLimiter.enforce(request, response);
     const bodyBuffer = await readRequestBody(request);
     const photo = parseRequestPhoto(bodyBuffer, request.headers?.["content-type"]);
     const result = await requestOpenRouterScan(photo);
     return response.status(200).json(result);
   } catch (error) {
-    const statusCode = error.isOpenRouterFailure ? 502 : Number(error.statusCode) || 500;
+    const statusCode = error.isOpenRouterFailure
+      ? (error.statusCode === 504 ? 504 : 502)
+      : Number(error.statusCode) || 500;
     console.error("paper-game-photo failed", {
       code: error.code || "PAPER_GAME_PHOTO_FAILED",
       statusCode,
       providerFailure: Boolean(error.isOpenRouterFailure),
       message: String(error.message || "Unknown paper game photo failure.").slice(0, 240),
     });
-    const safeMessage = statusCode >= 500
-      ? "Score-sheet reading is temporarily unavailable. Enter the scores manually or try again."
-      : error.message;
+    const safeMessage = statusCode === 504
+      ? "Reading the score sheet took too long. Try a smaller, clearer photo or enter the scores manually."
+      : statusCode >= 500
+        ? "Score-sheet reading is temporarily unavailable. Enter the scores manually or try again."
+        : error.message;
     return response.status(statusCode).json({ error: safeMessage });
   }
 };
+
+module.exports.resetRateLimitsForTests = () => rateLimiter.reset();

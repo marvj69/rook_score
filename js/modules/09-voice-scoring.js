@@ -418,6 +418,8 @@ function buildVoiceImprovementIdentityMap(context = getVoiceScoreAppContext(), a
   [
     ...(context.teams?.us?.players || []),
     ...(context.teams?.dem?.players || []),
+    ...(Array.isArray(context.dealers) ? context.dealers : []),
+    context.currentDealer,
   ].forEach(addPlayer);
   (context.statistics?.players || []).forEach(player => addPlayer(typeof player === "string" ? player : player?.name));
 
@@ -478,7 +480,12 @@ function redactVoiceImprovementText(text, identityMap) {
     .replace(/\b(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g, "[phone]");
 
   identityMap.replacements.forEach(({ value, replacement }) => {
-    redacted = redacted.replace(new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), replacement);
+    // Whole words only, so "Al" never rewrites "Alice" or "total".
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    redacted = redacted.replace(
+      new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"),
+      (_match, lead) => `${lead}${replacement}`,
+    );
   });
   return redacted.trim().slice(0, 1000);
 }
@@ -915,12 +922,21 @@ function applyVoiceScoreSelectBid(action) {
   return `${getVoiceScoreTeamLabel(biddingTeam)} bid ${bidAmount}.`;
 }
 
+// The Settings sheet writes its controls back to storage when it closes, so a
+// value changed by voice must be reflected in those controls right away.
+function syncVoiceScoreSettingsSheet() {
+  const mustWinToggle = document.getElementById("mustWinByBidToggle");
+  if (mustWinToggle) mustWinToggle.checked = Boolean(getLocalStorage(MUST_WIN_BY_BID_KEY, false));
+  if (typeof loadSettings === "function") loadSettings();
+}
+
 function applyVoiceScoreSetting(action) {
   const key = action.key;
   const value = action.value;
   if (key === "mustWinByBid" || key === "misdealHandling") {
     const isEnabled = toVoiceScoreBoolean(value);
     setLocalStorage(key === "mustWinByBid" ? MUST_WIN_BY_BID_KEY : MISDEAL_HANDLING_KEY, isEnabled);
+    syncVoiceScoreSettingsSheet();
     showSaveIndicator("Settings Saved");
     const label = key === "mustWinByBid" ? "Must win by bid" : "Misdeal handling";
     return `${label} is ${isEnabled ? "on" : "off"}.`;
@@ -946,6 +962,7 @@ function applyVoiceScoreSetting(action) {
   if (key === "tableTalkPenaltyType") {
     const penaltyType = value === "loseBid" ? "loseBid" : "setPoints";
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltyType);
+    syncVoiceScoreSettingsSheet();
     return penaltyType === "loseBid" ? "Table talk penalty uses lost bid." : "Table talk penalty uses set points.";
   }
   if (key === "tableTalkPenaltyPoints") {
@@ -953,6 +970,7 @@ function applyVoiceScoreSetting(action) {
     if (!Number.isFinite(points)) points = 180;
     points = Math.max(5, Math.min(500, Math.round(points / 5) * 5));
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, String(points));
+    syncVoiceScoreSettingsSheet();
     return `Table talk penalty is ${points} points.`;
   }
   throw new Error("That setting is not available.");
@@ -1103,7 +1121,8 @@ function applyVoiceScoreGameLibraryAction(action) {
   }
 
   const index = Number(action.index);
-  if (!Number.isInteger(index) || index < 0) throw new Error("Say which game number to use.");
+  const listSize = getLocalStorage(gameType === "freezer" ? "freezerGames" : "savedGames", []).length;
+  if (!Number.isInteger(index) || index < 0 || index >= listSize) throw new Error("Say which game number to use.");
   if (gameAction === "view") {
     if (gameType !== "completed") throw new Error("Only completed games can be viewed.");
     viewSavedGame(index);
@@ -1236,9 +1255,9 @@ function applyVoiceScoreStatsControls(action) {
   return entitySelection ? `Showing statistics for ${entitySelection.name}.` : "Statistics updated.";
 }
 
-function applyVoiceScoreRematch(action) {
+async function applyVoiceScoreRematch(action) {
   if (action.firstDealer) {
-    if (!startRematchWithFirstDealer(action.firstDealer)) {
+    if (!(await startRematchWithFirstDealer(action.firstDealer))) {
       throw new Error("Choose one of the current players to deal first.");
     }
     return "Started rematch.";
@@ -1360,9 +1379,20 @@ function getVoiceScoreActionHandlerTypes() {
   return Object.keys(VOICE_SCORE_ACTION_HANDLERS);
 }
 
+function isVoiceScoreConfirmationOpen() {
+  const modal = document.getElementById("confirmationModal");
+  return Boolean(modal) && !modal.classList.contains("hidden");
+}
+
 async function executeVoiceScorePlanActions(plan, options = {}) {
   const messages = [];
+  // A plan may answer a confirmation the user can already see, but never one
+  // that an earlier action in the same plan opened (delete + "confirm").
+  const confirmationOpenBeforePlan = isVoiceScoreConfirmationOpen();
   for (const action of plan.actions) {
+    if (action.type === "confirmationAction" && !confirmationOpenBeforePlan) {
+      throw new Error("Please answer the confirmation on screen.");
+    }
     const message = await executeVoiceScoreAction(action, options);
     if (message) messages.push(message);
   }

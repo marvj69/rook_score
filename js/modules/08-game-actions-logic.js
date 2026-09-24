@@ -56,6 +56,10 @@ function applyTableTalkPenalty(flaggedTeam) {
     : (state.demTeamName || "Dem");
 
   closeTableTalkModal();
+  if (!state.biddingTeam || !state.bidAmount) {
+    showNoticeModal("Select the bidding team and bid amount before applying a table-talk penalty.", { title: "Bid needed", icon: "flag" });
+    return;
+  }
 
   // Get penalty type and create appropriate confirmation message
   const penaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
@@ -162,7 +166,7 @@ victoryMethod  = "Set Other Team";
     undoneRounds: [],
     gameOver: gameFinished,
     winner: theWinner,
-    victoryMethod,
+    victoryMethod: gameFinished ? victoryMethod : null,
     biddingTeam: "",
     bidAmount: "",
     showCustomBid: false,
@@ -182,13 +186,14 @@ function handleTeamClick(team) {
   closeScoreKeypad(true);
   let timerJustStarted = false;
   if (state.biddingTeam === team) { // Click active team to deselect
-    state.savedScoreInputStates[team] = { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error };
+    // Copy before writing: DEFAULT_STATE shares one savedScoreInputStates object with every fresh game.
+    state.savedScoreInputStates = { ...(state.savedScoreInputStates || {}), [team]: { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error } };
     updateState({ biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: ""});
   } else { // Select a new team
     timerJustStarted = ensureCurrentGameTimerStarted();
-    state.savedScoreInputStates[team === "us" ? "dem" : "us"] = null; // Clear other team's saved input
+    state.savedScoreInputStates = { ...(state.savedScoreInputStates || {}), [team === "us" ? "dem" : "us"]: null }; // Clear other team's saved input
     let newTeamState = { biddingTeam: team, bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "" };
-    if (state.savedScoreInputStates[team]) { // Restore if previously selected
+    if (state.savedScoreInputStates?.[team]) { // Restore if previously selected
       newTeamState = { ...newTeamState, ...state.savedScoreInputStates[team] };
     }
     updateState(newTeamState);
@@ -200,7 +205,9 @@ function handleBidSelect(bid) {
   recordCurrentGameTimerActivity();
   closeScoreKeypad(true);
   if (bid === "other") {
-    updateState({ showCustomBid: true, bidAmount: "", customBidValue: ephemeralCustomBid }); // Keep current custom bid if switching back
+    // Keep the custom bid typed earlier, and keep it selected when it is still a legal bid.
+    const restoredCustomBid = validateBid(ephemeralCustomBid) === "" && !BLOCKED_BIDS.has(Number(ephemeralCustomBid)) ? ephemeralCustomBid : "";
+    updateState({ showCustomBid: true, bidAmount: restoredCustomBid, customBidValue: ephemeralCustomBid });
   } else {
     updateState({ showCustomBid: false, bidAmount: String(bid), customBidValue: "" });
   }
@@ -442,7 +449,7 @@ victoryMethod  = "Set Other Team";
   }
 
   updateState({
-      rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod,
+      rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod: gameFinished ? victoryMethod : null,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
       accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null,
       isSubmittingRound: false,
@@ -455,7 +462,7 @@ victoryMethod  = "Set Other Team";
       accumulatedTime: finalAccumulated,
       gameOver: gameFinished,
       winner: theWinner,
-      victoryMethod,
+      victoryMethod: gameFinished ? victoryMethod : null,
   };
   if (isFirstRound) {
       emitRookEvent("game_started", getRookGameEventParams(analyticsState, { source }));
@@ -549,11 +556,15 @@ function handleUndo() {
   recordCurrentGameTimerActivity();
   const wasGameOver = state.gameOver;
   const priorWinner = state.winner;
+  // Same resolution as updateTeamsStatsOnGameEnd (including the dealer-pair
+  // fallback), so the win/loss recorded at game end is exactly what is reverted.
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
   const teamSnapshot = {
-    usPlayers: state.usPlayers,
-    demPlayers: state.demPlayers,
-    usDisplay: state.usTeamName,
-    demDisplay: state.demTeamName,
+    usPlayers: usTeam.players,
+    demPlayers: demTeam.players,
+    usDisplay: usTeam.display,
+    demDisplay: demTeam.display,
   };
   const lastRound = state.rounds[state.rounds.length - 1];
   const newRounds = state.rounds.slice(0, -1);
@@ -892,7 +903,16 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
   };
   const savedGames = getLocalStorage("savedGames", []);
   savedGames.push(gameObj);
-  setLocalStorage("savedGames", savedGames);
+  if (!setLocalStorage("savedGames", savedGames)) {
+    // Storage is full: keep the finished game on the scoreboard rather than
+    // resetting it into nothing.
+    savedGames.pop();
+    showNoticeModal(
+      "This device's storage is full, so the game could not be saved. Free up space (for example, delete old games from the library) and try again.",
+      { title: "Game not saved", tone: "danger", icon: "warning" },
+    );
+    return null;
+  }
   scheduleProbabilityPersonalizationRefresh(savedGames, { force: true });
   emitRookEvent(
       "game_saved",
@@ -1007,7 +1027,14 @@ async function freezeCurrentGame() {
   };
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
-  setLocalStorage("freezerGames", freezerGames);
+  if (!setLocalStorage("freezerGames", freezerGames)) {
+    freezerGames.shift();
+    showNoticeModal(
+      "This device's storage is full, so the game could not be frozen. Free up space (for example, delete old games from the library) and try again.",
+      { title: "Game not frozen", tone: "danger", icon: "warning" },
+    );
+    return;
+  }
   emitRookEvent(
       "game_frozen",
       getRookGameEventParams(frozenGame, {
@@ -1099,10 +1126,18 @@ function viewSavedGame(originalIndex) { // originalIndex is from the full savedG
   openViewSavedGameModal();
 }
 function deleteGame(storageKey, index, descriptor, onDeleted) {
-  const items = getLocalStorage(storageKey);
+  const chosen = getLocalStorage(storageKey)[index];
+  if (!chosen) return;
+  const matchesChosen = game => game === chosen
+    || (game && ((game.id && game.id === chosen.id) || (!game.id && game.timestamp && game.timestamp === chosen.timestamp)));
   openConfirmationModal("This can't be undone.", () => {
-    items.splice(index, 1);
-    setLocalStorage(storageKey, items);
+    // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
+    const items = getLocalStorage(storageKey);
+    const currentIndex = items.findIndex(matchesChosen);
+    if (currentIndex >= 0) {
+      items.splice(currentIndex, 1);
+      setLocalStorage(storageKey, items);
+    }
     if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game
     closeConfirmationModal();
     if (typeof onDeleted === "function") onDeleted();
