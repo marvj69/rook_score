@@ -199,6 +199,9 @@ const {
   updateState,
   setLocalStorage,
   getLocalStorage,
+  sanitizeHexColor,
+  loadCurrentGameState,
+  getStateForTests,
   ROOK_APP_STORAGE_KEYS,
   isRookAppStorageKey,
   isCloudSyncStorageKey,
@@ -594,6 +597,61 @@ test('game data import validates the backup format and restores app storage exac
   // Keys Rook Score does not own (another app on a shared origin) are left alone.
   assert.equal(localStorage.getItem('obsoleteSetting'), 'true');
   assert.equal(localStorage.getItem('firebase:authUser:test'), 'keep-auth-token');
+});
+
+test('game collections are always read as arrays of game objects', () => {
+  resetState();
+  localStorage.setItem('savedGames', '{"not":"an array"}');
+  assert.deepEqual(getLocalStorage('savedGames', []), []);
+  localStorage.setItem('savedGames', '[{"id":"g1"}, null, "junk", 5, [1]]');
+  assert.deepEqual(getLocalStorage('savedGames', []), [{ id: 'g1' }]);
+  localStorage.setItem('freezerGames', 'null');
+  assert.deepEqual(getLocalStorage('freezerGames', []), []);
+});
+
+test('setLocalStorage reports storage failures instead of pretending the write succeeded', () => {
+  resetState();
+  assert.equal(setLocalStorage('rookMustWinByBid', true, { sync: false }), true);
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+  try {
+    assert.equal(setLocalStorage('savedGames', [{ id: 'g1' }], { sync: false }), false);
+  } finally {
+    localStorage.setItem = originalSetItem;
+  }
+  assert.equal(localStorage.getItem('savedGames'), null);
+  const actionsSource = readFileSync(path.join(repoRoot, 'js/modules/08-game-actions-logic.js'), 'utf8');
+  assert.match(actionsSource, /if \(!setLocalStorage\("savedGames", savedGames\)\) \{\s*[^}]*savedGames\.pop\(\);/);
+  assert.match(actionsSource, /if \(!setLocalStorage\("freezerGames", freezerGames\)\) \{\s*[^}]*freezerGames\.shift\(\);/);
+  assert.match(actionsSource, /shouldSavePriorGame && !\(await saveCompletedGameSnapshot\(\{ resetAfterSave: false \}\)\)\) \{[\s\S]*?return null;/);
+});
+
+test('a finished game stays in storage until it is saved, rematched, or reset', () => {
+  const stateSource = readFileSync(path.join(repoRoot, 'js/modules/05-game-state-management.js'), 'utf8');
+  assert.doesNotMatch(stateSource, /if \(state\.gameOver\) \{\s*localStorage\.removeItem\(ACTIVE_GAME_KEY\)/);
+  assert.match(stateSource, /if \(completeLoadedState\.gameOver\) confettiTriggered = true;/);
+  resetState();
+  localStorage.setItem('activeGameState', JSON.stringify({
+    rounds: [{ bidAmount: 130, biddingTeam: 'us', usPoints: 140, demPoints: 40, runningTotals: { us: 520, dem: 40 } }, null, 'junk'],
+    undoneRounds: [null],
+    gameOver: true,
+    winner: 'us',
+  }));
+  loadCurrentGameState();
+  const restored = getStateForTests();
+  assert.equal(restored.gameOver, true);
+  assert.equal(restored.rounds.length, 1, 'non-object rounds are dropped on load');
+  assert.deepEqual(restored.undoneRounds, []);
+  assert.notEqual(localStorage.getItem('activeGameState'), null, 'a finished game is not removed on load');
+});
+
+test('stored theme strings are validated before they become body classes', () => {
+  const themeSource = readFileSync(path.join(repoRoot, 'js/modules/04-theme-ui-helpers.js'), 'utf8');
+  assert.match(themeSource, /BASE_BODY_CLASSES\.includes\(token\) \|\| \/\^theme-\[a-z0-9-\]\+\$\/i\.test\(token\)/);
+  assert.match(themeSource, /const liveClasses = \["modal-open", "overflow-hidden"\]/);
+  assert.equal(sanitizeHexColor('#f00'), '#ff0000');
+  assert.equal(sanitizeHexColor('ABCDEF'), '#abcdef');
+  assert.equal(sanitizeHexColor('#12345'), '');
 });
 
 test('game data export, import, and cloud sync only ever touch Rook Score storage keys', () => {
@@ -4728,7 +4786,9 @@ test('firebase cloud sync does not block the initial app shell render', () => {
   assert.match(source, /window\.addEventListener\("load", startAfterAppLoad, \{ once: true \}\)/);
   assert.match(source, /setTimeout\(startFirebaseInitialization, 0\)/);
   assert.match(source, /FIREBASE_CONFIG_TIMEOUT_MS = 6000/);
-  assert.match(source, /Promise\.all\(\[loadFirebaseConfig\(\), loadFirebaseLibraries\(\)\]\)/);
+  assert.match(source, /const warmup = warmFirebaseModuleCache\(\);\s*const firebaseConfig = await loadFirebaseConfig\(\);\s*await warmup;\s*await loadFirebaseLibraries\(\);/);
+  assert.match(source, /firebaseLibraryPromise = null;\s*throw error;/);
+  assert.match(source, /addEventListener\("online"/);
   assert.doesNotMatch(source, /cache: "no-store"/);
   assert.match(source, /Promise\.race\(\[fetchPromise, timeoutPromise\]\)/);
   assert.match(source, /const firebaseMergePromises = new Map\(\)/);

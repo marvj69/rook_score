@@ -607,7 +607,7 @@ function handleRedo() {
   const newUndoneRounds = state.undoneRounds.slice(0, -1);
 
   // Re-check game over condition based on the new last round
-  const lastTotals = newRounds[newRounds.length - 1].runningTotals;
+  const lastTotals = sanitizeTotals(newRounds[newRounds.length - 1].runningTotals);
   let gameOver = false, winner = null, victoryMethod = null;
   const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
 
@@ -754,8 +754,12 @@ async function startRematchWithFirstDealer(firstDealer) {
     return false;
   }
 
-  if (shouldSavePriorGame) {
-    await saveCompletedGameSnapshot({ resetAfterSave: false });
+  if (shouldSavePriorGame && !(await saveCompletedGameSnapshot({ resetAfterSave: false }))) {
+    // Storage full (notice already shown): keep the finished game and its
+    // Save/Rematch buttons on screen so the user can retry.
+    closeRematchDealerModal?.();
+    scheduleRender();
+    return null;
   }
 
   resetRenderAnimationState();
@@ -1047,9 +1051,10 @@ async function freezeCurrentGame() {
   pendingGameAction = null;
 }
 function loadFreezerGame(index) {
-  const freezerGames = getLocalStorage("freezerGames");
-  const chosen = freezerGames[index];
+  const chosen = getLocalStorage("freezerGames")[index];
   if (!chosen) return;
+  const matchesChosen = game => game === chosen
+    || (game && ((game.id && game.id === chosen.id) || (!game.id && game.timestamp && game.timestamp === chosen.timestamp)));
   const chosenTotals = sanitizeTotals(chosen.finalScore);
   const chosenLabel = chosen.name
     || `${getGameTeamDisplay(chosen, "us")} vs ${getGameTeamDisplay(chosen, "dem")} (${chosenTotals.us}–${chosenTotals.dem})`;
@@ -1087,14 +1092,19 @@ function loadFreezerGame(index) {
           timerLastActivityAt: resumedAt,
           timerPaused: false,
           timerSkippedMs: clampDurationMs(chosen.timerSkippedMs),
-          showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY)) || false,
+          showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
           undoneRounds: [], // Clear any undone rounds from previous state
           dealers: chosen.dealers || [],
           misdealCount: chosen.misdealCount || 0,
           misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
       });
-      freezerGames.splice(index, 1); // Remove from freezer
-      setLocalStorage("freezerGames", freezerGames);
+      // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
+      const freezerGames = getLocalStorage("freezerGames");
+      const currentIndex = freezerGames.findIndex(matchesChosen);
+      if (currentIndex >= 0) {
+        freezerGames.splice(currentIndex, 1); // Remove from freezer
+        setLocalStorage("freezerGames", freezerGames);
+      }
       closeSavedGamesModal();
       saveCurrentGameState(); // Save the now active game
       emitRookEvent(

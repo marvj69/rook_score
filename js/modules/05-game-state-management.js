@@ -320,8 +320,11 @@ loadedState = JSON.parse(storedStateString);
   if (loadedState && typeof loadedState === 'object' && loadedState !== null) {
     // Ensure all DEFAULT_STATE keys are present, preferring loaded values
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
-    completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds : [];
-    completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
+    const isRound = round => round && typeof round === "object" && !Array.isArray(round);
+    completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds.filter(isRound) : [];
+    completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds.filter(isRound) : [];
+    // A finished game restored from storage should not celebrate a second time.
+    if (completeLoadedState.gameOver) confettiTriggered = true;
     // Transient flag must never persist across loads; a stuck `true` (from an
     // older build) would freeze every submit. Always start fresh.
     completeLoadedState.isSubmittingRound = false;
@@ -350,13 +353,9 @@ function saveCurrentGameState({
   showIndicator = true,
   now = Date.now(),
 } = {}) {
-  if (state.gameOver) {
-    localStorage.removeItem(ACTIVE_GAME_KEY);
-    LOCAL_STORAGE_CACHE.delete(ACTIVE_GAME_KEY);
-    if (sync && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
-      window.syncToFirestore(ACTIVE_GAME_KEY, null);
-    }
-  } else {
+  // A finished game stays persisted until it is saved, rematched, or reset, so
+  // closing or reloading the app on the Game Over screen cannot lose it.
+  {
     const snapshot = buildCurrentGameTimerCheckpoint(state, now);
     snapshot.startingTotals = sanitizeTotals(state.startingTotals);
     state.timerStarted = snapshot.timerStarted;

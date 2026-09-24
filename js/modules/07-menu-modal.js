@@ -177,6 +177,11 @@ function createDealerSuggestionController(inputId) {
   };
   const handleKeydown = (event) => {
     if (event.key === "Escape") {
+      // The first Escape only dismisses the suggestion list; the sheet stays open.
+      if (container && !container.classList.contains("hidden")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       setDealerSuggestionsVisibility(container, false);
       return;
     }

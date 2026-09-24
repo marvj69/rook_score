@@ -1257,9 +1257,9 @@ function applyVoiceScoreStatsControls(action) {
 
 async function applyVoiceScoreRematch(action) {
   if (action.firstDealer) {
-    if (!(await startRematchWithFirstDealer(action.firstDealer))) {
-      throw new Error("Choose one of the current players to deal first.");
-    }
+    const started = await startRematchWithFirstDealer(action.firstDealer);
+    if (started === null) throw new Error("The finished game could not be saved because storage is full.");
+    if (!started) throw new Error("Choose one of the current players to deal first.");
     return "Started rematch.";
   }
   openRematchDealerModal();

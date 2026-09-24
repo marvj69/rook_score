@@ -206,8 +206,15 @@ function updateAuthUI(user) {
   }
 }
 
+// Reloading state from storage would discard a bid the user is typing, so the
+// fallbacks only refresh the screen while the app is still untouched.
+function hasUserInteracted() {
+  return Number(window.getRookAppInteractionRevision?.() || 0) > 0;
+}
+
 function renderLocalAppFallback() {
   updateAuthUI(null);
+  if (hasUserInteracted()) return;
   if (window.loadCurrentGameState) window.loadCurrentGameState();
   if (window.renderApp) window.renderApp();
 }
@@ -265,6 +272,16 @@ async function loadFirebaseConfig() {
   return config;
 }
 
+const FIREBASE_MODULE_URLS = [FIREBASE_APP_MODULE_URL, FIREBASE_AUTH_MODULE_URL, FIREBASE_FIRESTORE_MODULE_URL];
+
+// Plain fetches fill the HTTP cache without touching the module map, so an
+// offline launch leaves a later import() free to retry (a failed module fetch
+// stays cached in the module map in shipping browsers).
+function warmFirebaseModuleCache() {
+  if (typeof fetch !== "function") return Promise.resolve();
+  return Promise.allSettled(FIREBASE_MODULE_URLS.map(url => fetch(url, { mode: "cors" }).catch(() => undefined)));
+}
+
 async function loadFirebaseLibraries() {
   if (firebaseLibraryPromise) return firebaseLibraryPromise;
 
@@ -288,6 +305,9 @@ async function loadFirebaseLibraries() {
     window.firestoreDoc = doc;
     window.firestoreSetDoc = setDoc;
     window.firestoreGetDoc = getDoc;
+  }).catch(error => {
+    firebaseLibraryPromise = null;
+    throw error;
   });
 
   return firebaseLibraryPromise;
@@ -327,7 +347,10 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     // Prioritize local data for active game to avoid overwriting unsaved changes
     // For other items like savedGames, attempt a merge or use the most recent
     if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
-      mergedData[key] = localValue || firestoreValue || window.DEFAULT_STATE || {}; // Ensure some default
+      // Local wins so unsaved progress is never overwritten; a device with no
+      // game does not persist an empty one.
+      if (localValue) mergedData[key] = localValue;
+      else if (firestoreValue) mergedData[key] = firestoreValue;
     } else if (Array.isArray(localValue) && Array.isArray(firestoreValue) && (key === "savedGames" || key === "freezerGames")) {
       // Merge arrays of games, ensuring uniqueness by timestamp or a unique ID if available
       const combined = [...localValue, ...firestoreValue];
@@ -360,9 +383,16 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     }
   });
 
-  mergedData.timestamp = new Date().toISOString();
+  // Only send what differs from the cloud copy: an unchanged startup merge
+  // costs no document write.
+  const payload = {};
+  Object.entries(mergedData).forEach(([key, value]) => {
+    if (JSON.stringify(value) !== JSON.stringify(firestoreData[key])) payload[key] = value;
+  });
   if (auth?.currentUser?.uid !== userId) return false;
-  await setDoc(docRef, mergedData, { merge: true });
+  if (Object.keys(payload).length) {
+    await setDoc(docRef, { ...payload, timestamp: new Date().toISOString() }, { merge: true });
+  }
   if (auth?.currentUser?.uid !== userId) return false;
   const localChangesDuringMerge = getCloudSyncStorageChanges(localRawSnapshot);
 
@@ -829,6 +859,7 @@ function watchAuthState() {
     console.log("Firebase auth timed out - likely offline or blocked.");
     window.firebaseReady = false;
     updateAuthUI(null);
+    if (hasUserInteracted()) return;
     if (window.loadCurrentGameState) window.loadCurrentGameState();
     if (window.renderApp) window.renderApp();
   }, 5000);
@@ -859,9 +890,12 @@ function watchAuthState() {
 }
 
 async function initializeFirebaseFromVercelEnv() {
-  // The config request and the SDK download are independent; overlapping them
-  // takes a full network round trip off cloud-sync startup.
-  const [firebaseConfig] = await Promise.all([loadFirebaseConfig(), loadFirebaseLibraries()]);
+  // Overlap the SDK download with the config request, but only import() once
+  // the config has proven the network is reachable.
+  const warmup = warmFirebaseModuleCache();
+  const firebaseConfig = await loadFirebaseConfig();
+  await warmup;
+  await loadFirebaseLibraries();
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -911,4 +945,10 @@ function scheduleFirebaseInitialization() {
 
 window.firebaseInitPromise = null;
 window.startFirebaseInitialization = startFirebaseInitialization;
+// An app opened offline recovers cloud sync as soon as the network returns.
+if (typeof window.addEventListener === "function") {
+  window.addEventListener("online", () => {
+    if (window.firebaseInitError && !auth) startFirebaseInitialization({ retry: true });
+  });
+}
 scheduleFirebaseInitialization();

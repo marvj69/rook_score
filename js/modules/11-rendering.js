@@ -484,26 +484,18 @@ function commitHistoryEdit(idx, field, rawValue) {
 
   const priorWinner = state.winner;
   const priorGameOver = state.gameOver;
+  // Same identity resolution as updateTeamsStatsOnGameEnd (dealer-pair fallback included).
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const teamIdentity = { usPlayers: usTeam.players, demPlayers: demTeam.players, usDisplay: usTeam.display, demDisplay: demTeam.display };
   if (priorGameOver && priorWinner && (!outcome.gameOver || outcome.winner !== priorWinner)) {
     const teams = getTeamsObject();
-    const reverted = applyTeamResultDelta(teams, {
-      usPlayers: state.usPlayers,
-      demPlayers: state.demPlayers,
-      usDisplay: state.usTeamName,
-      demDisplay: state.demTeamName,
-      winner: priorWinner,
-    }, -1);
+    const reverted = applyTeamResultDelta(teams, { ...teamIdentity, winner: priorWinner }, -1);
     if (reverted) setTeamsObject(teams);
   }
   if (outcome.gameOver && outcome.winner && (!priorGameOver || outcome.winner !== priorWinner)) {
     const teams = getTeamsObject();
-    const applied = applyTeamResultDelta(teams, {
-      usPlayers: state.usPlayers,
-      demPlayers: state.demPlayers,
-      usDisplay: state.usTeamName,
-      demDisplay: state.demTeamName,
-      winner: outcome.winner,
-    }, 1);
+    const applied = applyTeamResultDelta(teams, { ...teamIdentity, winner: outcome.winner }, 1);
     if (applied) setTeamsObject(teams);
   }
 

@@ -124,7 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Escape dismisses the top-most dialog: notices sit above confirmations, and
   // otherwise the highest-stacked open sheet with a close handler goes first.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
+    if (e.key !== "Escape" || e.defaultPrevented) return;
     const isOpen = id => document.getElementById(id)?.classList.contains("hidden") === false;
     let dialogId = ["noticeModal", "confirmationModal"].find(isOpen);
     if (!dialogId) {
@@ -331,6 +331,9 @@ if (typeof module !== 'undefined' && module.exports) {
     updateState,
     setLocalStorage,
     getLocalStorage,
+    loadCurrentGameState,
+    getStateForTests: () => state,
+    sanitizeHexColor,
     ROOK_APP_STORAGE_KEYS,
     isRookAppStorageKey,
     isCloudSyncStorageKey,

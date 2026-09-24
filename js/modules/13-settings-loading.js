@@ -14,7 +14,7 @@ function loadSettings() {
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   if (penaltySelect) {
     const savedPenaltyType = getLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, "setPoints");
-    penaltySelect.value = savedPenaltyType;
+    penaltySelect.value = savedPenaltyType === "loseBid" ? "loseBid" : "setPoints";
   } else {
     console.warn("tableTalkPenaltySelect element not found");
   }

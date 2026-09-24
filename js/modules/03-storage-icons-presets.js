@@ -57,6 +57,15 @@ function shouldAttemptJsonParse(raw) {
   return /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(trimmed);
 }
 
+// The game library is read as an array of game objects everywhere; a corrupt
+// import or synced value must never crash the library, statistics, or saving.
+function normalizeStoredCollection(key, value) {
+  if (key !== "savedGames" && key !== "freezerGames") return value;
+  if (!Array.isArray(value)) return [];
+  const isGame = item => item && typeof item === "object" && !Array.isArray(item);
+  return value.every(isGame) ? value : value.filter(isGame);
+}
+
 function getLocalStorage(key, defaultValue = null) {
   const raw = localStorage.getItem(key);
   if (raw === null) {
@@ -72,7 +81,7 @@ function getLocalStorage(key, defaultValue = null) {
     return raw;
   }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = normalizeStoredCollection(key, JSON.parse(raw));
     LOCAL_STORAGE_CACHE.set(key, { raw, parsed });
     return parsed;
   } catch {

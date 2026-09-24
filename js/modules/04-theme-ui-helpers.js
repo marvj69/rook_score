@@ -141,14 +141,22 @@ function initializeTheme() {
   // ------------------------------------------------------------------
   //  One-time migration for themes stored by older app versions
   // ------------------------------------------------------------------
-  const savedTheme = getLocalStorage(THEME_KEY, "");
+  // Only theme tokens and the base classes are honoured; anything else stored
+  // (a bad import, a synced value from another app) must not blank the app.
+  const storedTheme = getLocalStorage(THEME_KEY, "");
+  const savedTheme = typeof storedTheme === "string"
+    ? storedTheme.split(/\s+/).filter(token => BASE_BODY_CLASSES.includes(token) || /^theme-[a-z0-9-]+$/i.test(token)).join(" ")
+    : "";
+  // Re-running after a cloud merge must not drop the classes a currently open sheet relies on.
+  const liveClasses = ["modal-open", "overflow-hidden"].filter(cls => body.classList.contains(cls));
 
   if (savedTheme) {
     const { normalized, mutated } = ensureBaseClasses(savedTheme);
-    if (mutated && normalized !== savedTheme) {
+    if ((mutated || savedTheme !== storedTheme) && normalized !== storedTheme) {
       setLocalStorage(THEME_KEY, normalized);
     }
     body.className = normalized;
+    liveClasses.forEach(cls => body.classList.add(cls));
     syncViewportCompatibilityClasses();
     return;
   }
@@ -158,6 +166,7 @@ function initializeTheme() {
   // ------------------------------------------------------------------
   // First launch / user has never customised a theme
   body.className = `${baseClassString} theme-blue-red theme-cartoony`.trim();
+  liveClasses.forEach(cls => body.classList.add(cls));
   syncViewportCompatibilityClasses();
 }
 function isValidHexColor(colorString) {
@@ -317,7 +326,9 @@ function showSaveIndicator(message = "Saved") {
   clearTimeout(el.removeTimer);
   el.textContent = message;
   el.classList.remove("hidden");
-  // Wait a frame after un-hiding so the slide-in transition runs.
+  // #saveIndicator.hidden is display:none; flush style so the rendered
+  // opacity-0 state is the transition's start point, then slide in next frame.
+  void el.offsetWidth;
   (window.requestAnimationFrame || setTimeout)(() => el.classList.add("show"));
   el.hideTimer = setTimeout(() => {
     el.classList.remove("show");
