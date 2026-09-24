@@ -134,6 +134,6 @@ Every fix was gated on three checks: the unit suite (210 tests), a Playwright cl
 
 ## Owner actions that need your accounts
 
-1. Restrict and rotate the Firebase web API key in Google Cloud Console (see the finding above).
+1. The Firebase web API key's HTTP-referrer restriction currently allows `marvj69.github.io` but not `rook-score.vercel.app`, so Google sign-in and cloud sync fail on the Vercel host (this predates this release; the browser's default referrer policy is the same one the new header sets). Add `https://rook-score.vercel.app/*` to the key's allowed referrers in Google Cloud Console, and rotate the key since it appears in old commits.
 2. Consider an explicit cloud-sync switch and a "sign out and remove data from this device" option.
 3. `firestore.rules` was not changed in this release; deploy it as before whenever it changes.
