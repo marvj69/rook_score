@@ -368,17 +368,38 @@ function buildNameRecencyMaps(teamsObj = null) {
 
   return { playerRecency, teamRecency };
 }
+// Suggestions are rebuilt only when the underlying data changes; the dealer
+// and team-name fields ask for them on every keystroke.
+const PLAYER_SUGGESTION_CACHE = { key: null, suggestions: [], datalistHtml: null };
+
+function getPlayerSuggestionCacheKey() {
+  let stored = "";
+  try {
+    stored = `${localStorage.getItem("savedGames") || ""}\u0000${localStorage.getItem("freezerGames") || ""}\u0000${localStorage.getItem("teams") || ""}`;
+  } catch {
+    stored = "";
+  }
+  return `${stored}\u0000${JSON.stringify([state.usPlayers, state.demPlayers, state.dealers])}`;
+}
+
 function getOrderedPlayerSuggestions() {
+  const cacheKey = getPlayerSuggestionCacheKey();
+  if (PLAYER_SUGGESTION_CACHE.key === cacheKey) return PLAYER_SUGGESTION_CACHE.suggestions;
+
   const teamsObj = getTeamsObject();
   const { playerRecency } = buildNameRecencyMaps(teamsObj);
 
-  return Array.from(playerRecency.entries())
+  const suggestions = Array.from(playerRecency.entries())
     .sort((a, b) => {
       const diff = b[1] - a[1];
       if (diff) return diff;
       return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
     })
     .map(([name]) => name);
+  PLAYER_SUGGESTION_CACHE.key = cacheKey;
+  PLAYER_SUGGESTION_CACHE.suggestions = suggestions;
+  PLAYER_SUGGESTION_CACHE.datalistHtml = null;
+  return suggestions;
 }
 function getFilteredPlayerSuggestions(suggestions, query = '', limit = 6, excludedNames = []) {
   const normalizedQuery = sanitizePlayerName(query).toLowerCase();
@@ -408,9 +429,13 @@ function refreshPlayerSuggestions() {
 
   const datalist = document.getElementById("playerNameSuggestions");
   if (datalist) {
-    datalist.innerHTML = orderedSuggestions
+    const html = orderedSuggestions
       .map(name => `<option value="${escapeAttribute(name)}"></option>`)
       .join("\n");
+    if (PLAYER_SUGGESTION_CACHE.datalistHtml !== html || datalist.childElementCount !== orderedSuggestions.length) {
+      datalist.innerHTML = html;
+      PLAYER_SUGGESTION_CACHE.datalistHtml = html;
+    }
   }
 
   return orderedSuggestions;
@@ -551,7 +576,7 @@ function getBugReportAppVersion() {
 
 function getBugReportDiagnostics() {
   const rounds = Array.isArray(state?.rounds) ? state.rounds : [];
-  const latestTotals = rounds.at(-1)?.runningTotals || state?.startingTotals || {};
+  const latestTotals = rounds[rounds.length - 1]?.runningTotals || state?.startingTotals || {};
   const firebaseUser = window.firebaseAuth?.currentUser || null;
   const locationOrigin = typeof window.location?.origin === "string" ? window.location.origin : "";
   const locationPath = typeof window.location?.pathname === "string" ? window.location.pathname : "";

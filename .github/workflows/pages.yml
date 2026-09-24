@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
           cache: npm
@@ -40,20 +40,13 @@ jobs:
         run: npm test
 
       - name: Verify generated assets are committed
-        run: git diff --exit-code -- js/app.bundle.js js/voice-score.bundle.js css/tailwind.css
+        run: git diff --exit-code -- js/app.bundle.js js/voice-score.bundle.js css/tailwind.css service-worker.js
 
       - name: Prepare Pages artifact
-        run: |
-          mkdir -p _pages/css _pages/icons _pages/js _pages/vendor
-          cp index.html manifest.json service-worker.js _pages/
-          cp css/app.css css/tailwind.css _pages/css/
-          cp icons/icon-192x192.png icons/icon-512x512.png _pages/icons/
-          cp js/analytics.js js/app.bundle.js js/voice-score.bundle.js js/firebase-init.js js/model_runtime_v2.json _pages/js/
-          cp vendor/canvas-confetti.min.js _pages/vendor/
-          touch _pages/.nojekyll
+        run: node scripts/stage-static-site.mjs _pages
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: _pages
 
@@ -68,4 +61,4 @@ jobs:
     steps:
       - name: Deploy artifact
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

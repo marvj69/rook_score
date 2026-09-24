@@ -282,7 +282,7 @@ function updateState(newState) {
   scheduleRender();
 }
 function resetGame() {
-  const isProMode = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false");
+  const isProMode = Boolean(getLocalStorage(PRO_MODE_KEY, false));
   resetRenderAnimationState();
   updateState({
     ...DEFAULT_STATE,
@@ -320,14 +320,17 @@ loadedState = JSON.parse(storedStateString);
   if (loadedState && typeof loadedState === 'object' && loadedState !== null) {
     // Ensure all DEFAULT_STATE keys are present, preferring loaded values
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
-    completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds : [];
-    completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds : [];
+    const isRound = round => round && typeof round === "object" && !Array.isArray(round);
+    completeLoadedState.rounds = Array.isArray(loadedState.rounds) ? loadedState.rounds.filter(isRound) : [];
+    completeLoadedState.undoneRounds = Array.isArray(loadedState.undoneRounds) ? loadedState.undoneRounds.filter(isRound) : [];
+    // A finished game restored from storage should not celebrate a second time.
+    if (completeLoadedState.gameOver) confettiTriggered = true;
     // Transient flag must never persist across loads; a stuck `true` (from an
     // older build) would freeze every submit. Always start fresh.
     completeLoadedState.isSubmittingRound = false;
     Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
-    completeLoadedState.showWinProbability = JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"); // Add try-catch for this too
+    completeLoadedState.showWinProbability = Boolean(getLocalStorage(PRO_MODE_KEY, false));
     completeLoadedState.startingTotals = sanitizeTotals(completeLoadedState.startingTotals);
     updateState(completeLoadedState);
   } else {
@@ -339,7 +342,7 @@ loadedState = JSON.parse(storedStateString);
 ...DEFAULT_STATE,
 usTeamName: "", // Or load from a separate team name storage if you have one
 demTeamName: "",
-showWinProbability: JSON.parse(localStorage.getItem(PRO_MODE_KEY) || "false"), // Add try-catch here as well
+showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
 startTime: null,
 timerLastSavedAt: null
     });
@@ -350,13 +353,9 @@ function saveCurrentGameState({
   showIndicator = true,
   now = Date.now(),
 } = {}) {
-  if (state.gameOver) {
-    localStorage.removeItem(ACTIVE_GAME_KEY);
-    LOCAL_STORAGE_CACHE.delete(ACTIVE_GAME_KEY);
-    if (sync && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
-      window.syncToFirestore(ACTIVE_GAME_KEY, null);
-    }
-  } else {
+  // A finished game stays persisted until it is saved, rematched, or reset, so
+  // closing or reloading the app on the Game Over screen cannot lose it.
+  {
     const snapshot = buildCurrentGameTimerCheckpoint(state, now);
     snapshot.startingTotals = sanitizeTotals(state.startingTotals);
     state.timerStarted = snapshot.timerStarted;
@@ -368,7 +367,7 @@ function saveCurrentGameState({
     state.timerPaused = snapshot.timerPaused;
     state.timerVersion = snapshot.timerVersion;
     currentGameTimerLastCheckpointAt = snapshot.timerLastSavedAt;
-    setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
-    if (showIndicator) showSaveIndicator();
+    const stored = setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
+    if (showIndicator) showSaveIndicator(stored ? "Saved" : "Not saved: storage full");
   }
 }

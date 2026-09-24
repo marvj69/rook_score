@@ -41,7 +41,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeCurrentGameTimer();
   loadSettings(); // Load settings after game state
   scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []));
-  loadRuntimeModel().then(() => {
+  loadRuntimeModel().then((model) => {
+    // The fetched model usually matches the bundled one; only re-render when it differs.
+    if (!RUNTIME_MODEL_STATE.lastLoadChanged) return;
     scheduleProbabilityPersonalizationRefresh(getLocalStorage("savedGames", []), { force: true });
     scheduleRender();
   });
@@ -72,6 +74,11 @@ document.addEventListener("DOMContentLoaded", () => {
     window.visualViewport.addEventListener("resize", scheduleViewportCompatibilitySync);
   }
 
+  document.getElementById("hamburgerIcon")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggleMenu(event);
+  });
   document.getElementById("closeViewSavedGameModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeViewSavedGameModal(); });
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
@@ -116,11 +123,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Escape dismisses the top-most dialog (notices sit above confirmations).
+  // Escape dismisses the top-most dialog: notices sit above confirmations, and
+  // otherwise the highest-stacked open sheet with a close handler goes first.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    const dialogId = ["noticeModal", "confirmationModal"]
-      .find(id => document.getElementById(id)?.classList.contains("hidden") === false);
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const isOpen = id => document.getElementById(id)?.classList.contains("hidden") === false;
+    let dialogId = ["noticeModal", "confirmationModal"].find(isOpen);
+    if (!dialogId) {
+      const stackOrder = el => Number(getComputedStyle(el).zIndex) || 0;
+      dialogId = Object.keys(modalCloseHandlers)
+        .filter(isOpen)
+        .sort((a, b) => stackOrder(document.getElementById(a)) - stackOrder(document.getElementById(b)))
+        .pop();
+    }
     if (!dialogId) return;
     e.preventDefault();
     modalCloseHandlers[dialogId]();
@@ -190,6 +205,7 @@ function handleTeamSelectionCancel() {
       { title: "Erase this game?", confirmLabel: "Erase game", cancelLabel: "Keep game", tone: "danger" }
     );
   } else {
+    pendingGameAction = null;
     closeTeamSelectionModal();
   }
 }
@@ -209,7 +225,9 @@ function handleTeamSelectionCancel() {
         startX = e.touches[0].clientX;
         currentX = startX;
         const menuOpen = menu.classList.contains("show");
-        if (!menuOpen && startX <= 20) {
+        // A sheet or dialog owns the screen while it is open; edge swipes must not slide the menu under it.
+        const modalOpen = document.body.classList.contains("modal-open") || Boolean(document.querySelector(".modal:not(.hidden)"));
+        if (!menuOpen && startX <= 20 && !modalOpen) {
             isDragging = true;
             isOpening = true;
             menu.style.transition = "none";
@@ -228,13 +246,15 @@ function handleTeamSelectionCancel() {
         if (!isDragging) return;
         currentX = e.touches[0].clientX;
         let deltaX = currentX - startX;
+        // The drawer is positioned with a transform so dragging (and the CSS
+        // slide) stays on the compositor instead of relayouting the page.
         if (isOpening) {
             const left = Math.min(0, -menuWidth + currentX);
-            menu.style.left = left + "px";
+            menu.style.transform = `translateX(${left}px)`;
             overlay.style.opacity = (menuWidth + left) / menuWidth;
         } else {
             const left = Math.min(0, deltaX);
-            menu.style.left = left + "px";
+            menu.style.transform = `translateX(${left}px)`;
             overlay.style.opacity = (menuWidth + left) / menuWidth;
         }
     }
@@ -251,6 +271,7 @@ function handleTeamSelectionCancel() {
             shouldOpen = deltaX > -threshold;
         }
         menu.style.transition = "";
+        if ("inert" in menu) menu.inert = !shouldOpen;
         if (shouldOpen) {
             menu.classList.add("show");
             icon.classList.add("open");
@@ -262,7 +283,7 @@ function handleTeamSelectionCancel() {
             overlay.classList.remove("show");
             document.body.classList.remove("overflow-hidden");
         }
-        menu.style.left = "";
+        menu.style.transform = "";
         overlay.style.opacity = "";
     }
 
@@ -271,6 +292,8 @@ function handleTeamSelectionCancel() {
     document.addEventListener("touchstart", onTouchStart, { passive: true });
     document.addEventListener("touchmove", onTouchMove, { passive: true });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
+    // The system can cancel a touch (incoming call, gesture handoff); settle the drag instead of leaving it armed.
+    document.addEventListener("touchcancel", onTouchEnd, { passive: true });
 })();
 
 // Expose integration hooks used by firebase-init.js, which runs as an ES module.
@@ -279,6 +302,7 @@ if (typeof window !== 'undefined') {
   Object.assign(window, {
     DEFAULT_STATE,
     getLocalStorage,
+    isCloudSyncStorageKey,
     captureCloudSyncStorageSnapshot,
     getCloudSyncStorageChanges,
     getRookAppInteractionRevision,
@@ -311,6 +335,12 @@ if (typeof module !== 'undefined' && module.exports) {
     updateState,
     setLocalStorage,
     getLocalStorage,
+    loadCurrentGameState,
+    getStateForTests: () => state,
+    sanitizeHexColor,
+    ROOK_APP_STORAGE_KEYS,
+    isRookAppStorageKey,
+    isCloudSyncStorageKey,
     captureCloudSyncStorageSnapshot,
     getCloudSyncStorageChanges,
     recordRookAppInteraction,

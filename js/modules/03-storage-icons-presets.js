@@ -1,6 +1,8 @@
 "use strict";
 
 // --- Local Storage & Sync ---
+// Returns false when the value could not be stored (typically a full quota), so
+// callers that are about to discard the in-memory copy can keep it instead.
 function setLocalStorage(key, value, { sync = true } = {}) {
   try {
     const serialized = JSON.stringify(value);
@@ -18,8 +20,10 @@ function setLocalStorage(key, value, { sync = true } = {}) {
         window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
       }, 0);
     }
+    return true;
   } catch (error) {
     console.error(`Error in setLocalStorage for key ${key}:`, error);
+    return false;
   }
 }
 
@@ -53,6 +57,15 @@ function shouldAttemptJsonParse(raw) {
   return /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(trimmed);
 }
 
+// The game library is read as an array of game objects everywhere; a corrupt
+// import or synced value must never crash the library, statistics, or saving.
+function normalizeStoredCollection(key, value) {
+  if (key !== "savedGames" && key !== "freezerGames") return value;
+  if (!Array.isArray(value)) return [];
+  const isGame = item => item && typeof item === "object" && !Array.isArray(item);
+  return value.every(isGame) ? value : value.filter(isGame);
+}
+
 function getLocalStorage(key, defaultValue = null) {
   const raw = localStorage.getItem(key);
   if (raw === null) {
@@ -68,7 +81,7 @@ function getLocalStorage(key, defaultValue = null) {
     return raw;
   }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = normalizeStoredCollection(key, JSON.parse(raw));
     LOCAL_STORAGE_CACHE.set(key, { raw, parsed });
     return parsed;
   } catch {
@@ -82,11 +95,41 @@ function isFirebaseInternalStorageKey(key) {
   return typeof key === "string" && key.toLowerCase().startsWith("firebase");
 }
 
-function isCloudSyncStorageKey(key) {
+// Every localStorage key Rook Score owns. GitHub Pages serves this app from an
+// origin shared with the author's other project pages, so cloud sync, backup
+// export, and backup import are restricted to these keys (plus the device-only
+// "localOnly:" entries) and never touch another app's data.
+// js/firebase-init.js mirrors this list; a test keeps the two identical.
+const ROOK_APP_STORAGE_KEYS = new Set([
+  "activeGameState",
+  "savedGames",
+  "freezerGames",
+  "teams",
+  "customPresetBids",
+  "proModeEnabled",
+  "rookSelectedTheme",
+  "customUsColor",
+  "customDemColor",
+  "rookMustWinByBid",
+  "misdealHandlingEnabled",
+  "tableTalkPenaltyType",
+  "tableTalkPenaltyPoints",
+  "experimentalFeaturesEnabled",
+  "voiceImprovementOptIn",
+  "probabilityPersonalizationV1",
+  "darkModeEnabled",
+]);
+
+function isRookAppStorageKey(key) {
   return typeof key === "string"
+    && !isFirebaseInternalStorageKey(key)
+    && (ROOK_APP_STORAGE_KEYS.has(key) || key.startsWith(LOCAL_ONLY_STORAGE_PREFIX));
+}
+
+function isCloudSyncStorageKey(key) {
+  return isRookAppStorageKey(key)
     && key !== "timestamp"
-    && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
-    && !isFirebaseInternalStorageKey(key);
+    && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX);
 }
 
 function captureCloudSyncStorageSnapshot(storage = localStorage) {
@@ -119,7 +162,7 @@ function getAppStorageEntries(storage = localStorage) {
   const entries = [];
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
-    if (typeof key !== "string" || isFirebaseInternalStorageKey(key)) continue;
+    if (!isRookAppStorageKey(key)) continue;
     const value = storage.getItem(key);
     if (value !== null) entries.push({ key, value });
   }
@@ -168,7 +211,8 @@ function normalizeImportedStorageEntries(entries) {
 
   const seenKeys = new Set();
   let totalCharacters = 0;
-  return entries.map((entry) => {
+  const normalized = [];
+  entries.forEach((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error("This game data file contains an invalid storage entry.");
     }
@@ -190,8 +234,12 @@ function normalizeImportedStorageEntries(entries) {
     if (totalCharacters > MAX_GAME_DATA_IMPORT_BYTES) {
       throw new Error("This game data file is too large.");
     }
-    return { key, value };
+    // Backups made on the shared GitHub Pages origin by older versions may
+    // carry other apps' keys; those are neither Rook data nor safe to restore.
+    if (!isRookAppStorageKey(key)) return;
+    normalized.push({ key, value });
   });
+  return normalized;
 }
 
 function parseGameDataImport(text) {
@@ -268,7 +316,7 @@ async function synchronizeImportedGameData(previousEntries, importedEntries) {
   const previousKeys = previousEntries.map(({ key }) => key);
   const importedValues = new Map(importedEntries.map(({ key, value }) => [key, value]));
   const keysToSync = [...new Set([...previousKeys, ...importedValues.keys()])]
-    .filter(key => !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX) && !isFirebaseInternalStorageKey(key));
+    .filter(isCloudSyncStorageKey);
   const results = await Promise.allSettled(keysToSync.map((key) => {
     const value = importedValues.has(key)
       ? deserializeGameDataStorageValue(importedValues.get(key))
@@ -280,7 +328,7 @@ async function synchronizeImportedGameData(previousEntries, importedEntries) {
 
 function rehydrateImportedGameData() {
   refreshPresetBidsFromStorage();
-  performTeamPlayerMigration();
+  performTeamPlayerMigration({ force: true });
   initializeTheme();
   initializeCustomThemeColors();
   loadCurrentGameState();

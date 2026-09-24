@@ -200,9 +200,11 @@ Rook Score! is a PWA, offering:
 ### Prerequisites
 A modern web browser and Node.js 20 or newer for building and testing changes.
 
-Run `npm ci`, `npm run build`, and `npm test` before publishing. The build minifies the core and optional voice bundles while preserving the global handlers used by HTML and Firebase. Edit `js/modules/`, then commit the generated `js/app.bundle.js`, `js/voice-score.bundle.js`, and any updated CSS with the source changes. Runtime changes also need a new service-worker cache name.
+Run `npm ci`, `npm run build`, and `npm test` before publishing. The build minifies the core and optional voice bundles while preserving the global handlers used by HTML and Firebase, then stamps `service-worker.js` with a cache name derived from the contents of every runtime asset (`npm run build:sw`), so any change to the shipped files automatically installs a fresh offline cache; there is no manual cache-name bump. Edit `js/modules/`, then commit the generated `js/app.bundle.js`, `js/voice-score.bundle.js`, `service-worker.js`, and any updated CSS with the source changes.
 
-The tests exercise both source modules and production bundles, including timer lifecycle, layout scheduling, lazy voice integration, download-size budgets, and the Pages offline asset list. Pages rebuilds and verifies the committed assets before deployment.
+The files that make up the deployed site are listed once in `scripts/static-site-files.cjs`. `scripts/stage-static-site.mjs` copies exactly those files into an output directory: Vercel runs it as the build command and serves only `public/`, and the GitHub Pages workflow runs it to build the Pages artifact. Everything else in the repository (tests, source modules, training data, Firestore rules, scripts) is never published.
+
+The tests exercise both source modules and production bundles, including timer lifecycle, layout scheduling, lazy voice integration, download-size budgets, the service-worker cache stamp, and the Pages offline asset list. Pages rebuilds and verifies the committed assets before deployment.
 
 ### Running Locally
 1.  Clone or download this repository.
@@ -273,6 +275,11 @@ npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT
 
 ### GitHub Pages
 The GitHub Pages build stays fully static. When the app runs from `https://marvj69.github.io/rook_score/`, it uses `https://rook-score.vercel.app` for Firebase config, LLM voice actions, experimental paper-game photo reading, and in-app bug-report delivery. Those endpoints use separate CORS allowlists. If you move the Pages site to a different account or custom domain, add that origin to the Vercel endpoint allowlists or set `FIREBASE_CONFIG_ALLOWED_ORIGINS`, `VOICE_SCORE_ALLOWED_ORIGINS`, `PAPER_GAME_PHOTO_ALLOWED_ORIGINS`, and `BUG_REPORT_ALLOWED_ORIGINS` in Vercel.
+
+Because every GitHub project page for one account shares the `https://marvj69.github.io` origin (and therefore its `localStorage`), Rook Score only ever syncs, exports, or imports its own storage keys. The list lives in `ROOK_APP_STORAGE_KEYS` in `js/modules/03-storage-icons-presets.js` (mirrored in `js/firebase-init.js`); a test fails if a key used by the app is missing from it.
+
+### Endpoint protection
+The voice, photo, and bug-report endpoints only accept `POST` requests that carry a browser `Origin` from an allowed site (the allowlists above, a Vercel preview deployment calling its own `/api`, or `localhost` outside production), and each applies a per-client rate limit inside the function (60 voice plans and 20 photo scans per 10 minutes, 5 bug reports per 15 minutes). Provider calls are abandoned after a fixed timeout so a hung model can never pin a function until the platform kills it. Vercel also sends `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and a `frame-ancestors` Content Security Policy for every response (see `vercel.json`).
 
 ### Firebase Setup (If forking or self-hosting with cloud sync)
 If you want to use your own Firebase backend:

@@ -12,6 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="Rook" />
   <link rel="icon" href="icons/icon-192x192.png" /> <!-- Kept for PWA functionality -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://rook-score.vercel.app" crossorigin />
   <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
   <link rel="stylesheet" href="css/tailwind.css" />
   <link rel="stylesheet" href="css/app.css" />
@@ -66,7 +67,7 @@
     </div>
 
     <!-- Navigation Menu -->
-    <nav id="menu" class="nav-transparent">
+    <nav id="menu" class="nav-transparent" inert>
       <ul>
         <li><button type="button" onclick="openSavedGamesModal(); toggleMenu(event);">View Games</button></li>
         <li><button type="button" onclick="handleNewGame(); toggleMenu(event);">New Game</button></li>
@@ -683,7 +684,7 @@
               <div class="resume-team__head">
                 <span class="resume-team__badge" aria-hidden="true">Us</span>
                 <label for="resumeUsScore" class="resume-team__score-label">Current score</label>
-                <input type="number" inputmode="numeric" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeUsScore" name="resumeUsScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
+                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeUsScore" name="resumeUsScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
               </div>
               <div class="resume-team__players">
                 <label for="resumeUsPlayerOne" class="sr-only">Team Us player 1</label>
@@ -698,7 +699,7 @@
               <div class="resume-team__head">
                 <span class="resume-team__badge" aria-hidden="true">Dem</span>
                 <label for="resumeDemScore" class="resume-team__score-label">Current score</label>
-                <input type="number" inputmode="numeric" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeDemScore" name="resumeDemScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
+                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeDemScore" name="resumeDemScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
               </div>
               <div class="resume-team__players">
                 <label for="resumeDemPlayerOne" class="sr-only">Team Dem player 1</label>
@@ -788,7 +789,7 @@
                 <span class="sheet-row__desc">Enables win probability display.</span>
               </span>
               <span class="settings-switch">
-                <input type="checkbox" id="proModeToggleModal" class="settings-switch__input" onchange="toggleProMode(this)" />
+                <input type="checkbox" id="proModeToggleModal" class="settings-switch__input" />
                 <span class="settings-switch__track" aria-hidden="true"></span>
               </span>
             </label>

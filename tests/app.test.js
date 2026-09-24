@@ -199,6 +199,12 @@ const {
   updateState,
   setLocalStorage,
   getLocalStorage,
+  sanitizeHexColor,
+  loadCurrentGameState,
+  getStateForTests,
+  ROOK_APP_STORAGE_KEYS,
+  isRookAppStorageKey,
+  isCloudSyncStorageKey,
   captureCloudSyncStorageSnapshot,
   getCloudSyncStorageChanges,
   recordRookAppInteraction,
@@ -588,8 +594,107 @@ test('game data import validates the backup format and restores app storage exac
     { key: 'rookMustWinByBid', value: 'true' },
     { key: 'savedGames', value: '[{"id":"restored-game"}]' },
   ]);
-  assert.equal(localStorage.getItem('obsoleteSetting'), null);
+  // Keys Rook Score does not own (another app on a shared origin) are left alone.
+  assert.equal(localStorage.getItem('obsoleteSetting'), 'true');
   assert.equal(localStorage.getItem('firebase:authUser:test'), 'keep-auth-token');
+});
+
+test('game collections are always read as arrays of game objects', () => {
+  resetState();
+  localStorage.setItem('savedGames', '{"not":"an array"}');
+  assert.deepEqual(getLocalStorage('savedGames', []), []);
+  localStorage.setItem('savedGames', '[{"id":"g1"}, null, "junk", 5, [1]]');
+  assert.deepEqual(getLocalStorage('savedGames', []), [{ id: 'g1' }]);
+  localStorage.setItem('freezerGames', 'null');
+  assert.deepEqual(getLocalStorage('freezerGames', []), []);
+});
+
+test('setLocalStorage reports storage failures instead of pretending the write succeeded', () => {
+  resetState();
+  assert.equal(setLocalStorage('rookMustWinByBid', true, { sync: false }), true);
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+  try {
+    assert.equal(setLocalStorage('savedGames', [{ id: 'g1' }], { sync: false }), false);
+  } finally {
+    localStorage.setItem = originalSetItem;
+  }
+  assert.equal(localStorage.getItem('savedGames'), null);
+  const actionsSource = readFileSync(path.join(repoRoot, 'js/modules/08-game-actions-logic.js'), 'utf8');
+  assert.match(actionsSource, /if \(!setLocalStorage\("savedGames", savedGames\)\) \{\s*[^}]*savedGames\.pop\(\);/);
+  assert.match(actionsSource, /if \(!setLocalStorage\("freezerGames", freezerGames\)\) \{\s*[^}]*freezerGames\.shift\(\);/);
+  assert.match(actionsSource, /shouldSavePriorGame && !\(await saveCompletedGameSnapshot\(\{ resetAfterSave: false \}\)\)\) \{[\s\S]*?return null;/);
+});
+
+test('a finished game stays in storage until it is saved, rematched, or reset', () => {
+  const stateSource = readFileSync(path.join(repoRoot, 'js/modules/05-game-state-management.js'), 'utf8');
+  assert.doesNotMatch(stateSource, /if \(state\.gameOver\) \{\s*localStorage\.removeItem\(ACTIVE_GAME_KEY\)/);
+  assert.match(stateSource, /if \(completeLoadedState\.gameOver\) confettiTriggered = true;/);
+  resetState();
+  localStorage.setItem('activeGameState', JSON.stringify({
+    rounds: [{ bidAmount: 130, biddingTeam: 'us', usPoints: 140, demPoints: 40, runningTotals: { us: 520, dem: 40 } }, null, 'junk'],
+    undoneRounds: [null],
+    gameOver: true,
+    winner: 'us',
+  }));
+  loadCurrentGameState();
+  const restored = getStateForTests();
+  assert.equal(restored.gameOver, true);
+  assert.equal(restored.rounds.length, 1, 'non-object rounds are dropped on load');
+  assert.deepEqual(restored.undoneRounds, []);
+  assert.notEqual(localStorage.getItem('activeGameState'), null, 'a finished game is not removed on load');
+});
+
+test('stored theme strings are validated before they become body classes', () => {
+  const themeSource = readFileSync(path.join(repoRoot, 'js/modules/04-theme-ui-helpers.js'), 'utf8');
+  assert.match(themeSource, /BASE_BODY_CLASSES\.includes\(token\) \|\| \/\^theme-\[a-z0-9-\]\+\$\/i\.test\(token\)/);
+  assert.match(themeSource, /const liveClasses = \["modal-open", "overflow-hidden"\]/);
+  assert.equal(sanitizeHexColor('#f00'), '#ff0000');
+  assert.equal(sanitizeHexColor('ABCDEF'), '#abcdef');
+  assert.equal(sanitizeHexColor('#12345'), '');
+});
+
+test('game data export, import, and cloud sync only ever touch Rook Score storage keys', () => {
+  resetState();
+  localStorage.setItem('savedGames', '[{"id":"game-1"}]');
+  localStorage.setItem('invoiceDraft', '{"customer":"private"}');
+  localStorage.setItem('calorieLog', '[1, 2, 3]');
+
+  assert.deepEqual(buildGameDataExport(localStorage, new Date('2026-07-28T12:00:00.000Z')).storage, [
+    { key: 'savedGames', value: '[{"id":"game-1"}]' },
+  ]);
+  assert.deepEqual([...captureCloudSyncStorageSnapshot().keys()], ['savedGames']);
+  assert.equal(isCloudSyncStorageKey('invoiceDraft'), false);
+  assert.equal(isCloudSyncStorageKey('savedGames'), true);
+  assert.equal(isCloudSyncStorageKey('localOnly:voiceSpokenReplies'), false);
+
+  const imported = parseGameDataImport(JSON.stringify({
+    format: 'rook-score-game-data',
+    version: 1,
+    storage: [
+      { key: 'savedGames', value: '[{"id":"restored"}]' },
+      { key: 'invoiceDraft', value: '{"customer":"attacker"}' },
+    ],
+  }));
+  assert.deepEqual(imported.storage, [{ key: 'savedGames', value: '[{"id":"restored"}]' }]);
+  replaceAppStorage(imported.storage);
+  assert.equal(localStorage.getItem('invoiceDraft'), '{"customer":"private"}');
+  assert.equal(localStorage.getItem('calorieLog'), '[1, 2, 3]');
+});
+
+test('the storage key allowlist covers every key the app reads or writes and matches firebase-init', () => {
+  const moduleSources = require('../scripts/app-module-files.cjs').map(file => readFileSync(path.join(repoRoot, file), 'utf8')).join('\n');
+  const literalKeys = [...moduleSources.matchAll(/(?:setLocalStorage|getLocalStorage|removeLocalStorageKey|localStorage\.(?:getItem|setItem|removeItem))\(\s*["']([A-Za-z0-9_:.-]+)["']/g)]
+    .map(match => match[1]);
+  const constantKeys = [...moduleSources.matchAll(/const [A-Z_]+_KEY = (?:"([^"]+)"|'([^']+)')/g)]
+    .map(match => match[1] || match[2]);
+  for (const key of new Set([...literalKeys, ...constantKeys])) {
+    assert.equal(isRookAppStorageKey(key), true, `${key} must be in ROOK_APP_STORAGE_KEYS`);
+  }
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  const mirrored = firebaseSource.match(/const ROOK_APP_STORAGE_KEYS = new Set\(\[([\s\S]*?)\]\);/)[1]
+    .match(/"([^"]+)"/g).map(value => value.slice(1, -1));
+  assert.deepEqual(mirrored.sort(), [...ROOK_APP_STORAGE_KEYS].sort());
 });
 
 test('game data import rejects malformed, duplicate, and protected storage entries', () => {
@@ -2238,7 +2343,7 @@ test('voice score control is wired as a delegated hold-to-record button', () => 
   assert.match(cssSource, /\.voice-score-status\s*{[^}]*bottom: calc\(100% \+ 0\.55rem\);[^}]*right: 0;/s);
   assert.doesNotMatch(cssSource.match(/\.voice-score-status\s*\{[^}]*\}/s)?.[0] || '', /backdrop-filter/);
   assert.match(cssSource, /\.modal-open \.voice-score-control\s*{\s*z-index: 10010;\s*}/);
-  assert.match(cssSource, /body:has\(\.dialog-modal:not\(\.hidden\)\) \.voice-score-control\s*{[^}]*bottom: auto;/s);
+  assert.match(cssSource, /body:has\(\.dialog-modal:not\(\.hidden\)\) \.voice-score-control,\s*body:has\(#scoreKeypadSheet\) \.voice-score-control\s*{[^}]*bottom: auto;/s);
   assert.doesNotMatch(renderSourceForVoice(), /renderLazyVoiceScoreControls/);
   assert.match(initSource, /initializeVoiceScoreModuleWhenEnabled\(\);/);
   assert.match(initSource, /experimentalFeaturesToggle\.addEventListener\("change"/);
@@ -2258,7 +2363,8 @@ test('experimental voice scoring is excluded from the startup bundle', () => {
   assert.match(voiceBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
   assert.ok(appBundle.length < 380000, `core startup bundle is unexpectedly large: ${appBundle.length}`);
   assert.doesNotMatch(serviceWorker, /voice-score\.bundle\.js/);
-  assert.match(pagesWorkflow, /cp [^\n]*js\/voice-score\.bundle\.js[^\n]* _pages\/js\//);
+  assert.match(pagesWorkflow, /node scripts\/stage-static-site\.mjs _pages/);
+  assert.ok(require('../scripts/static-site-files.cjs').includes('js/voice-score.bundle.js'));
 });
 
 test('experimental features are disabled by default and gate voice controls', () => {
@@ -4508,9 +4614,9 @@ test('current game timer is visible, starts with play, and keeps counting across
 test('service worker cache bump skips waiting after precache', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
-  assert.match(source, /const CACHE_NAME = "rook-cache-v2\.1\.67";/);
+  assert.match(source, /const CACHE_NAME = "rook-cache-[0-9a-f]{16}";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
-  assert.match(source, /cache\.addAll\(urlsToCache\)/);
+  assert.match(source, /cache\.addAll\(urlsToCache\.map\(\(url\) => new Request\(url, \{ cache: "reload" \}\)\)\)/);
   assert.match(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
 });
@@ -4679,7 +4785,11 @@ test('firebase cloud sync does not block the initial app shell render', () => {
   assert.match(source, /import\(FIREBASE_APP_MODULE_URL\)/);
   assert.match(source, /window\.addEventListener\("load", startAfterAppLoad, \{ once: true \}\)/);
   assert.match(source, /setTimeout\(startFirebaseInitialization, 0\)/);
-  assert.match(source, /FIREBASE_CONFIG_TIMEOUT_MS = 3500/);
+  assert.match(source, /FIREBASE_CONFIG_TIMEOUT_MS = 6000/);
+  assert.match(source, /const warmup = warmFirebaseModuleCache\(\);\s*const firebaseConfig = await loadFirebaseConfig\(\);\s*await warmup;\s*await loadFirebaseLibraries\(\);/);
+  assert.match(source, /firebaseLibraryPromise = null;\s*throw error;/);
+  assert.match(source, /addEventListener\("online"/);
+  assert.doesNotMatch(source, /cache: "no-store"/);
   assert.match(source, /Promise\.race\(\[fetchPromise, timeoutPromise\]\)/);
   assert.match(source, /const firebaseMergePromises = new Map\(\)/);
   assert.match(source, /localChangesDuringMerge\.has\(key\)/);
@@ -4843,6 +4953,98 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
   assert.equal(renderCount, 0);
 });
 
+function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {} } = {}) {
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  const storage = {
+    getItem: key => (storageValues.has(key) ? storageValues.get(key) : null),
+    setItem: (key, value) => storageValues.set(key, String(value)),
+    removeItem: key => storageValues.delete(key),
+    key: index => [...storageValues.keys()][index] ?? null,
+    get length() { return storageValues.size; },
+  };
+  const writePayloads = [];
+  const windowForFirebase = {
+    DEFAULT_STATE: {},
+    getRookAppInteractionRevision: () => 0,
+    loadCurrentGameState: () => {},
+    loadSettings: () => {},
+    renderApp: () => {},
+    ...windowExtras,
+  };
+  const context = {
+    window: windowForFirebase,
+    document: { readyState: "loading", addEventListener: () => {}, getElementById: () => null },
+    localStorage: storage,
+    fetch: async () => { throw new Error("Unexpected fetch"); },
+    setTimeout,
+    clearTimeout,
+    console: { log: () => {}, warn: () => {}, error: () => {}, info: () => {} },
+    __getDoc: async () => ({ exists: () => true, data: () => structuredClone(cloudData) }),
+    __setDoc: async (_docRef, payload) => { writePayloads.push(structuredClone(payload)); },
+  };
+  windowForFirebase.window = windowForFirebase;
+  const instrumentedSource = firebaseSource
+    .replace(
+      "const reportedSyncFailures = new Set();",
+      [
+        "db = {};",
+        "auth = { currentUser: { uid: 'test-user' } };",
+        "doc = (_db, _collection, uid) => ({ uid });",
+        "getDoc = globalThis.__getDoc;",
+        "setDoc = globalThis.__setDoc;",
+        "const reportedSyncFailures = new Set();",
+      ].join("\n"),
+    )
+    .replace("scheduleFirebaseInitialization();", "");
+  vm.runInNewContext(instrumentedSource, context, { filename: 'firebase-init.test.js' });
+  return { windowForFirebase, storage, storageValues, writePayloads };
+}
+
+test('cloud merge keeps custom bid presets (and any list) as arrays and ignores foreign storage keys', async () => {
+  const storageValues = new Map([
+    ["customPresetBids", JSON.stringify([120, 125, 130])],
+    ["invoiceDraft", JSON.stringify({ customer: "private" })],
+  ]);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: { customPresetBids: [100, 105], calorieLog: [1, 2, 3], proModeEnabled: true },
+  });
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: "test-user" }), true);
+  assert.equal(writePayloads.length, 1);
+  assert.deepEqual(writePayloads[0].customPresetBids, [120, 125, 130]);
+  assert.equal(Array.isArray(writePayloads[0].customPresetBids), true);
+  assert.equal("invoiceDraft" in writePayloads[0], false);
+  assert.equal("calorieLog" in writePayloads[0], false);
+  assert.equal(JSON.parse(storage.getItem("customPresetBids"))[0], 120);
+  assert.equal(storage.getItem("calorieLog"), null);
+  assert.equal(storage.getItem("invoiceDraft"), JSON.stringify({ customer: "private" }));
+  assert.equal(storage.getItem("proModeEnabled"), "true");
+});
+
+test('firestore sync coalesces rapid writes into one document update and skips foreign keys', async () => {
+  const { windowForFirebase, writePayloads } = loadFirebaseInitForTests({ storageValues: new Map() });
+
+  const results = await Promise.all([
+    windowForFirebase.syncToFirestore("proModeEnabled", true),
+    windowForFirebase.syncToFirestore("rookMustWinByBid", false),
+    windowForFirebase.syncToFirestore("savedGames", [{ id: "g1" }]),
+    windowForFirebase.syncToFirestore("invoiceDraft", { customer: "private" }),
+  ]);
+
+  assert.deepEqual(results, [true, true, true, false]);
+  assert.equal(writePayloads.length, 1);
+  assert.equal(writePayloads[0].proModeEnabled, true);
+  assert.equal(writePayloads[0].rookMustWinByBid, false);
+  assert.deepEqual(writePayloads[0].savedGames, [{ id: "g1" }]);
+  assert.equal("invoiceDraft" in writePayloads[0], false);
+  assert.equal(typeof writePayloads[0].timestamp, "string");
+
+  assert.equal(await windowForFirebase.syncToFirestore("activeGameState", null), true);
+  assert.equal(writePayloads.length, 2);
+  assert.equal(writePayloads[1].activeGameState, null);
+});
+
 test('version surfaces are aligned for the 2.1 release', () => {
   const configSource = readFileSync(path.join(repoRoot, 'js/modules/00-config.js'), 'utf8');
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
@@ -4989,4 +5191,127 @@ test('main card pop animations are gated by render state', () => {
   assert.match(renderSource, /getScoreCardAnimation\(biddingTeam/);
   assert.match(renderSource, /getHistoryCardAnimation\(rounds\.length/);
   assert.doesNotMatch(renderSource, /style="animation: cardPopIn/);
+});
+
+test('LLM and email endpoints refuse requests without a browser Origin and rate-limit each client', async () => {
+  const originalVercelEnv = process.env.VERCEL_ENV;
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalFetch = global.fetch;
+  process.env.VERCEL_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  let providerCalls = 0;
+  global.fetch = async () => {
+    providerCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        model: 'test-model',
+        choices: [{ message: { content: JSON.stringify({ status: 'answer', summary: 's', message: 'm', requiresConfirmation: false, heardText: 'h', actions: [] }) } }],
+      }),
+    };
+  };
+  const voiceHandler = require('../api/voice-score-command.js');
+  const photoHandler = require('../api/paper-game-photo.js');
+  const bugReportHandler = require('../api/bug-report.js');
+  voiceHandler.resetRateLimitsForTests();
+  photoHandler.resetRateLimitsForTests();
+
+  try {
+    const voiceBody = JSON.stringify({ transcript: 'what is the score', context: {} });
+    for (const [label, handler, body] of [
+      ['voice', voiceHandler, voiceBody],
+      ['photo', photoHandler, 'not-multipart'],
+      ['bug-report', bugReportHandler, '{}'],
+    ]) {
+      const noOriginResponse = createMockResponse();
+      await handler(createMockRequest({ body, origin: '' }), noOriginResponse);
+      assert.equal(noOriginResponse.statusCode, 403, `${label} without Origin`);
+      assert.equal(noOriginResponse.headers['access-control-allow-origin'], undefined);
+
+      const foreignResponse = createMockResponse();
+      await handler(createMockRequest({ body, origin: 'https://evil.example' }), foreignResponse);
+      assert.equal(foreignResponse.statusCode, 403, `${label} from a foreign origin`);
+    }
+    assert.equal(providerCalls, 0);
+
+    // A preview deployment may call its own /api routes.
+    const previewResponse = createMockResponse();
+    await voiceHandler(createMockRequest({
+      body: voiceBody,
+      origin: 'https://rook-score-git-feature-marvj69s-projects.vercel.app',
+      headers: { host: 'rook-score-git-feature-marvj69s-projects.vercel.app', 'x-forwarded-for': '198.51.100.7' },
+    }), previewResponse);
+    assert.equal(previewResponse.statusCode, 200);
+    assert.equal(providerCalls, 1);
+
+    // Warm-up pings carry no Origin and are always cheap.
+    const warmResponse = createMockResponse();
+    await voiceHandler(createMockRequest({ method: 'GET', origin: '' }), warmResponse);
+    assert.equal(warmResponse.statusCode, 204);
+
+    let limited = null;
+    for (let attempt = 0; attempt < 61; attempt += 1) {
+      const response = createMockResponse();
+      await voiceHandler(createMockRequest({ body: voiceBody, headers: { 'x-forwarded-for': '203.0.113.9' } }), response);
+      if (response.statusCode === 429) { limited = { attempt, response }; break; }
+      assert.equal(response.statusCode, 200);
+    }
+    assert.ok(limited, 'voice endpoint applies a per-client rate limit');
+    assert.equal(limited.attempt, 60);
+    assert.ok(Number(limited.response.headers['retry-after']) > 0);
+    assert.equal(providerCalls, 61);
+
+    const otherClient = createMockResponse();
+    await voiceHandler(createMockRequest({ body: voiceBody, headers: { 'x-forwarded-for': '203.0.113.10' } }), otherClient);
+    assert.equal(otherClient.statusCode, 200);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnv;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    voiceHandler.resetRateLimitsForTests();
+    photoHandler.resetRateLimitsForTests();
+  }
+});
+
+test('paper game photo scans abandon a hung provider and treat in-band provider errors as retryable', async () => {
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalFetch = global.fetch;
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  const photoSource = readFileSync(path.join(repoRoot, 'api/paper-game-photo.js'), 'utf8');
+  assert.match(photoSource, /OPENROUTER_ATTEMPT_TIMEOUT_MS = 12000/);
+  assert.match(photoSource, /PHOTO_SCAN_TIME_BUDGET_MS = 17000/);
+  assert.match(photoSource, /signal: controller\.signal/);
+
+  const statuses = [];
+  global.fetch = async () => {
+    statuses.push('call');
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ error: { code: 502, message: 'Provider returned error' } }),
+    };
+  };
+  const photoHandler = require('../api/paper-game-photo.js');
+  photoHandler.resetRateLimitsForTests();
+  const boundary = 'photo-boundary';
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="sheet.png"\r\nContent-Type: image/png\r\n\r\n`),
+    png,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  try {
+    const response = createMockResponse();
+    await photoHandler(createMockRequest({ body, contentType: `multipart/form-data; boundary=${boundary}` }), response);
+    assert.equal(response.statusCode, 502);
+    assert.equal(statuses.length, 2, 'an in-band provider error is retried once');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    photoHandler.resetRateLimitsForTests();
+  }
 });

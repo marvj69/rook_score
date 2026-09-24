@@ -43,6 +43,8 @@ function formatLibraryDate(date, format) {
   return formatter.format(date);
 }
 
+let libraryRenderDayKey = "";
+
 function clearLibraryGameCache() {
   libraryGameMeta = new WeakMap();
 }
@@ -62,8 +64,9 @@ function getLibraryGameMeta(game) {
     };
     libraryGameMeta.set(game, meta);
   }
-  // Group labels ("Today", "This Week") shift at midnight.
-  const dayKey = new Date().toDateString();
+  // Group labels ("Today", "This Week") shift at midnight. The key is computed
+  // once per render pass rather than once per game.
+  const dayKey = libraryRenderDayKey || new Date().toDateString();
   if (meta.dayKey !== dayKey) {
     meta.dayKey = dayKey;
     meta.group = null;
@@ -171,6 +174,7 @@ function renderGamesWithFilter({ animate = false, keepPosition = false } = {}) {
 function renderGamesList({ storageKey, containerId, emptyMessageId, emptySearchMessage, searchTerm, displaySearch, sortOption, animate = false, keepPosition = false, buildCard }) {
   const container = document.getElementById(containerId);
   if (!container) return;
+  libraryRenderDayKey = new Date().toDateString();
 
   const entries = getLocalStorage(storageKey, []).map((game, index) => ({ game, index }));
   const normalizedTerm = searchTerm || '';

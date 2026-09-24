@@ -350,13 +350,14 @@ function isHistoryCellEditing(idx, field) {
 }
 function startHistoryEdit(idx, field) {
   updateState({ historyEdit: { idx, field }, error: "" });
-  setTimeout(() => {
+  // The input only exists after the render frame queued by updateState.
+  scheduleFrame(() => {
     const input = document.getElementById(`history-edit-${idx}-${field}`);
     if (input) {
       input.focus();
       input.select();
     }
-  }, 0);
+  });
 }
 function cancelHistoryEdit() {
   if (state.historyEdit) updateState({ historyEdit: null });
@@ -410,8 +411,15 @@ function computeGameOutcomeFromRounds(rounds) {
   return { gameOver, winner, victoryMethod };
 }
 function commitHistoryEdit(idx, field, rawValue) {
+  // A cancelled or already-committed edit re-enters here through the input's
+  // blur when the re-render removes it; there is nothing left to commit.
+  if (!isHistoryCellEditing(idx, field)) return;
   const rounds = Array.isArray(state.rounds) ? state.rounds : [];
   if (!rounds.length || !rounds[idx]) {
+    cancelHistoryEdit();
+    return;
+  }
+  if (String(rawValue ?? "").trim() === "") {
     cancelHistoryEdit();
     return;
   }
@@ -476,26 +484,18 @@ function commitHistoryEdit(idx, field, rawValue) {
 
   const priorWinner = state.winner;
   const priorGameOver = state.gameOver;
+  // Same identity resolution as updateTeamsStatsOnGameEnd (dealer-pair fallback included).
+  const usTeam = getTeamSnapshotForSide(state, "us");
+  const demTeam = getTeamSnapshotForSide(state, "dem");
+  const teamIdentity = { usPlayers: usTeam.players, demPlayers: demTeam.players, usDisplay: usTeam.display, demDisplay: demTeam.display };
   if (priorGameOver && priorWinner && (!outcome.gameOver || outcome.winner !== priorWinner)) {
     const teams = getTeamsObject();
-    const reverted = applyTeamResultDelta(teams, {
-      usPlayers: state.usPlayers,
-      demPlayers: state.demPlayers,
-      usDisplay: state.usTeamName,
-      demDisplay: state.demTeamName,
-      winner: priorWinner,
-    }, -1);
+    const reverted = applyTeamResultDelta(teams, { ...teamIdentity, winner: priorWinner }, -1);
     if (reverted) setTeamsObject(teams);
   }
   if (outcome.gameOver && outcome.winner && (!priorGameOver || outcome.winner !== priorWinner)) {
     const teams = getTeamsObject();
-    const applied = applyTeamResultDelta(teams, {
-      usPlayers: state.usPlayers,
-      demPlayers: state.demPlayers,
-      usDisplay: state.usTeamName,
-      demDisplay: state.demTeamName,
-      winner: outcome.winner,
-    }, 1);
+    const applied = applyTeamResultDelta(teams, { ...teamIdentity, winner: outcome.winner }, 1);
     if (applied) setTeamsObject(teams);
   }
 

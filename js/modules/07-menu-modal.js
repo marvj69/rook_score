@@ -177,6 +177,11 @@ function createDealerSuggestionController(inputId) {
   };
   const handleKeydown = (event) => {
     if (event.key === "Escape") {
+      // The first Escape only dismisses the suggestion list; the sheet stays open.
+      if (container && !container.classList.contains("hidden")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       setDealerSuggestionsVisibility(container, false);
       return;
     }
@@ -224,12 +229,15 @@ function toggleMenu(e) {
   const icon = document.getElementById("hamburgerIcon");
   const overlay = document.getElementById("menuOverlay");
   const isOpen = menu.classList.toggle("show");
+  if ("inert" in menu) menu.inert = !isOpen;
   icon.classList.toggle("open", isOpen);
   overlay.classList.toggle("show", isOpen);
   document.body.classList.toggle("overflow-hidden", isOpen);
 }
 function closeMenuOverlay() {
-  document.getElementById("menu")?.classList.remove("show");
+  const menu = document.getElementById("menu");
+  menu?.classList.remove("show");
+  if (menu && "inert" in menu) menu.inert = true;
   document.getElementById("hamburgerIcon")?.classList.remove("open");
   document.getElementById("menuOverlay")?.classList.remove("show");
   document.body.classList.remove("overflow-hidden");
@@ -237,7 +245,10 @@ function closeMenuOverlay() {
 
 function activateModalEnvironment() {
   document.body.classList.add("modal-open");
-  document.getElementById("app")?.classList.add("modal-active");
+  const app = document.getElementById("app");
+  app?.classList.add("modal-active");
+  // Keep the blurred page out of the tab and screen-reader order while a sheet is open.
+  if (app && "inert" in app) app.inert = true;
 }
 
 function deactivateModalEnvironment() {
@@ -245,7 +256,9 @@ function deactivateModalEnvironment() {
     .some(modal => !modal.classList.contains("hidden"));
   if (!anyOpenModal) {
     document.body.classList.remove("modal-open");
-    document.getElementById("app")?.classList.remove("modal-active");
+    const app = document.getElementById("app");
+    app?.classList.remove("modal-active");
+    if (app && "inert" in app) app.inert = false;
   }
 }
 
@@ -363,7 +376,12 @@ function showNoticeModal(message, options = {}) {
 function closeNoticeModal() { closeModal("noticeModal"); }
 
 function openTeamSelectionModal() { populateTeamSelects(); openModal("teamSelectionModal"); }
-function closeTeamSelectionModal() { closeModal("teamSelectionModal"); }
+function closeTeamSelectionModal() {
+  closeModal("teamSelectionModal");
+  // Save Game hides the game-over overlay before asking for names; bring it
+  // back if the prompt is dismissed so Save, Rematch, and New Game stay reachable.
+  if (state.gameOver) scheduleRender();
+}
 function openDealerOrderModal() {
   const form = document.getElementById("dealerOrderForm");
   if (form) form.reset();
@@ -392,7 +410,10 @@ function openDealerPairSelectionModal() {
   }
   openModal("dealerPairSelectionModal");
 }
-function closeDealerPairSelectionModal() { closeModal("dealerPairSelectionModal"); }
+function closeDealerPairSelectionModal() {
+  closeModal("dealerPairSelectionModal");
+  if (state.gameOver) scheduleRender();
+}
 function handleDealerPairSelection(pair) {
   closeDealerPairSelectionModal();
   

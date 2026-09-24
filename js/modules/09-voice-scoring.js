@@ -11,6 +11,8 @@ const VOICE_SCORE_REQUEST_TIMEOUT_MS = 16000;
 const VOICE_SCORE_WARM_INTERVAL_MS = 60000;
 const VOICE_SCORE_AUDIO_BITS_PER_SECOND = 32000;
 const VOICE_SCORE_CONVERSATION_MAX_MESSAGES = 6;
+// A clarification question is only worth replaying for a few minutes.
+const VOICE_SCORE_CONVERSATION_TTL_MS = 5 * 60 * 1000;
 const VOICE_SCORE_LIBRARY_CONTEXT_LIMIT = 10;
 const VOICE_SCORE_STATISTICS_CONTEXT_LIMIT = 100;
 const VOICE_SCORE_SPEECH_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}voiceSpokenReplies`;
@@ -35,6 +37,7 @@ let voiceScorePermissionNoticeTimer = null;
 let voiceScoreRecordingTimer = null;
 let voiceScoreStreamIdleTimer = null;
 let voiceScoreConversation = [];
+let voiceScoreConversationUpdatedAt = 0;
 let voiceScoreOperationId = 0;
 let voiceScoreRequestController = null;
 let voiceScoreHeldPointerId = null;
@@ -418,6 +421,8 @@ function buildVoiceImprovementIdentityMap(context = getVoiceScoreAppContext(), a
   [
     ...(context.teams?.us?.players || []),
     ...(context.teams?.dem?.players || []),
+    ...(Array.isArray(context.dealers) ? context.dealers : []),
+    context.currentDealer,
   ].forEach(addPlayer);
   (context.statistics?.players || []).forEach(player => addPlayer(typeof player === "string" ? player : player?.name));
 
@@ -478,7 +483,12 @@ function redactVoiceImprovementText(text, identityMap) {
     .replace(/\b(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g, "[phone]");
 
   identityMap.replacements.forEach(({ value, replacement }) => {
-    redacted = redacted.replace(new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), replacement);
+    // Whole words only, so "Al" never rewrites "Alice" or "total".
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    redacted = redacted.replace(
+      new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"),
+      (_match, lead) => `${lead}${replacement}`,
+    );
   });
   return redacted.trim().slice(0, 1000);
 }
@@ -685,11 +695,15 @@ function recordVoiceImprovementSample(plan, outcome, snapshot = null) {
 
 // --- Conversation memory ---
 function getVoiceScoreConversation() {
+  if (voiceScoreConversation.length && Date.now() - voiceScoreConversationUpdatedAt > VOICE_SCORE_CONVERSATION_TTL_MS) {
+    clearVoiceScoreConversation();
+  }
   return voiceScoreConversation.map(message => ({ ...message }));
 }
 
 function clearVoiceScoreConversation() {
   voiceScoreConversation = [];
+  voiceScoreConversationUpdatedAt = 0;
 }
 
 // Keeps clarification questions and answers so a short follow-up ("Carol",
@@ -712,6 +726,7 @@ function updateVoiceScoreConversation(plan, transcript) {
     { role: "user", content: cleanTranscript },
     { role: "assistant", content: reply },
   ].slice(-VOICE_SCORE_CONVERSATION_MAX_MESSAGES);
+  voiceScoreConversationUpdatedAt = Date.now();
   return getVoiceScoreConversation();
 }
 
@@ -915,12 +930,21 @@ function applyVoiceScoreSelectBid(action) {
   return `${getVoiceScoreTeamLabel(biddingTeam)} bid ${bidAmount}.`;
 }
 
+// The Settings sheet writes its controls back to storage when it closes, so a
+// value changed by voice must be reflected in those controls right away.
+function syncVoiceScoreSettingsSheet() {
+  const mustWinToggle = document.getElementById("mustWinByBidToggle");
+  if (mustWinToggle) mustWinToggle.checked = Boolean(getLocalStorage(MUST_WIN_BY_BID_KEY, false));
+  if (typeof loadSettings === "function") loadSettings();
+}
+
 function applyVoiceScoreSetting(action) {
   const key = action.key;
   const value = action.value;
   if (key === "mustWinByBid" || key === "misdealHandling") {
     const isEnabled = toVoiceScoreBoolean(value);
     setLocalStorage(key === "mustWinByBid" ? MUST_WIN_BY_BID_KEY : MISDEAL_HANDLING_KEY, isEnabled);
+    syncVoiceScoreSettingsSheet();
     showSaveIndicator("Settings Saved");
     const label = key === "mustWinByBid" ? "Must win by bid" : "Misdeal handling";
     return `${label} is ${isEnabled ? "on" : "off"}.`;
@@ -946,6 +970,7 @@ function applyVoiceScoreSetting(action) {
   if (key === "tableTalkPenaltyType") {
     const penaltyType = value === "loseBid" ? "loseBid" : "setPoints";
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltyType);
+    syncVoiceScoreSettingsSheet();
     return penaltyType === "loseBid" ? "Table talk penalty uses lost bid." : "Table talk penalty uses set points.";
   }
   if (key === "tableTalkPenaltyPoints") {
@@ -953,6 +978,7 @@ function applyVoiceScoreSetting(action) {
     if (!Number.isFinite(points)) points = 180;
     points = Math.max(5, Math.min(500, Math.round(points / 5) * 5));
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, String(points));
+    syncVoiceScoreSettingsSheet();
     return `Table talk penalty is ${points} points.`;
   }
   throw new Error("That setting is not available.");
@@ -985,7 +1011,7 @@ function applyVoiceScoreStartPaperGame(action) {
   return `Started paper game at ${usScore} to ${demScore}.`;
 }
 
-function applyVoiceScoreSetTeams(action) {
+async function applyVoiceScoreSetTeams(action) {
   const usPlayers = ensurePlayersArray(action.usPlayers || state.usPlayers);
   const demPlayers = ensurePlayersArray(action.demPlayers || state.demPlayers);
   if (usPlayers.some(player => !player) || demPlayers.some(player => !player)) {
@@ -1010,6 +1036,11 @@ function applyVoiceScoreSetTeams(action) {
   addTeamIfNotExists(demPlayers, demTeamName);
   saveCurrentGameState();
   closeTeamSelectionModal();
+  // The prompt may have been opened by Save or Freeze; finish that action like the form submit does.
+  const pending = pendingGameAction;
+  pendingGameAction = null;
+  if (pending === "freeze") confirmFreeze();
+  else if (pending === "save") await handleManualSaveGame();
   return "Teams updated.";
 }
 
@@ -1055,8 +1086,10 @@ async function applyVoiceScoreAuthAction(action) {
     return "Signing out.";
   }
   if (typeof window.signInWithGoogle !== "function") throw new Error("Sign in is not available right now.");
-  await window.signInWithGoogle();
-  return "Opening sign in.";
+  // Without a user gesture the popup can be blocked; report that instead of claiming success.
+  const user = await window.signInWithGoogle();
+  if (!user) throw new Error("Sign in couldn't open. Use the menu to sign in.");
+  return "Signed in.";
 }
 
 function applyVoiceScoreConfirmationAction(action) {
@@ -1103,7 +1136,8 @@ function applyVoiceScoreGameLibraryAction(action) {
   }
 
   const index = Number(action.index);
-  if (!Number.isInteger(index) || index < 0) throw new Error("Say which game number to use.");
+  const listSize = getLocalStorage(gameType === "freezer" ? "freezerGames" : "savedGames", []).length;
+  if (!Number.isInteger(index) || index < 0 || index >= listSize) throw new Error("Say which game number to use.");
   if (gameAction === "view") {
     if (gameType !== "completed") throw new Error("Only completed games can be viewed.");
     viewSavedGame(index);
@@ -1122,7 +1156,26 @@ function applyVoiceScoreGameLibraryAction(action) {
   throw new Error("That game-library action is not available.");
 }
 
+// Theme and preset sheets assume they were opened from Settings and re-show it
+// when they close; a voice action must not leave Settings open as a side effect.
+function withoutSettingsSheetSideEffect(run) {
+  const settings = document.getElementById("settingsModal");
+  const wasHidden = !settings || settings.classList.contains("hidden");
+  try {
+    return run();
+  } finally {
+    if (wasHidden && settings && !settings.classList.contains("hidden")) {
+      settings.classList.add("hidden");
+      if (typeof deactivateModalEnvironment === "function") deactivateModalEnvironment();
+    }
+  }
+}
+
 function applyVoiceScoreThemeColors(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreThemeColorsNow(action));
+}
+
+function applyVoiceScoreThemeColorsNow(action) {
   const usColor = sanitizeHexColor(action.usColor || "");
   const demColor = sanitizeHexColor(action.demColor || "");
   if (!usColor && !demColor) throw new Error("Say a valid hex color.");
@@ -1137,6 +1190,10 @@ function applyVoiceScoreThemeColors(action) {
 }
 
 function applyVoiceScoreThemeAction(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreThemeActionNow(action));
+}
+
+function applyVoiceScoreThemeActionNow(action) {
   const themeAction = action.themeAction;
   openThemeModal(null);
   if (themeAction === "randomize") {
@@ -1157,6 +1214,10 @@ function applyVoiceScoreThemeAction(action) {
 }
 
 function applyVoiceScoreBidPresets(action) {
+  return withoutSettingsSheetSideEffect(() => applyVoiceScoreBidPresetsNow(action));
+}
+
+function applyVoiceScoreBidPresetsNow(action) {
   const presets = Array.isArray(action.presets)
     ? action.presets.map(Number).filter(Number.isFinite)
     : [];
@@ -1236,11 +1297,11 @@ function applyVoiceScoreStatsControls(action) {
   return entitySelection ? `Showing statistics for ${entitySelection.name}.` : "Statistics updated.";
 }
 
-function applyVoiceScoreRematch(action) {
+async function applyVoiceScoreRematch(action) {
   if (action.firstDealer) {
-    if (!startRematchWithFirstDealer(action.firstDealer)) {
-      throw new Error("Choose one of the current players to deal first.");
-    }
+    const started = await startRematchWithFirstDealer(action.firstDealer);
+    if (started === null) throw new Error("The finished game could not be saved because storage is full.");
+    if (!started) throw new Error("Choose one of the current players to deal first.");
     return "Started rematch.";
   }
   openRematchDealerModal();
@@ -1360,9 +1421,20 @@ function getVoiceScoreActionHandlerTypes() {
   return Object.keys(VOICE_SCORE_ACTION_HANDLERS);
 }
 
+function isVoiceScoreConfirmationOpen() {
+  const modal = document.getElementById("confirmationModal");
+  return Boolean(modal) && !modal.classList.contains("hidden");
+}
+
 async function executeVoiceScorePlanActions(plan, options = {}) {
   const messages = [];
+  // A plan may answer a confirmation the user can already see, but never one
+  // that an earlier action in the same plan opened (delete + "confirm").
+  const confirmationOpenBeforePlan = isVoiceScoreConfirmationOpen();
   for (const action of plan.actions) {
+    if (action.type === "confirmationAction" && !confirmationOpenBeforePlan) {
+      throw new Error("Please answer the confirmation on screen.");
+    }
     const message = await executeVoiceScoreAction(action, options);
     if (message) messages.push(message);
   }

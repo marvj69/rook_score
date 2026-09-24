@@ -1,8 +1,10 @@
-const CACHE_NAME = "rook-cache-v2.1.67";
+// CACHE_NAME is stamped by scripts/stamp-service-worker.mjs from the contents
+// of the files below, so any runtime change ships a fresh cache automatically.
+const CACHE_NAME = "rook-cache-efa5e317a3782c78";
+const CACHE_NAME_PREFIX = "rook-cache-";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
-  "./", // Root path
   "./index.html",
   "./css/tailwind.css",
   "./css/app.css",
@@ -12,18 +14,36 @@ const urlsToCache = [
   "./js/firebase-init.js",
   "./manifest.json",
   "./icons/icon-192x192.png",
-  "./icons/icon-512x512.png",
   "./vendor/canvas-confetti.min.js"
 ];
 
-async function getCachedOfflineShell() {
-  return (await caches.match(OFFLINE_URL))
-    || (await caches.match("./"));
+function isCacheableResponse(response) {
+  return Boolean(response) && response.status === 200 && response.type === "basic";
 }
 
-function fetchAndCache(request, cacheRequest = request) {
-  return fetch(request).then((networkResponse) => {
-    if (networkResponse && networkResponse.status === 200 && networkResponse.type === "basic") {
+function isHtmlResponse(response) {
+  const contentType = response.headers.get("Content-Type") || "";
+  return contentType.toLowerCase().includes("text/html");
+}
+
+// The app shell lives at the scope root; any other same-origin navigation
+// (a direct hit on a script, style, or image) must never overwrite it.
+function isAppShellUrl(url) {
+  const scopePath = new URL(self.registration.scope).pathname;
+  return url.pathname === scopePath || url.pathname === `${scopePath}${OFFLINE_URL}`;
+}
+
+async function getCachedOfflineShell() {
+  return caches.match(OFFLINE_URL);
+}
+
+// Bypass the HTTP cache for background refreshes so a stale CDN copy (GitHub
+// Pages serves assets with a ten-minute max-age) can never repopulate the
+// cache after a deploy.
+function fetchAndCache(request, cacheRequest = request, { revalidate = false } = {}) {
+  const networkRequest = revalidate ? new Request(request, { cache: "no-cache" }) : request;
+  return fetch(networkRequest).then((networkResponse) => {
+    if (isCacheableResponse(networkResponse)) {
       return caches.open(CACHE_NAME).then((cache) => {
         cache.put(cacheRequest, networkResponse.clone());
         return networkResponse;
@@ -36,21 +56,35 @@ function fetchAndCache(request, cacheRequest = request) {
 async function staleWhileRevalidate(event) {
   const { request } = event;
   const cachedResponse = await caches.match(request);
-  const networkPromise = fetchAndCache(request).catch(() => null);
 
   if (cachedResponse) {
-    event.waitUntil(networkPromise.then(() => undefined));
+    event.waitUntil(fetchAndCache(request, request, { revalidate: true }).catch(() => undefined));
     return cachedResponse;
   }
 
-  const networkResponse = await networkPromise;
+  const networkResponse = await fetchAndCache(request).catch(() => null);
   if (networkResponse) return networkResponse;
   return new Response("", { status: 504, statusText: "Offline" });
 }
 
 async function navigationResponse(event) {
+  const requestUrl = new URL(event.request.url);
+  if (!isAppShellUrl(requestUrl)) {
+    return fetch(event.request);
+  }
+
   const cachedShell = await getCachedOfflineShell();
-  const networkPromise = fetchAndCache(event.request, OFFLINE_URL).catch(() => null);
+  const networkPromise = fetch(new Request(event.request, { cache: "no-cache" }))
+    .then((networkResponse) => {
+      if (isCacheableResponse(networkResponse) && isHtmlResponse(networkResponse)) {
+        return caches.open(CACHE_NAME).then((cache) => {
+          cache.put(OFFLINE_URL, networkResponse.clone());
+          return networkResponse;
+        });
+      }
+      return networkResponse;
+    })
+    .catch(() => null);
   event.waitUntil(networkPromise.then(() => undefined));
 
   if (cachedShell) return cachedShell;
@@ -61,7 +95,8 @@ async function navigationResponse(event) {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(urlsToCache))
+      // Always install from the origin server, never from a stale HTTP cache.
+      .then((cache) => cache.addAll(urlsToCache.map((url) => new Request(url, { cache: "reload" }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -84,10 +119,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (event.request.url.endsWith(".map")) {
-    event.respondWith(
-      Promise.resolve(new Response("", { status: 204, headers: { "Content-Type": "application/json" } }))
-    );
+  if (requestUrl.pathname.endsWith(".map")) {
+    // Source maps are not shipped; answer quietly instead of hitting the network.
+    event.respondWith(new Response(null, { status: 204 }));
     return;
   }
 
@@ -100,16 +134,14 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  self.clients.claim();
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    caches.keys()
+      .then((cacheNames) => Promise.all(
+        cacheNames
+          // Only this app's previous versions; other apps on the origin keep their caches.
+          .filter((cacheName) => cacheName.startsWith(CACHE_NAME_PREFIX) && cacheName !== CACHE_NAME)
+          .map((cacheName) => caches.delete(cacheName))
+      ))
+      .then(() => self.clients.claim())
   );
 });
