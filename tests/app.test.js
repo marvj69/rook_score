@@ -5315,3 +5315,21 @@ test('paper game photo scans abandon a hung provider and treat in-band provider 
     photoHandler.resetRateLimitsForTests();
   }
 });
+
+test('firebase config responses are cacheable per browser but never in shared caches', async () => {
+  const handler = require('../api/firebase-config.js');
+  const names = ['FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID', 'FIREBASE_STORAGE_BUCKET', 'FIREBASE_MESSAGING_SENDER_ID', 'FIREBASE_APP_ID'];
+  const saved = names.map(name => process.env[name]);
+  names.forEach(name => { process.env[name] = `test-${name}`; });
+  try {
+    const response = createMockResponse();
+    await handler(createMockRequest({ method: 'GET', origin: 'https://marvj69.github.io' }), response);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['access-control-allow-origin'], 'https://marvj69.github.io');
+    assert.match(response.headers['cache-control'], /^private, max-age=\d+$/);
+    assert.doesNotMatch(response.headers['cache-control'], /public|s-maxage/);
+    assert.equal(response.headers['vary'], 'Origin');
+  } finally {
+    names.forEach((name, i) => { if (saved[i] === undefined) delete process.env[name]; else process.env[name] = saved[i]; });
+  }
+});

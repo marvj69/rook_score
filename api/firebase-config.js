@@ -9,9 +9,11 @@ const REQUIRED_ENV = {
   appId: "FIREBASE_APP_ID",
 };
 const ALLOWED_ORIGIN_ENV_NAMES = ["FIREBASE_CONFIG_ALLOWED_ORIGINS"];
-// The web config is public by design and changes rarely, so browsers and the
-// CDN may reuse it instead of invoking the function on every app launch.
-const CACHE_CONTROL = "public, max-age=600, s-maxage=3600, stale-while-revalidate=86400";
+// The web config is public by design and changes rarely, so each browser may
+// reuse it instead of invoking the function on every app launch. It must stay
+// out of shared caches: the CORS header depends on the request's Origin, and
+// the edge cache would serve an Origin-less copy to the GitHub Pages site.
+const CACHE_CONTROL = "private, max-age=600";
 
 module.exports = function handler(request, response) {
   setCorsHeaders(request, response, { methods: "GET, OPTIONS", envNames: ALLOWED_ORIGIN_ENV_NAMES });
