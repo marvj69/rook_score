@@ -5333,3 +5333,63 @@ test('firebase config responses are cacheable per browser but never in shared ca
     names.forEach((name, i) => { if (saved[i] === undefined) delete process.env[name]; else process.env[name] = saved[i]; });
   }
 });
+
+
+test('save, view and reopen keeps the completed game only in the library', async () => {
+  resetState();
+  const app = require('../js/app.js');
+  loadCurrentGameState();
+  updateState({
+    usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dave'],
+    rounds: [{ bidAmount: 130, biddingTeam: 'us', usPoints: 140, demPoints: 40, runningTotals: { us: 520, dem: 40 } }],
+    gameOver: true, winner: 'us', accumulatedTime: 60000,
+  });
+  app.saveCurrentGameState();
+  assert.ok(await app.saveCompletedGameSnapshot({ resetAfterSave: true }));
+  app.viewSavedGame(0);
+  assert.equal(getStateForTests().gameOver, false);
+  assert.equal(getStateForTests().rounds.length, 0);
+  assert.equal(localStorage.getItem('activeGameState'), 'null');
+  loadCurrentGameState();
+  assert.equal(getStateForTests().gameOver, false);
+  assert.equal(getStateForTests().rounds.length, 0);
+  assert.equal(getLocalStorage('savedGames').length, 1);
+});
+
+test('deferred active-game writes cannot overtake a reset', async () => {
+  resetState();
+  const app = require('../js/app.js');
+  const previous = { ready: window.firebaseReady, auth: window.firebaseAuth, sync: window.syncToFirestore };
+  const writes = [];
+  window.firebaseReady = true;
+  window.firebaseAuth = { currentUser: { uid: 'test-user' } };
+  window.syncToFirestore = async (key, value) => { writes.push({ key, value }); };
+  try {
+    setLocalStorage('activeGameState', { gameOver: true, rounds: [{}] });
+    app.resetGame();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(writes, [{ key: 'activeGameState', value: null }]);
+  } finally {
+    window.firebaseReady = previous.ready;
+    window.firebaseAuth = previous.auth;
+    window.syncToFirestore = previous.sync;
+  }
+});
+
+test('offline reset survives repeated cloud merges but a fresh device can restore a game', async () => {
+  const finished = { gameOver: true, rounds: [{ bidAmount: 130 }] };
+  const cleared = loadFirebaseInitForTests({
+    storageValues: new Map([['activeGameState', 'null']]),
+    cloudData: { activeGameState: finished },
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await cleared.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' });
+    assert.equal(cleared.storage.getItem('activeGameState'), 'null');
+    assert.equal(cleared.writePayloads[attempt].activeGameState, null);
+  }
+  const fresh = loadFirebaseInitForTests({
+    storageValues: new Map(), cloudData: { activeGameState: finished },
+  });
+  await fresh.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' });
+  assert.deepEqual(JSON.parse(fresh.storage.getItem('activeGameState')), finished);
+});

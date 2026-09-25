@@ -17,7 +17,9 @@ function setLocalStorage(key, value, { sync = true } = {}) {
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
       setTimeout(() => {
-        window.syncToFirestore(key, value).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
+        // A newer save/reset may have superseded this deferred write.
+        if (localStorage.getItem(key) !== serialized) return;
+        window.syncToFirestore(key, JSON.parse(serialized)).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
       }, 0);
     }
     return true;
@@ -39,6 +41,7 @@ function removeLocalStorageKey(key) {
     if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       setTimeout(() => {
+        if (localStorage.getItem(key) !== null) return;
         window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
       }, 0);
     }

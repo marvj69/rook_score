@@ -298,11 +298,9 @@ function resetGame() {
   scoreKeypadShouldAnimate = false;
   if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
   scoreKeypadCloseTimer = null;
-  localStorage.removeItem(ACTIVE_GAME_KEY);
-  // Attempt to also clear from Firebase if user is signed in
-  if (window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
-      window.syncToFirestore(ACTIVE_GAME_KEY, null); // Sync deletion of active game
-  }
+  // Keep an explicit empty value, including offline. An absent key means this
+  // device has no opinion and permits cloud restore; null means it was cleared.
+  setLocalStorage(ACTIVE_GAME_KEY, null);
 }
 function loadCurrentGameState() {
   let loadedState = null; // Initialize to null

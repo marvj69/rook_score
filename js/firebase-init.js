@@ -349,8 +349,8 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
       // Local wins so unsaved progress is never overwritten; a device with no
       // game does not persist an empty one.
-      if (localValue) mergedData[key] = localValue;
-      else if (firestoreValue) mergedData[key] = firestoreValue;
+      if (localRawSnapshot.has(key)) mergedData[key] = localValue;
+      else if (firestoreValue !== undefined) mergedData[key] = firestoreValue;
     } else if (Array.isArray(localValue) && Array.isArray(firestoreValue) && (key === "savedGames" || key === "freezerGames")) {
       // Merge arrays of games, ensuring uniqueness by timestamp or a unique ID if available
       const combined = [...localValue, ...firestoreValue];
@@ -401,7 +401,11 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   Object.entries(mergedData).forEach(([key, value]) => {
     if (key !== "timestamp" && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)) {
       if (localChangesDuringMerge.has(key)) return;
-      const serialized = serializeForLocalStorage(value);
+      // Preserve the active-game tombstone so a later/offline startup cannot
+      // resurrect a cloud snapshot that predates a save, freeze, or reset.
+      const serialized = key === "activeGameState" && value === null
+        ? "null"
+        : serializeForLocalStorage(value);
       if (serialized === null) {
         if (localStorage.getItem(key) !== null) {
           localStorage.removeItem(key);
