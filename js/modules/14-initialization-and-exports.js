@@ -59,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
     voiceImprovementOptInToggle.checked = isVoiceImprovementOptedIn();
     voiceImprovementOptInToggle.addEventListener("change", event => toggleVoiceImprovementConsent(event.target));
   }
+  initializeHomeScreen();
   maybePromptForVoiceExperimentalOnboarding();
 
   // Pro mode toggle (in settings modal, not main nav)
@@ -226,7 +227,9 @@ function handleTeamSelectionCancel() {
         currentX = startX;
         const menuOpen = menu.classList.contains("show");
         // A sheet or dialog owns the screen while it is open; edge swipes must not slide the menu under it.
-        const modalOpen = document.body.classList.contains("modal-open") || Boolean(document.querySelector(".modal:not(.hidden)"));
+        // Home and first-run onboarding cover the scoreboard, and the menu would open hidden beneath them.
+        const modalOpen = document.body.classList.contains("modal-open") || Boolean(document.querySelector(".modal:not(.hidden)"))
+            || isHomeScreenOpen() || document.body.classList.contains("onboarding-open");
         if (!menuOpen && startX <= 20 && !modalOpen) {
             isDragging = true;
             isOpening = true;
@@ -460,5 +463,10 @@ if (typeof module !== 'undefined' && module.exports) {
     requestPaperGamePhotoScan,
     updatePaperGamePhotoExperimentUI,
     getFilteredPlayerSuggestions,
+    hasActiveGame,
+    getHomeScreenGameSignature,
+    isOnboardingComplete,
+    hasExistingRookData,
+    ONBOARDING_COMPLETED_KEY,
   };
 }

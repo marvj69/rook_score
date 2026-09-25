@@ -930,6 +930,7 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
     resetGame(); // Resets state and clears active game from storage
     confettiTriggered = false;
     pendingGameAction = null;
+    openHomeScreen();
   }
   return gameObj;
 }
@@ -1049,8 +1050,9 @@ async function freezeCurrentGame() {
   showSaveIndicator("Game Frozen!");
   resetGame(); // Resets state and clears active game
   pendingGameAction = null;
+  openHomeScreen();
 }
-function loadFreezerGame(index) {
+function loadFreezerGame(index, { confirm = true } = {}) {
   const chosen = getLocalStorage("freezerGames")[index];
   if (!chosen) return;
   const matchesChosen = game => game === chosen
@@ -1058,69 +1060,75 @@ function loadFreezerGame(index) {
   const chosenTotals = sanitizeTotals(chosen.finalScore);
   const chosenLabel = chosen.name
     || `${getGameTeamDisplay(chosen, "us")} vs ${getGameTeamDisplay(chosen, "dem")} (${chosenTotals.us}–${chosenTotals.dem})`;
+  const resumeChosenGame = () => {
+    closeConfirmationModal();
+    const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
+    const chosenDemPlayers = ensurePlayersArray(chosen.demPlayers || parseLegacyTeamName(chosen.demName));
+    const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
+    const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
+    const resumedAt = Date.now();
+    // Restore all relevant game state aspects
+    updateState({
+        rounds: (Array.isArray(chosen.rounds) ? chosen.rounds : []).filter(round => round && typeof round === "object" && !Array.isArray(round)),
+        startingTotals: sanitizeTotals(chosen.startingTotals),
+        gameOver: false, // Frozen games are not over
+        winner: null, victoryMethod: null,
+        biddingTeam: chosen.biddingTeam || "",
+        bidAmount: chosen.bidAmount || "",
+        showCustomBid: chosen.showCustomBid || false,
+        customBidValue: chosen.customBidValue || "",
+        enterBidderPoints: chosen.enterBidderPoints || false,
+        error: "", // Clear any previous error
+        lastBidAmount: chosen.lastBidAmount || null,
+        lastBidTeam: chosen.lastBidTeam || null,
+        usPlayers: chosenUsPlayers,
+        demPlayers: chosenDemPlayers,
+        usTeamName: chosenUsName,
+        demTeamName: chosenDemName,
+        accumulatedTime: clampDurationMs(chosen.accumulatedTime), // Cap accumulated time
+        timerStarted: true,
+        startTime: resumedAt, // Restart timer
+        timerLastSavedAt: resumedAt,
+        timerLastActivityAt: resumedAt,
+        timerPaused: false,
+        timerSkippedMs: clampDurationMs(chosen.timerSkippedMs),
+        showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
+        undoneRounds: [], // Clear any undone rounds from previous state
+        dealers: chosen.dealers || [],
+        misdealCount: chosen.misdealCount || 0,
+        misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
+    });
+    // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
+    const freezerGames = getLocalStorage("freezerGames");
+    const currentIndex = freezerGames.findIndex(matchesChosen);
+    if (currentIndex >= 0) {
+      freezerGames.splice(currentIndex, 1); // Remove from freezer
+      setLocalStorage("freezerGames", freezerGames);
+    }
+    closeSavedGamesModal();
+    closeHomeScreen();
+    saveCurrentGameState(); // Save the now active game
+    emitRookEvent(
+        "freezer_game_resumed",
+        getRookGameEventParams(chosen, {
+            durationMs: chosen.accumulatedTime,
+            game_state: "active",
+        })
+    );
+    confettiTriggered = false;
+  };
+  if (!confirm) {
+    resumeChosenGame();
+    return;
+  }
   openConfirmationModal(
     `${chosenLabel} will replace the game on the scoreboard now.`,
-    () => {
-      closeConfirmationModal();
-      const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
-      const chosenDemPlayers = ensurePlayersArray(chosen.demPlayers || parseLegacyTeamName(chosen.demName));
-      const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
-      const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
-      const resumedAt = Date.now();
-      // Restore all relevant game state aspects
-      updateState({
-          rounds: (Array.isArray(chosen.rounds) ? chosen.rounds : []).filter(round => round && typeof round === "object" && !Array.isArray(round)),
-          startingTotals: sanitizeTotals(chosen.startingTotals),
-          gameOver: false, // Frozen games are not over
-          winner: null, victoryMethod: null,
-          biddingTeam: chosen.biddingTeam || "",
-          bidAmount: chosen.bidAmount || "",
-          showCustomBid: chosen.showCustomBid || false,
-          customBidValue: chosen.customBidValue || "",
-          enterBidderPoints: chosen.enterBidderPoints || false,
-          error: "", // Clear any previous error
-          lastBidAmount: chosen.lastBidAmount || null,
-          lastBidTeam: chosen.lastBidTeam || null,
-          usPlayers: chosenUsPlayers,
-          demPlayers: chosenDemPlayers,
-          usTeamName: chosenUsName,
-          demTeamName: chosenDemName,
-          accumulatedTime: clampDurationMs(chosen.accumulatedTime), // Cap accumulated time
-          timerStarted: true,
-          startTime: resumedAt, // Restart timer
-          timerLastSavedAt: resumedAt,
-          timerLastActivityAt: resumedAt,
-          timerPaused: false,
-          timerSkippedMs: clampDurationMs(chosen.timerSkippedMs),
-          showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
-          undoneRounds: [], // Clear any undone rounds from previous state
-          dealers: chosen.dealers || [],
-          misdealCount: chosen.misdealCount || 0,
-          misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
-      });
-      // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
-      const freezerGames = getLocalStorage("freezerGames");
-      const currentIndex = freezerGames.findIndex(matchesChosen);
-      if (currentIndex >= 0) {
-        freezerGames.splice(currentIndex, 1); // Remove from freezer
-        setLocalStorage("freezerGames", freezerGames);
-      }
-      closeSavedGamesModal();
-      saveCurrentGameState(); // Save the now active game
-      emitRookEvent(
-          "freezer_game_resumed",
-          getRookGameEventParams(chosen, {
-              durationMs: chosen.accumulatedTime,
-              game_state: "active",
-          })
-      );
-      confettiTriggered = false;
-    },
+    resumeChosenGame,
     closeConfirmationModal,
     { title: "Resume this game?", confirmLabel: "Resume", icon: "play" }
   );
 }
-function viewSavedGame(originalIndex) { // originalIndex is from the full savedGames list
+function viewSavedGame(originalIndex, { returnToLibrary = true } = {}) { // originalIndex is from the full savedGames list
   const savedGames = getLocalStorage("savedGames"); // Get the full list
   // Find the actual game object by its original index if filtering/sorting was applied
   // This requires the renderSavedGames to pass the original index or unique ID.
@@ -1133,7 +1141,7 @@ function viewSavedGame(originalIndex) { // originalIndex is from the full savedG
   const details = document.getElementById("viewSavedGameDetails");
   details.innerHTML = renderReadOnlyGameDetails(chosen, originalIndex);
   details.scrollTop = 0;
-  openViewSavedGameModal();
+  openViewSavedGameModal({ returnToLibrary });
 }
 function deleteGame(storageKey, index, descriptor, onDeleted) {
   const chosen = getLocalStorage(storageKey)[index];

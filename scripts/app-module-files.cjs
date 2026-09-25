@@ -19,5 +19,6 @@ module.exports = [
   "js/modules/11-rendering.js",
   "js/modules/12-saved-games-and-stats-modals.js",
   "js/modules/13-settings-loading.js",
+  "js/modules/13-home-screen.js",
   "js/modules/14-initialization-and-exports.js",
 ];

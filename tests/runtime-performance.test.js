@@ -265,7 +265,7 @@ for (const bundled of [false, true]) {
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 262000, 68000],
+    ['js/app.bundle.js', 274000, 71000], // +12 KB raw / +3 KB gzip for the home screen and onboarding
     ['js/voice-score.bundle.js', 60000, 17000],
   ]) {
     const source = read(file);

@@ -5393,3 +5393,47 @@ test('offline reset survives repeated cloud merges but a fresh device can restor
   await fresh.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' });
   assert.deepEqual(JSON.parse(fresh.storage.getItem('activeGameState')), finished);
 });
+
+test('home screen treats any started setup as an active game', () => {
+  const app = require('../js/app.js');
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE }), false);
+  assert.equal(app.hasActiveGame(null), false);
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, rounds: [{ bidAmount: 120 }] }), true);
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, gameOver: true }), true);
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, biddingTeam: 'us' }), true);
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, dealers: ['A', 'B', 'C', 'D'] }), true);
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, usPlayers: ['Mark', ''] }), true);
+  // A resumed paper game starts from carried-over totals with no rounds yet.
+  assert.equal(app.hasActiveGame({ ...DEFAULT_STATE, startingTotals: { us: 250, dem: 0 } }), true);
+});
+
+test('home screen notices a different game landing but not the same game advancing', () => {
+  const app = require('../js/app.js');
+  const game = { ...DEFAULT_STATE, usPlayers: ['A', 'B'], demPlayers: ['C', 'D'], rounds: [{ bidAmount: 120 }] };
+  assert.equal(app.getHomeScreenGameSignature({ ...DEFAULT_STATE }), '');
+  const signature = app.getHomeScreenGameSignature(game);
+  assert.ok(signature);
+  assert.equal(app.getHomeScreenGameSignature({ ...game, accumulatedTime: 90000, timerPaused: true }), signature);
+  assert.notEqual(app.getHomeScreenGameSignature({ ...game, startingTotals: { us: 100, dem: 0 } }), signature);
+  assert.notEqual(app.getHomeScreenGameSignature({ ...game, demPlayers: ['E', 'F'] }), signature);
+});
+
+test('onboarding is only for devices with no games yet', () => {
+  resetState();
+  const app = require('../js/app.js');
+  resetGame();
+  // Startup migrations write settings and an empty teams record; that is not history.
+  setLocalStorage('teams', { __storageVersion: 2 }, { sync: false });
+  setLocalStorage('tableTalkPenaltyType', 'setPoints', { sync: false });
+  assert.equal(app.hasExistingRookData(), false);
+  setLocalStorage('freezerGames', [{ rounds: [{}] }], { sync: false });
+  assert.equal(app.hasExistingRookData(), true);
+  resetState();
+  setLocalStorage('savedGames', [{ rounds: [{}] }], { sync: false });
+  assert.equal(app.hasExistingRookData(), true);
+  resetState();
+  assert.equal(app.isOnboardingComplete(), false);
+  setLocalStorage(app.ONBOARDING_COMPLETED_KEY, true);
+  assert.equal(app.isOnboardingComplete(), true);
+  assert.ok(app.ONBOARDING_COMPLETED_KEY.startsWith('localOnly:'), 'onboarding stays per-device, never synced');
+});

@@ -249,6 +249,8 @@ function activateModalEnvironment() {
   app?.classList.add("modal-active");
   // Keep the blurred page out of the tab and screen-reader order while a sheet is open.
   if (app && "inert" in app) app.inert = true;
+  const home = document.getElementById("homeScreen");
+  if (home && "inert" in home) home.inert = true;
 }
 
 function deactivateModalEnvironment() {
@@ -258,7 +260,11 @@ function deactivateModalEnvironment() {
     document.body.classList.remove("modal-open");
     const app = document.getElementById("app");
     app?.classList.remove("modal-active");
-    if (app && "inert" in app) app.inert = false;
+    // Home, when showing, stays the only interactive screen; the scoreboard behind it stays inert.
+    const homeOpen = isHomeScreenOpen();
+    if (app && "inert" in app) app.inert = homeOpen;
+    const home = document.getElementById("homeScreen");
+    if (home && "inert" in home) home.inert = !homeOpen || document.body.classList.contains("onboarding-open");
   }
 }
 
@@ -602,6 +608,7 @@ function handleResumeGameSubmit(event) {
   confettiTriggered = false;
   pendingGameAction = null;
   closeResumeGameModal();
+  closeHomeScreen();
   saveCurrentGameState();
   showSaveIndicator("Starting scores set!");
 }
@@ -629,14 +636,17 @@ function closeStatisticsModal() {
   document.getElementById("statisticsModalContent").innerHTML = "";
   closeEntityStatisticsModal();
 }
-function openViewSavedGameModal() {
+function openViewSavedGameModal({ returnToLibrary = true } = {}) {
   cancelSheetClose("viewSavedGameModal");
+  const modal = document.getElementById("viewSavedGameModal");
+  if (modal) modal.dataset.returnToLibrary = String(returnToLibrary);
   openModal("viewSavedGameModal");
   ensureStatsSheetGesture("viewSavedGameModal", closeViewSavedGameModal);
 }
 function closeViewSavedGameModal() {
   const libraryModal = document.getElementById("savedGamesModal");
-  if (libraryModal?.classList.contains("hidden")) openModal("savedGamesModal"); // Reopen parent
+  const returnToLibrary = document.getElementById("viewSavedGameModal")?.dataset.returnToLibrary !== "false";
+  if (returnToLibrary && libraryModal?.classList.contains("hidden")) openModal("savedGamesModal"); // Reopen parent
   closeSheetModal("viewSavedGameModal");
 }
 

@@ -17,6 +17,13 @@
   <link rel="stylesheet" href="css/tailwind.css" />
   <link rel="stylesheet" href="css/app.css" />
   <script src="js/analytics.js" defer></script>
+  <script>
+    // Paint Home first when no game is saved, so a fresh launch never flashes the empty scoreboard.
+    try {
+      var rookActiveGame = localStorage.getItem("activeGameState");
+      if (!rookActiveGame || rookActiveGame === "null") document.documentElement.classList.add("home-boot");
+    } catch (e) {}
+  </script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen transition-colors duration-300 liquid-glass theme-blue-red theme-cartoony" id="bodyRoot">
     <!-- Icon sprite (dialog-icon-* for .dialog-icon, ui-icon-* for sheets) -->
@@ -69,6 +76,7 @@
     <!-- Navigation Menu -->
     <nav id="menu" class="nav-transparent" inert>
       <ul>
+        <li><button type="button" onclick="openHomeScreen({ focus: true });">Home</button></li>
         <li><button type="button" onclick="openSavedGamesModal(); toggleMenu(event);">View Games</button></li>
         <li><button type="button" onclick="handleNewGame(); toggleMenu(event);">New Game</button></li>
         <li><button type="button" onclick="handleFreezerGame(); toggleMenu(event);">Freeze Game</button></li>
@@ -103,6 +111,108 @@
     <!-- Version Number -->
     <div id="versionBadge" class="version-badge" onclick="showVersionNum()" role="button" aria-label="Show Version Info" tabindex="0" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showVersionNum(); }">
       <p>2.1</p>
+    </div>
+
+
+    <!-- Home Screen: the launch destination whenever no game is in progress -->
+    <section id="homeScreen" class="home-screen" aria-labelledby="homeScreenTitle" inert>
+      <div class="home-screen__inner">
+        <header class="home-hero">
+          <div class="home-hero__fan" aria-hidden="true">
+            <span class="home-hero__card home-hero__card--us"><span>14</span></span>
+            <span class="home-hero__card home-hero__card--rook"><svg viewBox="0 0 48 48"><path fill="#111827" d="M4 36c3-2 5-3 7-4 1-7 8-13 16-14 2-4 7-6 11-3l6 2-6 2c0 8-6 15-15 15h-3l-2 4-1-4h-2l-2 3-1-3c-3 0-6 1-8 2Z"/><path d="M15 28c4-4 10-5 15-2" fill="none" stroke="#f1e9d6" stroke-width="1.6" stroke-linecap="round"/><circle cx="35.5" cy="16.5" r="1.4" fill="#fffdf6"/></svg></span>
+            <span class="home-hero__card home-hero__card--dem"><span>1</span></span>
+          </div>
+          <h1 id="homeScreenTitle" class="home-hero__title">Rook!</h1>
+          <p id="homeScreenGreeting" class="home-hero__subtitle">Ready to deal?</p>
+        </header>
+
+        <div id="homeScreenStatus" class="home-status hidden" aria-live="polite"></div>
+
+        <div class="home-actions">
+          <button type="button" id="homeNewGameBtn" class="home-primary" onclick="homeStartNewGame()">
+            <svg class="ui-icon" aria-hidden="true"><use href="#dialog-icon-play"/></svg>
+            <span>Start New Game</span>
+          </button>
+          <div class="home-grid">
+            <button type="button" class="home-tile home-tile--games" onclick="openSavedGamesModal()">
+              <span class="home-tile__icon" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-list"/></svg></span>
+              <span class="home-tile__label">Games</span>
+              <span id="homeGamesMeta" class="home-tile__meta">None yet</span>
+            </button>
+            <button type="button" class="home-tile home-tile--stats" onclick="openStatisticsModal()">
+              <span class="home-tile__icon" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-bars"/></svg></span>
+              <span class="home-tile__label">Stats</span>
+              <span class="home-tile__meta">Leaderboards</span>
+            </button>
+            <button type="button" class="home-tile home-tile--paper" onclick="openResumeGameModal()">
+              <span class="home-tile__icon" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-sheet"/></svg></span>
+              <span class="home-tile__label">Paper Game</span>
+              <span class="home-tile__meta">Carry a score in</span>
+            </button>
+            <button type="button" class="home-tile home-tile--settings" onclick="openSettingsModal()">
+              <span class="home-tile__icon" aria-hidden="true"><svg class="ui-icon"><use href="#ui-icon-gear"/></svg></span>
+              <span class="home-tile__label">Settings</span>
+              <span class="home-tile__meta">Rules, colors</span>
+            </button>
+          </div>
+          <div class="home-footer">
+            <button type="button" class="home-link" onclick="openOnboarding({ replay: true })">How it works</button>
+            <span class="home-footer__dot" aria-hidden="true"></span>
+            <button type="button" class="home-link" onclick="openAboutModal()">About</button>
+            <span class="home-footer__dot" aria-hidden="true"></span>
+            <button type="button" class="home-link" onclick="homeToggleAuth()"><span id="homeAuthLabel">Sign in to sync</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- First-run onboarding: three quick cards, shown once per device -->
+    <div id="onboarding" class="onboarding hidden" role="dialog" aria-modal="true" aria-label="Welcome to Rook Score">
+      <div class="onboarding__top">
+        <button type="button" id="onboardingSkip" class="onboarding__skip" onclick="finishOnboarding('skipped')">Skip</button>
+      </div>
+      <div id="onboardingTrack" class="onboarding__track no-scrollbar">
+        <section class="onboarding__slide is-active" aria-labelledby="onboardingTitle1">
+          <div class="onboarding__art onboarding__art--board" aria-hidden="true">
+            <span class="ob-team ob-team--us"><span class="ob-team__name">Us</span><span class="ob-team__score">355</span></span>
+            <span class="ob-round"><span class="ob-round__label">Round</span><span class="ob-round__value">7</span></span>
+            <span class="ob-team ob-team--dem"><span class="ob-team__name">Dem</span><span class="ob-team__score">290</span></span>
+          </div>
+          <p class="onboarding__eyebrow">Welcome to Rook Score</p>
+          <h2 id="onboardingTitle1" class="onboarding__title">Keep score, not paper</h2>
+          <p class="onboarding__body">Bids, points, and running totals for every hand, sized for one thumb at the card table.</p>
+        </section>
+        <section class="onboarding__slide" aria-labelledby="onboardingTitle2">
+          <div class="onboarding__art onboarding__art--bid" aria-hidden="true">
+            <span class="ob-team ob-team--us ob-team--tapped"><span class="ob-team__name">Us</span><span class="ob-team__score">355</span><span class="ob-tap"></span></span>
+            <span class="ob-chips">
+              <span class="ob-chip">120</span><span class="ob-chip">125</span><span class="ob-chip is-picked">130</span><span class="ob-chip">135</span>
+            </span>
+          </div>
+          <p class="onboarding__eyebrow">One tap per hand</p>
+          <h2 id="onboardingTitle2" class="onboarding__title">Tap the team that won the bid</h2>
+          <p class="onboarding__body">Pick the bid, enter the points, and both totals update. Made a mistake? Undo is always one tap away.</p>
+        </section>
+        <section class="onboarding__slide" aria-labelledby="onboardingTitle3">
+          <div class="onboarding__art onboarding__art--library" aria-hidden="true">
+            <span class="ob-badge ob-badge--frost"><svg class="ui-icon"><use href="#dialog-icon-snowflake"/></svg></span>
+            <span class="ob-badge ob-badge--games"><svg class="ui-icon"><use href="#ui-icon-list"/></svg></span>
+            <span class="ob-badge ob-badge--gold"><svg class="ui-icon"><use href="#dialog-icon-trophy"/></svg></span>
+          </div>
+          <p class="onboarding__eyebrow">Pause, pick up, look back</p>
+          <h2 id="onboardingTitle3" class="onboarding__title">Every game, saved</h2>
+          <p class="onboarding__body">Freeze a game to finish later, browse past games, and see who really carries the table in Stats. Sign in to sync across devices.</p>
+        </section>
+      </div>
+      <div class="onboarding__bottom">
+        <div id="onboardingDots" class="onboarding__dots">
+          <button type="button" class="onboarding__dot is-active" aria-label="Card 1 of 3" aria-current="step"></button>
+          <button type="button" class="onboarding__dot" aria-label="Card 2 of 3" aria-current="false"></button>
+          <button type="button" class="onboarding__dot" aria-label="Card 3 of 3" aria-current="false"></button>
+        </div>
+        <button type="button" id="onboardingNext" class="dialog-btn dialog-btn--primary onboarding__next" onclick="advanceOnboarding()">Next</button>
+      </div>
     </div>
 
     <!-- Version Info Modal -->

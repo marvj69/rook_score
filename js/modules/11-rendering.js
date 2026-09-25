@@ -137,6 +137,7 @@ function renderApp() {
   `;
   updateCurrentGameTimerDisplay();
   scheduleViewportCompatibilitySync();
+  syncHomeScreenWithGame();
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
     launchGameOverConfetti();
