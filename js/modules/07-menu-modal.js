@@ -610,7 +610,6 @@ function handleResumeGameSubmit(event) {
   closeResumeGameModal();
   closeHomeScreen();
   saveCurrentGameState();
-  showSaveIndicator("Starting scores set!");
 }
 
 function openSettingsModal() {

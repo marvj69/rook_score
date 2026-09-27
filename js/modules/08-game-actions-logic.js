@@ -80,7 +80,6 @@ function applyTableTalkPenalty(flaggedTeam) {
     () => { // YES
       applyCheatPenaltyRound(flaggedTeam);
       closeConfirmationModal();
-      showSaveIndicator(`Penalty applied to ${teamName}`);
     },
     closeConfirmationModal, // NO
     { title: "Apply table-talk penalty?", confirmLabel: "Apply penalty", tone: "danger", icon: "flag" }
@@ -660,7 +659,6 @@ function handleMisdeal() {
   const misdealDealers = [...normalizeMisdealDealers(state.misdealDealers), currentDealer];
   updateState({ misdealCount: newMisdealCount, misdealDealers });
   saveCurrentGameState();
-  showSaveIndicator(`Misdeal tracked for ${currentDealer}`);
   return true;
 }
 function handleNewGame() {
@@ -772,7 +770,6 @@ async function startRematchWithFirstDealer(firstDealer) {
   pendingGameAction = null;
   window.prePopulatedTeamData = null;
   saveCurrentGameState();
-  showSaveIndicator(`${nextState.dealers[0]} deals first`);
   emitRookEvent("rematch_started", getRookGameEventParams(nextState, { source: "game_over" }));
   return true;
 }
@@ -925,7 +922,6 @@ async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
           victory_method: state.victoryMethod,
       })
   );
-  showSaveIndicator("Game Saved!");
   if (resetAfterSave) {
     resetGame(); // Resets state and clears active game from storage
     confettiTriggered = false;
@@ -1047,7 +1043,6 @@ async function freezeCurrentGame() {
           game_state: "frozen",
       })
   );
-  showSaveIndicator("Game Frozen!");
   resetGame(); // Resets state and clears active game
   pendingGameAction = null;
   openHomeScreen();

@@ -32,7 +32,6 @@ function saveSettings() {
   }
 
   renderApp();
-  showSaveIndicator("Settings Saved");
 }
 function updateProModeUI(isProMode) {
   const proToggleModal = document.getElementById("proModeToggleModal");
@@ -77,16 +76,13 @@ function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()
   }
 }
 
-function setExperimentalFeaturesEnabled(isEnabled, { notify = true } = {}) {
+function setExperimentalFeaturesEnabled(isEnabled) {
   setLocalStorage(EXPERIMENTAL_FEATURES_KEY, isEnabled);
   updateExperimentalFeaturesUI(isEnabled);
   if (!isEnabled) {
     cancelLoadedVoiceScoreEntry();
   } else {
     initializeVoiceScoreModuleWhenEnabled();
-  }
-  if (notify) {
-    showSaveIndicator(isEnabled ? "Experimental Features On" : "Experimental Features Off");
   }
   return isEnabled;
 }
@@ -126,7 +122,7 @@ async function continueVoiceExperimentalOnboarding() {
     setExperimentalFeaturesEnabled(true);
     return true;
   } catch (error) {
-    setExperimentalFeaturesEnabled(false, { notify: false });
+    setExperimentalFeaturesEnabled(false);
     const permissionDenied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
     setVoiceExperimentalOnboardingError(
       permissionDenied
@@ -146,11 +142,11 @@ async function enableExperimentalFeaturesWithMicrophone(checkbox) {
     setExperimentalFeaturesEnabled(true);
     return true;
   } catch (error) {
-    setExperimentalFeaturesEnabled(false, { notify: false });
+    setExperimentalFeaturesEnabled(false);
     const message = error?.name === "NotAllowedError" || error?.name === "SecurityError"
       ? "Microphone permission is required for Experimental Features"
       : (error?.message || "Microphone access is unavailable");
-    showSaveIndicator(message);
+    showWarningToast(message);
     return false;
   } finally {
     if (checkbox) checkbox.disabled = false;
@@ -176,7 +172,6 @@ function toggleVoiceImprovementConsent(checkbox) {
   const optedIn = Boolean(checkbox?.checked);
   setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, optedIn);
   updateVoiceImprovementConsentUI(optedIn);
-  showSaveIndicator(optedIn ? "Voice improvement sharing on" : "Voice improvement sharing off");
   return optedIn;
 }
 

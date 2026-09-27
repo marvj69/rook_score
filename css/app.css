@@ -898,7 +898,7 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* ── Save Indicator (toast) ── */
+/* ── Warning toast (#saveIndicator): only shown when something failed ── */
 #saveIndicator {
   position: fixed;
   left: 50%;
@@ -932,8 +932,8 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
   width: 1.6rem;
   height: 1.6rem;
   border-radius: var(--radius-full);
-  background: #10b981 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 0.95rem no-repeat;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
+  background: #f59e0b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23261700' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 7v6M12 17h.01'/%3E%3C/svg%3E") center / 0.95rem no-repeat;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24);
 }
 #saveIndicator.show {
   opacity: 1;

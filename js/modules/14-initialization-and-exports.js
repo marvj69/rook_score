@@ -194,7 +194,6 @@ if ('serviceWorker' in navigator) {
 
 function undoPenaltyFlag() {
   updateState({ pendingPenalty: null });
-  showSaveIndicator("Penalty removed");
 }
 
 function handleTeamSelectionCancel() {

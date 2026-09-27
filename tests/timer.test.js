@@ -19,7 +19,7 @@ function harness() {
     ACTIVE_GAME_KEY: 'activeGameState', LOCAL_STORAGE_CACHE: new Map(),
     localStorage: { removeItem: key => { delete stored[key]; } },
     setLocalStorage: (key, value) => { stored[key] = JSON.parse(JSON.stringify(value)); },
-    sanitizeTotals: x => x, showSaveIndicator() {},
+    sanitizeTotals: x => x, showWarningToast() {},
   });
   vm.runInContext(source, context);
   return { c: context, events, stored, at: value => { now = value; } };

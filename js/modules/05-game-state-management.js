@@ -366,6 +366,6 @@ function saveCurrentGameState({
     state.timerVersion = snapshot.timerVersion;
     currentGameTimerLastCheckpointAt = snapshot.timerLastSavedAt;
     const stored = setLocalStorage(ACTIVE_GAME_KEY, snapshot, { sync });
-    if (showIndicator) showSaveIndicator(stored ? "Saved" : "Not saved: storage full");
+    if (showIndicator && !stored) showWarningToast("Not saved: storage full");
   }
 }

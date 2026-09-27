@@ -372,12 +372,10 @@ function exportGameData() {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     setGameDataTransferStatus(`Exported ${payload.storage.length} saved data items.`);
-    showSaveIndicator("Game data exported");
     return payload;
   } catch (error) {
     console.error("Game data export failed.", error);
     setGameDataTransferStatus(error?.message || "Game data export failed.", true);
-    showSaveIndicator("Export failed");
     return null;
   }
 }
@@ -406,14 +404,12 @@ async function importGameData(input) {
     rehydrateImportedGameData();
     const restoredEntries = getAppStorageEntries();
     setGameDataTransferStatus(`Imported ${restoredEntries.length} saved data items.`);
-    showSaveIndicator("Game data imported");
     synchronizeImportedGameData(previousEntries, restoredEntries)
       .catch(error => console.warn("Imported data could not be mirrored to Firebase.", error));
     return true;
   } catch (error) {
     console.error("Game data import failed.", error);
     setGameDataTransferStatus(error?.message || "Game data import failed.", true);
-    showSaveIndicator("Import failed");
     return false;
   } finally {
     input.value = "";
@@ -563,7 +559,6 @@ function savePresets() {
   savePresetBids();
   closePresetEditorModal();
   scheduleRender();
-  showSaveIndicator("Bid presets updated");
 }
 
 function normalizePresetBidValues(values) {
@@ -582,6 +577,5 @@ function setPresetBidsFromValues(values) {
   savePresetBids();
   closePresetEditorModal();
   scheduleRender();
-  showSaveIndicator("Bid presets updated");
   return presetBids;
 }

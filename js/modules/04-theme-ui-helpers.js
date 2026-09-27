@@ -319,7 +319,8 @@ function closeThemeModal(event) {
   document.getElementById("settingsModal")?.classList.remove("hidden");
   closeSheetModal("themeModal");
 }
-function showSaveIndicator(message = "Saved") {
+// Routine saves are silent; this toast only surfaces problems the user must know about.
+function showWarningToast(message) {
   const el = document.getElementById("saveIndicator");
   if (!el) return;
   clearTimeout(el.hideTimer);

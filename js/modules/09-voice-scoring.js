@@ -879,7 +879,6 @@ function submitVoiceScoreHand(action) {
 function applyVoiceScoreRound(action) {
   if (state.gameOver) throw new Error("This game is over. Start a rematch or a new game first.");
   submitVoiceScoreHand(action);
-  showSaveIndicator("Voice score recorded");
   return "Voice score recorded.";
 }
 
@@ -907,7 +906,6 @@ function applyVoiceScoreReplaceLastRound(action) {
     updateState(timerSnapshot);
     saveCurrentGameState();
   }
-  showSaveIndicator("Last hand corrected");
   return "Last hand corrected.";
 }
 
@@ -945,7 +943,6 @@ function applyVoiceScoreSetting(action) {
     const isEnabled = toVoiceScoreBoolean(value);
     setLocalStorage(key === "mustWinByBid" ? MUST_WIN_BY_BID_KEY : MISDEAL_HANDLING_KEY, isEnabled);
     syncVoiceScoreSettingsSheet();
-    showSaveIndicator("Settings Saved");
     const label = key === "mustWinByBid" ? "Must win by bid" : "Misdeal handling";
     return `${label} is ${isEnabled ? "on" : "off"}.`;
   }
@@ -954,7 +951,6 @@ function applyVoiceScoreSetting(action) {
     setLocalStorage(PRO_MODE_KEY, isPro);
     updateProModeUI(isPro);
     saveCurrentGameState();
-    showSaveIndicator("Settings Saved");
     return isPro ? "Pro mode is on." : "Pro mode is off.";
   }
   if (key === "experimentalFeatures") {
@@ -1007,7 +1003,6 @@ function applyVoiceScoreStartPaperGame(action) {
   updateState(updates);
   confettiTriggered = false;
   saveCurrentGameState();
-  showSaveIndicator("Starting scores set!");
   return `Started paper game at ${usScore} to ${demScore}.`;
 }
 
@@ -1064,7 +1059,6 @@ function applyVoiceScoreEditRound(action) {
     commitHistoryEdit(roundNumber - 1, field, value);
     if (state.error) throw new Error(state.error);
   }
-  showSaveIndicator(`Round ${roundNumber} updated`);
   return `Round ${roundNumber} updated.`;
 }
 
@@ -1316,13 +1310,11 @@ const VOICE_SCORE_ACTION_HANDLERS = {
   undo() {
     if (!state.rounds.length) throw new Error("No hand to undo.");
     handleUndo();
-    showSaveIndicator("Last hand undone");
     return "Undid last hand.";
   },
   redo() {
     if (!state.undoneRounds.length) throw new Error("No hand to redo.");
     handleRedo();
-    showSaveIndicator("Hand redone");
     return "Redid last hand.";
   },
   misdeal() {
@@ -1333,7 +1325,6 @@ const VOICE_SCORE_ACTION_HANDLERS = {
   newGame(_action, { confirmed }) {
     if (confirmed) {
       resetGame();
-      showSaveIndicator("New game started");
       return "New game started.";
     }
     handleNewGame();
@@ -1353,7 +1344,6 @@ const VOICE_SCORE_ACTION_HANDLERS = {
       return "Game saved.";
     }
     saveCurrentGameState();
-    showSaveIndicator("Game Saved");
     return "Current game saved.";
   },
   rematch: applyVoiceScoreRematch,
@@ -1371,7 +1361,6 @@ const VOICE_SCORE_ACTION_HANDLERS = {
     const dealers = sanitizeVoiceScoreDealers(action.dealers);
     updateState({ dealers, misdealCount: 0, misdealDealers: [] });
     saveCurrentGameState();
-    showSaveIndicator("Dealer order saved");
     return `Dealer order set: ${dealers.join(", ")}.`;
   },
   startPaperGame: applyVoiceScoreStartPaperGame,
@@ -1802,8 +1791,7 @@ function initializeVoiceScoreControls() {
   voiceScoreControlListenersInitialized = true;
 
   document.getElementById("voiceSpokenRepliesToggle")?.addEventListener("change", event => {
-    const isEnabled = setVoiceScoreSpeechEnabled(event.target.checked);
-    showSaveIndicator(isEnabled ? "Spoken replies on" : "Spoken replies off");
+    setVoiceScoreSpeechEnabled(event.target.checked);
   });
 
   const getVoiceScoreButton = event => (
