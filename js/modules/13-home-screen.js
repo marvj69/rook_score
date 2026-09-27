@@ -216,10 +216,15 @@ function renderHomeScreen() {
   const frozenCount = (getLocalStorage("freezerGames", []) || []).length;
   const gamesMeta = document.getElementById("homeGamesMeta");
   if (gamesMeta) {
+    // "12 saved · 3 frozen" is too wide for a phone-width tile, so with both
+    // counts the frozen one uses the freezer snowflake instead of the word.
+    const frozenMeta = savedCount
+      ? `<span class="home-tile__frozen"><svg class="ui-icon" aria-hidden="true"><use href="#dialog-icon-snowflake"/></svg>${frozenCount}<span class="sr-only"> frozen</span></span>`
+      : `${frozenCount} frozen`;
     const parts = [];
     if (savedCount) parts.push(`${savedCount} saved`);
-    if (frozenCount) parts.push(`${frozenCount} frozen`);
-    gamesMeta.textContent = parts.length ? parts.join(" · ") : "None yet";
+    if (frozenCount) parts.push(frozenMeta);
+    gamesMeta.innerHTML = parts.length ? parts.join(" · ") : "None yet";
   }
 
   const authLabel = document.getElementById("homeAuthLabel");

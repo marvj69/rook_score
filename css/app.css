@@ -2932,6 +2932,8 @@ html.dark body.liquid-glass .theme-swatch .theme-swatch__input,
    Sits over the scoreboard (which is hidden while it shows) and under
    every sheet and dialog, so the existing modals open on top of it.
    Actions sit low in the thumb zone; recent-game cards float above.
+   Everything fits on one screen: the hero takes whatever height is left
+   and sheds its fan, then its greeting, as that space runs out.
    ══════════════════════════════════════════════════════════════════ */
 .home-screen {
   --dialog-tone: var(--primary-color);
@@ -2946,6 +2948,8 @@ html.dark body.liquid-glass .theme-swatch .theme-swatch__input,
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   color: #f8fafc;
+  /* Sized by the viewport, not its content, so it can be queried for height. */
+  container: home-screen / size;
 }
 html.home-boot .home-screen,
 body.home-open .home-screen { display: block; }
@@ -2962,15 +2966,15 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-screen__inner {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.75rem;
   width: 100%;
   max-width: 28rem;
   min-height: 100dvh;
   margin: 0 auto;
   padding:
-    calc(1.25rem + var(--safe-area-inset-top-effective))
+    calc(1rem + var(--safe-area-inset-top-effective))
     calc(1rem + env(safe-area-inset-right, 0px))
-    calc(1rem + var(--safe-area-inset-bottom-effective))
+    calc(0.75rem + var(--safe-area-inset-bottom-effective))
     calc(1rem + env(safe-area-inset-left, 0px));
 }
 @supports not (height: 100dvh) {
@@ -2979,6 +2983,29 @@ body.home-open .voice-score-control { visibility: hidden; }
 
 /* Hero: a fanned hand of cards over the wordmark */
 .home-hero { text-align: center; margin-block: auto; padding: 0.5rem 0; }
+@supports (container-type: size) {
+  .home-hero {
+    flex: 1 1 0;
+    min-height: 2.4rem;
+    margin-block: 0;
+    padding: 0;
+    container: home-hero / size;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  @container home-hero (max-height: 11.3rem) {
+    .home-hero__fan { zoom: 0.7; }
+  }
+  @container home-hero (max-height: 9.5rem) {
+    .home-hero__fan { display: none; }
+  }
+  @container home-hero (max-height: 5.3rem) {
+    .home-hero__title { font-size: 2.4rem; }
+    .home-hero__subtitle { display: none; }
+  }
+}
 .home-hero__fan {
   position: relative;
   height: 5.6rem;
@@ -3052,15 +3079,15 @@ body.home-open .voice-score-control { visibility: hidden; }
 }
 
 /* Recent-game cards */
-.home-status { display: grid; gap: 0.75rem; }
+.home-status { display: grid; gap: 0.6rem; }
 .home-status.hidden { display: none; }
 .home-card {
   --card-tone: var(--primary-color);
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.4rem;
   width: 100%;
-  padding: 0.9rem 1rem;
+  padding: 0.75rem 0.9rem;
   border-radius: var(--radius-md);
   border: 2px solid color-mix(in srgb, var(--card-tone) 35%, rgba(148, 163, 184, 0.2));
   background:
@@ -3079,7 +3106,7 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-card:focus { outline: none; }
 .home-card:focus-visible { outline: 3px solid var(--card-tone); outline-offset: 3px; }
 .home-card--frozen { --card-tone: #22d3ee; }
-.home-card--recent { --card-tone: #fbbf24; padding: 0.75rem 1rem; }
+.home-card--recent { --card-tone: #fbbf24; padding: 0.6rem 0.9rem; }
 .home-card__eyebrow {
   display: flex;
   align-items: center;
@@ -3118,7 +3145,7 @@ body.home-open .voice-score-control { visibility: hidden; }
   align-items: center;
   gap: 0.15rem;
   flex-shrink: 0;
-  padding: 0.35rem 0.55rem 0.35rem 0.8rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
   border-radius: var(--radius-full);
   font-weight: 800;
   color: #ffffff;
@@ -3139,11 +3166,12 @@ body.home-open .voice-score-control { visibility: hidden; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.85rem;
+  line-height: 1.3;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.85);
 }
 .home-score__value {
-  font-size: 1.75rem;
+  font-size: 1.55rem;
   line-height: 1.1;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -3151,7 +3179,7 @@ body.home-open .voice-score-control { visibility: hidden; }
 }
 .home-score__side--us .home-score__value { color: color-mix(in srgb, var(--primary-color) 70%, #ffffff); }
 .home-score__side--dem .home-score__value { color: color-mix(in srgb, var(--accent-color) 70%, #ffffff); }
-.home-card--recent .home-score__value { font-size: 1.3rem; }
+.home-card--recent .home-score__value { font-size: 1.2rem; }
 .home-score__side.is-winner .home-score__name::after { content: " \1F3C6"; }
 .home-score__vs {
   font-size: 0.72rem;
@@ -3165,7 +3193,7 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 .home-primary {
   display: inline-flex;
@@ -3173,8 +3201,8 @@ body.home-open .voice-score-control { visibility: hidden; }
   justify-content: center;
   gap: 0.6rem;
   width: 100%;
-  min-height: 4rem;
-  padding: 0.9rem 1.25rem;
+  min-height: 3.5rem;
+  padding: 0.7rem 1.25rem;
   border-radius: var(--radius-md);
   border: 2px solid color-mix(in srgb, var(--primary-color) 60%, #ffffff);
   background: linear-gradient(180deg, color-mix(in srgb, var(--primary-color) 82%, #ffffff), var(--primary-color));
@@ -3200,7 +3228,7 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-primary:focus { outline: none; }
 .home-primary:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }
 .home-primary--quiet {
-  min-height: 3.25rem;
+  min-height: 3rem;
   font-size: 1.02rem;
   border-color: rgba(148, 163, 184, 0.28);
   background: var(--glass-layer-strong, rgba(18, 24, 58, 0.72));
@@ -3212,17 +3240,20 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
+/* Icon on the left, label over meta on the right: keeps the 2×2 grid short. */
 .home-tile {
   --tile-tone: var(--primary-color);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: 0.6rem;
+  row-gap: 0.05rem;
   min-width: 0;
-  min-height: 6rem;
-  padding: 0.75rem 0.85rem 0.8rem;
+  min-height: 3.6rem;
+  padding: 0.55rem 0.65rem;
   border-radius: var(--radius-md);
   border: 2px solid rgba(148, 163, 184, 0.2);
   background: var(--glass-layer-strong, rgba(18, 24, 58, 0.72));
@@ -3242,27 +3273,49 @@ body.home-open .voice-score-control { visibility: hidden; }
 .home-tile--paper { --tile-tone: #34d399; }
 .home-tile--settings { --tile-tone: #a5b4fc; }
 .home-tile__icon {
+  grid-row: 1 / span 2;
   display: inline-flex;
-  margin-bottom: 0.4rem;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.85rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
   color: var(--tile-tone);
   background: color-mix(in srgb, var(--tile-tone) 18%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tile-tone) 35%, transparent);
 }
-.home-tile__icon .ui-icon { width: 1.3rem; height: 1.3rem; stroke-width: 2.2; }
-.home-tile__label { font-size: 1rem; font-weight: 800; line-height: 1.2; }
+.home-tile__icon .ui-icon { width: 1.2rem; height: 1.2rem; stroke-width: 2.2; }
+.home-tile__label,
 .home-tile__meta {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.home-tile__label { align-self: end; font-size: 0.98rem; font-weight: 800; line-height: 1.2; }
+.home-tile__meta {
+  align-self: start;
   font-size: 0.78rem;
   font-weight: 600;
   color: rgba(203, 213, 225, 0.7);
+}
+.home-tile__frozen { color: #67e8f9; }
+.home-tile__frozen .ui-icon {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: 0.1rem;
+  vertical-align: -0.12em;
+  stroke-width: 2.4;
+}
+/* Narrow phones: give the tile text room so labels aren't cut off. */
+@media (max-width: 380px) {
+  .home-tile { column-gap: 0.5rem; padding-inline: 0.55rem; }
+  .home-tile__icon { width: 2rem; height: 2rem; border-radius: 0.65rem; }
+}
+@media (max-width: 340px) {
+  .home-tile { grid-template-columns: minmax(0, 1fr); padding-inline: 0.75rem; }
+  .home-tile__icon { display: none; }
 }
 
 .home-footer {
@@ -3295,10 +3348,47 @@ body.home-open .voice-score-control { visibility: hidden; }
   background: rgba(148, 163, 184, 0.45);
 }
 
-/* Short landscape phones: tighten the hero so the actions stay reachable. */
-@media (max-height: 560px) {
-  .home-hero__fan { display: none; }
-  .home-hero__title { font-size: 2.4rem; }
+/* Short screens (small phones with the browser toolbars showing): tighten the
+   spacing so two game cards and every action still fit without scrolling. */
+@container home-screen (max-height: 600px) {
+  .home-screen__inner {
+    gap: 0.6rem;
+    padding-top: calc(0.75rem + var(--safe-area-inset-top-effective));
+    padding-bottom: calc(0.5rem + var(--safe-area-inset-bottom-effective));
+  }
+  .home-status,
+  .home-actions,
+  .home-grid { gap: 0.5rem; }
+  .home-card { gap: 0.3rem; padding: 0.6rem 0.85rem; }
+  .home-card--recent { padding: 0.5rem 0.85rem; }
+  .home-primary:not(.home-primary--quiet) { min-height: 3.25rem; padding-block: 0.6rem; }
+  .home-tile { min-height: 3.35rem; padding-block: 0.45rem; }
+  .home-link { min-height: 2.5rem; }
+}
+
+/* Browsers without container queries: drop the fan on short screens instead. */
+@supports not (container-type: size) {
+  @media (max-height: 700px) {
+    .home-hero__fan { display: none; }
+  }
+  @media (max-height: 560px) {
+    .home-hero__title { font-size: 2.4rem; }
+  }
+}
+
+/* Landscape phones: hero and cards on the left, actions on the right. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .home-screen__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    column-gap: 1.5rem;
+    max-width: 54rem;
+  }
+  .home-hero { grid-column: 1; grid-row: 1; }
+  .home-status { grid-column: 1; grid-row: 2; }
+  .home-screen__inner:has(.home-status.hidden) .home-hero { grid-row: 1 / -1; }
+  .home-actions { grid-column: 2; grid-row: 1 / -1; align-self: center; }
 }
 
 /* ══════════════════════════════════════════════════════════════════
