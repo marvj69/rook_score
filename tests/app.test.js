@@ -652,10 +652,55 @@ test('a finished game stays in storage until it is saved, rematched, or reset', 
 test('stored theme strings are validated before they become body classes', () => {
   const themeSource = readFileSync(path.join(repoRoot, 'js/modules/04-theme-ui-helpers.js'), 'utf8');
   assert.match(themeSource, /BASE_BODY_CLASSES\.includes\(token\) \|\| \/\^theme-\[a-z0-9-\]\+\$\/i\.test\(token\)/);
-  assert.match(themeSource, /const liveClasses = \["modal-open", "overflow-hidden"\]/);
   assert.equal(sanitizeHexColor('#f00'), '#ff0000');
   assert.equal(sanitizeHexColor('ABCDEF'), '#abcdef');
   assert.equal(sanitizeHexColor('#12345'), '');
+});
+
+test('reapplying the theme after a cloud merge keeps Home, onboarding, and open sheets on screen', () => {
+  resetState();
+  const classes = new Set();
+  const body = {
+    classList: {
+      add: cls => classes.add(cls),
+      remove: cls => classes.delete(cls),
+      contains: cls => classes.has(cls),
+      toggle: (cls, force = !classes.has(cls)) => (force ? classes.add(cls) : classes.delete(cls), force),
+      [Symbol.iterator]: () => classes.values(),
+    },
+    get className() { return [...classes].join(' '); },
+    set className(value) {
+      classes.clear();
+      String(value).split(/\s+/).filter(Boolean).forEach(cls => classes.add(cls));
+    },
+  };
+  const originalGetElementById = document.getElementById;
+  document.getElementById = id => (id === 'bodyRoot' ? body : originalGetElementById(id));
+  try {
+    // A fresh install: first-run onboarding is open over Home, and the first
+    // cloud merge re-runs initializeTheme() behind them.
+    body.className = 'bg-gray-900 text-white min-h-screen transition-colors duration-300 liquid-glass theme-blue-red theme-cartoony home-open onboarding-open';
+    initializeTheme();
+    assert.ok(classes.has('home-open'), 'Home stays visible, so the inert scoreboard is not left showing');
+    assert.ok(classes.has('onboarding-open'));
+    assert.ok(classes.has('theme-blue-red'));
+
+    // A saved theme replaces the old theme tokens but keeps an open sheet's classes.
+    setLocalStorage(THEME_KEY, 'liquid-glass theme-green-gold theme-classic', { sync: false });
+    classes.add('modal-open');
+    classes.add('overflow-hidden');
+    initializeTheme();
+    assert.deepEqual(
+      [...classes].filter(cls => cls.startsWith('theme-')).sort(),
+      ['theme-classic', 'theme-green-gold'],
+    );
+    ['home-open', 'onboarding-open', 'modal-open', 'overflow-hidden', 'bg-gray-900'].forEach(cls => {
+      assert.ok(classes.has(cls), `${cls} survives a theme re-apply`);
+    });
+  } finally {
+    document.getElementById = originalGetElementById;
+    resetState();
+  }
 });
 
 test('game data export, import, and cloud sync only ever touch Rook Score storage keys', () => {

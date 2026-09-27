@@ -147,8 +147,10 @@ function initializeTheme() {
   const savedTheme = typeof storedTheme === "string"
     ? storedTheme.split(/\s+/).filter(token => BASE_BODY_CLASSES.includes(token) || /^theme-[a-z0-9-]+$/i.test(token)).join(" ")
     : "";
-  // Re-running after a cloud merge must not drop the classes a currently open sheet relies on.
-  const liveClasses = ["modal-open", "overflow-hidden"].filter(cls => body.classList.contains(cls));
+  // Re-running after a cloud merge only swaps theme tokens. Every other body class
+  // is live screen state (an open sheet, Home, first-run onboarding); dropping
+  // home-open hides Home and leaves the inert scoreboard showing, frozen.
+  const liveClasses = Array.from(body.classList).filter(cls => !/^theme-/i.test(cls));
 
   if (savedTheme) {
     const { normalized, mutated } = ensureBaseClasses(savedTheme);
