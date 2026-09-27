@@ -574,9 +574,17 @@ function handleResumeGameSubmit(event) {
     sanitizePlayerName(document.getElementById("resumeDemPlayerTwo")?.value || ""),
   ]);
 
-  const startingTotals = sanitizeTotals({ us: usScore, dem: demScore });
+  const importedRounds = typeof takePaperGameImportedRounds === "function"
+    ? takePaperGameImportedRounds(usScore, demScore, {
+      usTeamName: deriveTeamDisplay(usPlayers) || "Us",
+      demTeamName: deriveTeamDisplay(demPlayers) || "Dem",
+    })
+    : null;
+  const startingTotals = importedRounds
+    ? sanitizeTotals({ us: 0, dem: 0 })
+    : sanitizeTotals({ us: usScore, dem: demScore });
   const updates = {
-    rounds: [],
+    rounds: importedRounds || [],
     undoneRounds: [],
     startingTotals,
     gameOver: false,

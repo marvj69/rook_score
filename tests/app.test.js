@@ -309,6 +309,10 @@ const {
   getPaperGamePhotoUrl,
   normalizePaperGamePhotoResult,
   requestPaperGamePhotoScan,
+  buildPaperGameRoundsFromRows,
+  applyPaperGamePhotoResult,
+  handleResumeScoreEdited,
+  handleResumeGameSubmit,
   getFilteredPlayerSuggestions,
   getBugReportUrl,
   getBugReportDiagnostics,
@@ -1378,6 +1382,7 @@ test('paper game photo results enforce valid Rook score totals', () => {
     bid: 130,
     confidence: 'high',
     warning: '',
+    rows: [],
   });
 
   assert.throws(
@@ -1388,6 +1393,104 @@ test('paper game photo results enforce valid Rook score totals', () => {
     () => normalizePaperGamePhotoResult({ usScore: 245, demScore: 1005 }),
     /invalid score/,
   );
+});
+
+test('paper game photo history drops rows that do not end on the current score', () => {
+  const rows = [
+    { us: 0, bid: null, dem: 0 },
+    { us: 120, bid: 120, dem: 60 },
+    { us: 245, bid: 130, dem: 190 },
+  ];
+  assert.deepEqual(normalizePaperGamePhotoResult({ usScore: 245, demScore: 190, rows }).rows, rows);
+  assert.deepEqual(normalizePaperGamePhotoResult({ usScore: 250, demScore: 190, rows }).rows, []);
+  assert.deepEqual(normalizePaperGamePhotoResult({
+    usScore: 245,
+    demScore: 190,
+    rows: [{ us: 121, bid: 120, dem: 60 }, { us: 245, bid: 130, dem: 190 }],
+  }).rows, []);
+});
+
+test('paper game photo rows rebuild rounds with the bidder inferred from each hand', () => {
+  const rounds = buildPaperGameRoundsFromRows([
+    { us: 0, bid: null, dem: 0 },
+    { us: 120, bid: 120, dem: 60 },
+    { us: 110, bid: 140, dem: 200 },
+    { us: -30, bid: 140, dem: 240 },
+    { us: 100, bid: 150, dem: 290 },
+  ], { usTeamName: 'Ann & Bo', demTeamName: 'Cy & Di' });
+
+  assert.equal(rounds.length, 4);
+  assert.deepEqual(rounds[0], {
+    roundIndex: 0,
+    biddingTeam: 'us',
+    bidAmount: 120,
+    usPoints: 120,
+    demPoints: 60,
+    runningTotals: { us: 120, dem: 60 },
+    usTeamNameOnRound: 'Ann & Bo',
+    demTeamNameOnRound: 'Cy & Di',
+  });
+  // Dem made its 140 while Us lost 10 to a penalty: Dem bid.
+  assert.equal(rounds[1].biddingTeam, 'dem');
+  assert.equal(rounds[1].usPoints, -10);
+  // Us went down by its bid: Us was set.
+  assert.equal(rounds[2].biddingTeam, 'us');
+  assert.equal(rounds[2].usPoints, -140);
+  // Us gained 130 but bid 150, Dem gained 50: the larger gain is the likelier bidder.
+  assert.equal(rounds[3].biddingTeam, 'us');
+  assert.deepEqual(rounds[3].runningTotals, { us: 100, dem: 290 });
+
+  assert.equal(buildPaperGameRoundsFromRows([{ us: 120, bid: null, dem: 60 }]), null);
+  assert.equal(buildPaperGameRoundsFromRows([]), null);
+});
+
+test('resuming a paper game from a photo imports its whole round history', () => {
+  resetState();
+  const elements = {};
+  const originalGetElementById = document.getElementById;
+  document.getElementById = id => {
+    if (!/^resume(Us|Dem)(Score|Player)|^resumePaperPhotoStatus$/.test(id)) return originalGetElementById(id);
+    elements[id] ||= {
+      value: '',
+      textContent: '',
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      dispatchEvent() {},
+    };
+    return elements[id];
+  };
+  const photoResult = {
+    usScore: 245,
+    demScore: 190,
+    confidence: 'high',
+    rows: [
+      { us: 120, bid: 120, dem: 60 },
+      { us: 110, bid: 140, dem: 200 },
+      { us: 245, bid: 130, dem: 190 },
+    ],
+  };
+
+  try {
+    applyPaperGamePhotoResult(photoResult);
+    assert.match(document.getElementById('resumePaperPhotoStatus').textContent, /3 rounds of history will be imported/);
+    handleResumeGameSubmit({ preventDefault() {} });
+    const state = getStateForTests();
+    assert.equal(state.rounds.length, 3);
+    assert.deepEqual(state.startingTotals, { us: 0, dem: 0 });
+    assert.deepEqual(state.rounds[2].runningTotals, { us: 245, dem: 190 });
+    assert.equal(state.rounds[2].biddingTeam, 'us');
+
+    // Editing a score by hand keeps the entered score and skips the history.
+    applyPaperGamePhotoResult(photoResult);
+    document.getElementById('resumeUsScore').value = '250';
+    handleResumeScoreEdited();
+    assert.match(document.getElementById('resumePaperPhotoStatus').textContent, /will not be imported/);
+    handleResumeGameSubmit({ preventDefault() {} });
+    assert.equal(getStateForTests().rounds.length, 0);
+    assert.deepEqual(getStateForTests().startingTotals, { us: 250, dem: 190 });
+  } finally {
+    document.getElementById = originalGetElementById;
+    resetState();
+  }
 });
 
 test('browser paper game photo scan uploads binary multipart image data', async () => {
@@ -1432,6 +1535,7 @@ test('browser paper game photo scan uploads binary multipart image data', async 
       bid: 130,
       confidence: 'high',
       warning: '',
+      rows: [],
     });
   } finally {
     window.location.hostname = originalHostname;
@@ -2645,7 +2749,12 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
               demScore: 190,
               bid: 130,
               confidence: 'high',
-              rowCount: 6,
+              rowCount: 3,
+              rows: [
+                { us: 120, bid: 120, dem: 60 },
+                { us: 110, bid: 140, dem: 200 },
+                { us: 245, bid: 130, dem: 190 },
+              ],
               message: 'Bottom completed row is clear.',
             }),
           },
@@ -2678,13 +2787,14 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
   }
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.headers['x-paper-game-photo-revision'], 'bottom-score-row-v1');
+  assert.equal(response.headers['x-paper-game-photo-revision'], 'full-history-v2');
   assert.equal(openRouterBody.model, 'google/gemini-3.1-flash-lite');
   assert.deepEqual(openRouterBody.models, ['google/gemini-2.5-flash']);
   assert.deepEqual(openRouterBody.reasoning, { effort: 'low' });
   assert.deepEqual(openRouterBody.response_format, { type: 'json_object' });
   assert.match(openRouterBody.messages[0].content, /physically bottommost completed numeric row/);
   assert.match(openRouterBody.messages[0].content, /never the numerically smallest values/);
+  assert.match(openRouterBody.messages[0].content, /transcribe the whole game history/);
   assert.equal(openRouterBody.messages[1].content[1].type, 'image_url');
   assert.match(openRouterBody.messages[1].content[1].image_url.url, /^data:image\/jpeg;base64,/);
   assert.deepEqual(response.body.scan, {
@@ -2692,7 +2802,12 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
     demScore: 190,
     bid: 130,
     confidence: 'high',
-    rowCount: 6,
+    rowCount: 3,
+    rows: [
+      { us: 120, bid: 120, dem: 60 },
+      { us: 110, bid: 140, dem: 200 },
+      { us: 245, bid: 130, dem: 190 },
+    ],
     warning: '',
   });
 });
@@ -5045,16 +5160,17 @@ test('firestore sync coalesces rapid writes into one document update and skips f
   assert.equal(writePayloads[1].activeGameState, null);
 });
 
-test('version surfaces are aligned for the 2.1 release', () => {
+test('version surfaces are aligned for the 2.5 release', () => {
   const configSource = readFileSync(path.join(repoRoot, 'js/modules/00-config.js'), 'utf8');
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '2.1.0');
-  assert.match(configSource, /const APP_VERSION = "2\.1";/);
-  assert.match(configSource, /Version 2\.1 adds the cartoony glass theme/);
-  assert.match(htmlSource, /<p>2\.1<\/p>/);
-  assert.match(htmlSource, /What's New in v2\.1/);
+  assert.equal(packageJson.version, '2.5.0');
+  assert.match(configSource, /const APP_VERSION = "2\.5";/);
+  assert.match(configSource, /Version 2\.5 adds a home screen/);
+  assert.match(htmlSource, /<p>2\.5<\/p>/);
+  assert.match(htmlSource, /What's New in v2\.5/);
+  assert.doesNotMatch(htmlSource, /Version 2\.1/);
 });
 
 test('version badge opens an in-app release modal instead of an alert', () => {
@@ -5099,7 +5215,8 @@ test('experimental paper game photo import is camera-ready and gated by the shar
   assert.match(htmlSource, /id="resumePaperPhotoContainer" class="hidden /);
   assert.match(htmlSource, /id="resumePaperPhotoInput" accept="image\/\*" capture="environment"/);
   assert.match(htmlSource, /Us \| Bid \| Dem/);
-  assert.match(htmlSource, /bottom filled number row becomes the current score/);
+  assert.match(htmlSource, /Every filled row comes in as round history, and the bottom row becomes the current score/);
+  assert.match(htmlSource, /id="resumeUsScore"[^>]*oninput="handleResumeScoreEdited\(\)"/);
   assert.match(photoSource, /function updatePaperGamePhotoExperimentUI/);
   assert.match(photoSource, /container\.classList\.toggle\("hidden", !isEnabled\)/);
   assert.match(photoSource, /body\.append\("photo", photoBlob, "rook-paper-score\.jpg"\)/);

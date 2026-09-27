@@ -54,13 +54,14 @@
 *   **Bug Reporting:** In-app issue form with optional privacy-conscious diagnostics and backend email delivery.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New in 2.1
+## 🚀 What's New in 2.5
 
-*   **Cartoony Glass Theme:** The default app style now uses the new cartoony 3-D glass treatment.
-*   **Bolder Game Cards:** Team cards, round cards, score entry, history, and game-over views have stronger depth, glow, and motion.
-*   **Polished Controls:** Buttons, inputs, navigation, color pickers, and modal surfaces now share the same bouncy interaction language.
-*   **Statistics Refresh:** Statistics rows, chips, segmented controls, KPI cards, and entity details were restyled to match the new theme.
-*   **PWA Color Update:** Theme and background colors were updated so installed/mobile app chrome matches the new visual direction.
+*   **Home Screen:** When no game is in progress, Home offers Start New Game, your latest frozen game, the last result, and quick tiles for Games, Stats, Paper Game, and Settings. Open it mid-game from the menu.
+*   **First-Run Intro:** New players get a short three-card walkthrough the first time they open the app. Replay it anytime from “How it works” on Home.
+*   **Full Paper Game Import:** The experimental photo import now brings in every round on the score sheet, bids included, instead of only the current score.
+*   **Quieter Saves:** Rounds, settings, and presets save silently. A warning appears only when something needs attention, like full storage or a blocked microphone.
+*   **More Reliable Sync:** Cleared games no longer come back after a cloud restore, and cloud sync works again on the GitHub Pages version of the app.
+*   **Voice and Accessibility Polish:** Voice scoring handles themes, presets, and sign-in more reliably. The mic button moves out of the keypad's way, screen readers skip hidden panels, reduced-motion settings are respected, and startup is faster.
 
 ## 🛠️ Tech Stack
 

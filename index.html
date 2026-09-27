@@ -110,7 +110,7 @@
 
     <!-- Version Number -->
     <div id="versionBadge" class="version-badge" onclick="showVersionNum()" role="button" aria-label="Show Version Info" tabindex="0" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showVersionNum(); }">
-      <p>2.1</p>
+      <p>2.5</p>
     </div>
 
 
@@ -221,8 +221,8 @@
         <div class="dialog-body">
           <span class="dialog-icon" aria-hidden="true"><svg aria-hidden="true"><use href="#dialog-icon-star"/></svg></span>
           <p class="dialog-eyebrow">Release Notes</p>
-          <h2 id="versionInfoModalTitle" class="dialog-title">Version 2.1</h2>
-          <p id="versionInfoModalMessage" class="dialog-message">Version 2.1 adds the cartoony glass theme, refreshed 3-D cards, buttons, modals, and statistics styling, brighter app colors, bouncy motion polish, and a new default visual treatment.</p>
+          <h2 id="versionInfoModalTitle" class="dialog-title">Version 2.5</h2>
+          <p id="versionInfoModalMessage" class="dialog-message">Version 2.5 adds a home screen with a quick first-run intro, imports a paper game's full round history from a photo, keeps routine saves quiet, makes cloud sync and restore more reliable, and polishes voice scoring, accessibility, and startup speed.</p>
         </div>
         <div class="dialog-actions">
           <button type="button" onclick="closeVersionInfoModal()" class="dialog-btn dialog-btn--primary">Got it</button>
@@ -447,7 +447,7 @@
             <p class="about-hero__name">Rook Score</p>
             <p class="about-hero__tagline">Fast, friendly scorekeeping for your Rook table.</p>
             <div class="about-hero__meta">
-              <span class="sheet-chip">Version 2.1</span>
+              <span class="sheet-chip">Version 2.5</span>
               <span class="sheet-chip sheet-chip--muted">By Mark Heinonen</span>
             </div>
           </section>
@@ -486,13 +486,14 @@
             </li>
           </ul>
 
-          <h3 class="sheet-label">What's New in v2.1</h3>
+          <h3 class="sheet-label">What's New in v2.5</h3>
           <ul class="sheet-group">
-            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Cartoony Glass Theme</span><span class="sheet-row__desc">The default app style now opens with the new cartoony 3-D glass treatment.</span></span></li>
-            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Bolder Game Cards</span><span class="sheet-row__desc">Team cards, round cards, score entry, history, and game-over views have stronger depth, glow, and motion.</span></span></li>
-            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Polished Controls</span><span class="sheet-row__desc">Buttons, inputs, navigation, color pickers, and modal surfaces now share the same bouncy interaction language.</span></span></li>
-            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Statistics Refresh</span><span class="sheet-row__desc">Statistics rows, chips, segmented controls, KPI cards, and entity details were restyled to match the new theme.</span></span></li>
-            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">PWA Color Update</span><span class="sheet-row__desc">Theme and background colors were updated so installed/mobile app chrome matches the new visual direction.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Home Screen</span><span class="sheet-row__desc">When no game is in progress, Home offers Start New Game, your latest frozen game, the last result, and quick tiles for Games, Stats, Paper Game, and Settings. Open it mid-game from the menu.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">First-Run Intro</span><span class="sheet-row__desc">New players get a short three-card walkthrough the first time they open the app. Replay it anytime from “How it works” on Home.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Full Paper Game Import</span><span class="sheet-row__desc">The experimental photo import now brings in every round on the score sheet, bids included, instead of only the current score.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Quieter Saves</span><span class="sheet-row__desc">Rounds, settings, and presets save silently. A warning appears only when something needs attention, like full storage or a blocked microphone.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">More Reliable Sync</span><span class="sheet-row__desc">Cleared games no longer come back after a cloud restore, and cloud sync works again on the GitHub Pages version of the app.</span></span></li>
+            <li class="sheet-row sheet-row--note"><span class="sheet-dot" aria-hidden="true"></span><span class="sheet-row__text"><span class="sheet-row__title">Voice and Accessibility Polish</span><span class="sheet-row__desc">Voice scoring handles themes, presets, and sign-in more reliably. The mic button moves out of the keypad's way, screen readers skip hidden panels, reduced-motion settings are respected, and startup is faster.</span></span></li>
           </ul>
 
           <section aria-labelledby="moreByDeveloperTitle">
@@ -778,7 +779,7 @@
                 </div>
               </div>
               <p class="resume-photo__body">
-                Take or choose a photo laid out as <strong>Us | Bid | Dem</strong>. The bottom filled number row becomes the current score.
+                Take or choose a photo laid out as <strong>Us | Bid | Dem</strong>. Every filled row comes in as round history, and the bottom row becomes the current score.
               </p>
               <input type="file" id="resumePaperPhotoInput" accept="image/*" capture="environment" class="sr-only" onchange="handlePaperGamePhotoSelected(this)" />
               <button type="button" id="resumePaperPhotoButton" onclick="triggerPaperGamePhotoInput()" class="dialog-btn dialog-btn--primary resume-photo__button">
@@ -786,7 +787,7 @@
                 <span data-paper-photo-label>Take Photo / Choose Image</span>
               </button>
               <p id="resumePaperPhotoStatus" class="hidden resume-photo__status" role="status" aria-live="polite"></p>
-              <p class="resume-photo__note">The photo is sent to the app's AI reader and is not saved by Rook Score. Check the filled scores before starting.</p>
+              <p class="resume-photo__note">The photo is sent to the app's AI reader and is not saved by Rook Score. Check the filled scores and imported rounds before starting.</p>
             </div>
 
             <fieldset class="resume-team resume-team--us">
@@ -794,7 +795,7 @@
               <div class="resume-team__head">
                 <span class="resume-team__badge" aria-hidden="true">Us</span>
                 <label for="resumeUsScore" class="resume-team__score-label">Current score</label>
-                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeUsScore" name="resumeUsScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
+                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeUsScore" name="resumeUsScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" oninput="handleResumeScoreEdited()" />
               </div>
               <div class="resume-team__players">
                 <label for="resumeUsPlayerOne" class="sr-only">Team Us player 1</label>
@@ -809,7 +810,7 @@
               <div class="resume-team__head">
                 <span class="resume-team__badge" aria-hidden="true">Dem</span>
                 <label for="resumeDemScore" class="resume-team__score-label">Current score</label>
-                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeDemScore" name="resumeDemScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" />
+                <input type="number" pattern="-?[0-9]*" min="-1000" max="1000" step="5" id="resumeDemScore" name="resumeDemScore" required class="resume-team__score" placeholder="0" enterkeyhint="next" oninput="handleResumeScoreEdited()" />
               </div>
               <div class="resume-team__players">
                 <label for="resumeDemPlayerOne" class="sr-only">Team Dem player 1</label>

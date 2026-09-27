@@ -26,7 +26,8 @@ const MIN_RETRY_TIME_MS = 4000;
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
-const PAPER_GAME_PHOTO_REVISION = "bottom-score-row-v1";
+const PAPER_GAME_PHOTO_REVISION = "full-history-v2";
+const MAX_HISTORY_ROWS = 60;
 
 function readRequestBody(request, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
@@ -172,8 +173,11 @@ function buildSystemPrompt() {
     "Scores can be negative, are between -1000 and 1000, and should be multiples of 5.",
     "Do not infer missing digits or swap columns. If headers, column alignment, or the bottom completed row are unclear, return status unclear.",
     "Ignore crossed-out rows when a clearly rewritten row appears below them.",
+    "Also transcribe the whole game history: every completed numeric row, in order from the top of the page to the bottom.",
+    "Each history row holds the running Us total, the Bid written for that hand, and the running Dem total exactly as written.",
+    "Use null for a bid that is blank or unreadable. Skip header rows and crossed-out rows. The last history row must be the same row as usScore and demScore.",
     "Return only a JSON object with this exact shape:",
-    '{"status":"success|unclear","usScore":number|null,"demScore":number|null,"bid":number|null,"confidence":"high|medium|low","rowCount":number,"message":"short explanation"}',
+    '{"status":"success|unclear","usScore":number|null,"demScore":number|null,"bid":number|null,"confidence":"high|medium|low","rowCount":number,"rows":[{"us":number,"bid":number|null,"dem":number}],"message":"short explanation"}',
   ].join("\n");
 }
 
@@ -186,7 +190,7 @@ function buildOpenRouterMessages({ imageBuffer, mimeType }) {
       content: [
         {
           type: "text",
-          text: "Read this Rook score sheet and return the current Us and Dem scores from the physically lowest completed numeric row.",
+          text: "Read this Rook score sheet. Return every completed Us | Bid | Dem row from top to bottom, and the current Us and Dem scores from the physically lowest completed numeric row.",
         },
         {
           type: "image_url",
@@ -234,6 +238,29 @@ function normalizeScore(value) {
   return score;
 }
 
+function normalizeBid(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const bid = Number(value);
+  return Number.isInteger(bid) && bid > 0 && bid <= 360 && bid % 5 === 0 ? bid : null;
+}
+
+// The history is only useful when every row is readable and it ends on the
+// same totals as the current score; otherwise the scan falls back to the
+// current score alone rather than importing rounds that do not add up.
+function normalizeHistoryRows(rows, usScore, demScore) {
+  if (!Array.isArray(rows) || !rows.length || rows.length > MAX_HISTORY_ROWS) return [];
+  const normalized = [];
+  for (const row of rows) {
+    const us = normalizeScore(row?.us);
+    const dem = normalizeScore(row?.dem);
+    if (us === null || dem === null) return [];
+    normalized.push({ us, bid: normalizeBid(row?.bid), dem });
+  }
+  const last = normalized[normalized.length - 1];
+  if (last.us !== usScore || last.dem !== demScore) return [];
+  return normalized;
+}
+
 function normalizeScanResult(result) {
   const candidate = result && typeof result === "object" ? result : {};
   const usScore = normalizeScore(candidate.usScore);
@@ -252,11 +279,7 @@ function normalizeScanResult(result) {
     throw error;
   }
 
-  const hasBid = candidate.bid !== null && candidate.bid !== undefined && candidate.bid !== "";
-  const rawBid = Number(candidate.bid);
-  const bid = hasBid && Number.isInteger(rawBid) && rawBid >= 0 && rawBid <= 360 && rawBid % 5 === 0
-    ? rawBid
-    : null;
+  const bid = normalizeBid(candidate.bid);
   const rowCount = Number.isInteger(Number(candidate.rowCount))
     ? Math.max(1, Math.min(100, Number(candidate.rowCount)))
     : null;
@@ -267,6 +290,7 @@ function normalizeScanResult(result) {
     bid,
     confidence,
     rowCount,
+    rows: normalizeHistoryRows(candidate.rows, usScore, demScore),
     warning: confidence === "high"
       ? ""
       : "The handwriting was not completely clear. Double-check both scores before starting.",
@@ -322,7 +346,7 @@ async function fetchOpenRouterScan(photo, apiKey, timeoutMs = OPENROUTER_ATTEMPT
         ...(fallbackModels.length ? { models: fallbackModels } : {}),
         messages: buildOpenRouterMessages(photo),
         temperature: 0,
-        max_tokens: 400,
+        max_tokens: 2000,
         reasoning: { effort: DEFAULT_OPENROUTER_REASONING_EFFORT },
         response_format: { type: "json_object" },
         provider: { require_parameters: true },

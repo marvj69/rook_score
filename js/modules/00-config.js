@@ -1,8 +1,8 @@
 "use strict";
 
 // --- Configuration & Constants ---
-const APP_VERSION = "2.1";
-const APP_RELEASE_SUMMARY = "Version 2.1 adds the cartoony glass theme, refreshed 3-D cards, buttons, modals, and statistics styling, brighter app colors, bouncy motion polish, and a new default visual treatment.";
+const APP_VERSION = "2.5";
+const APP_RELEASE_SUMMARY = "Version 2.5 adds a home screen with a quick first-run intro, imports a paper game's full round history from a photo, keeps routine saves quiet, makes cloud sync and restore more reliable, and polishes voice scoring, accessibility, and startup speed.";
 const MUST_WIN_BY_BID_KEY = "rookMustWinByBid";
 const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";
