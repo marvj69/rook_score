@@ -101,7 +101,7 @@ function setupDomStubs() {
     documentElement,
     head,
     title: '',
-    readyState: 'complete',
+    readyState: 'loading',
     addEventListener: noop,
     removeEventListener: noop,
     getElementById: () => createElementStub(),
@@ -4785,6 +4785,7 @@ test('mobile-only UI ships without mouse hover effects or hover tooltips', () =>
   const uiRuntimeFiles = [
     'index.html',
     'css/app.css',
+    'css/app.min.css',
     'css/tailwind.css',
     'js/app.bundle.js',
     'js/voice-score.bundle.js',

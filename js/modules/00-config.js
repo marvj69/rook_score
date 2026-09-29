@@ -160,7 +160,12 @@ function getRookGameEventParams(game = state, overrides = {}) {
 // window.trackRookEvent, clobbering the real implementation and making this
 // call itself recursively (stack overflow → frozen tab on every submit).
 function emitRookEvent(eventName, params = {}) {
-  if (typeof window === "undefined" || typeof window.trackRookEvent !== "function") return false;
+  if (typeof window === "undefined") return false;
+  if (typeof window.trackRookEvent !== "function") {
+    const pending = window.rookPendingAnalyticsEvents || (window.rookPendingAnalyticsEvents = []);
+    if (pending.length < 100) pending.push([eventName, params]);
+    return false;
+  }
   if (window.trackRookEvent === emitRookEvent) return false; // belt-and-suspenders: never self-recurse
   return window.trackRookEvent(eventName, params);
 }

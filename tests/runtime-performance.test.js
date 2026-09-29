@@ -12,7 +12,7 @@ const read = file => readFileSync(path.join(root, file), 'utf8');
 
 // Run the real classic scripts without CommonJS exports, in their browser order.
 // Fake clocks let lifecycle tests prove elapsed time without sleeping.
-function createRuntime(bundled) {
+function createRuntime(bundled, readyState = 'loading') {
   const noop = () => {};
   const listeners = { document: new Map(), window: new Map() };
   const elements = new Map();
@@ -25,7 +25,7 @@ function createRuntime(bundled) {
   function element() {
     const classes = new Set();
     return {
-      style: { setProperty: noop, removeProperty: noop }, dataset: {},
+      style: { setProperty: noop, removeProperty: noop }, dataset: {}, inert: false,
       textContent: '', innerHTML: '', scrollHeight: 900, offsetWidth: 280,
       classList: {
         add: name => classes.add(name), remove: name => classes.delete(name),
@@ -49,7 +49,7 @@ function createRuntime(bundled) {
     listeners[target].set(name, list);
   };
   const document = {
-    hidden: false, readyState: 'loading', body: element(), head: element(),
+    hidden: false, readyState, body: element(), head: element(),
     documentElement: element(), addEventListener: listen('document'),
     createElement: element, querySelector: () => null, querySelectorAll: () => [],
     getElementById(id) {
@@ -261,17 +261,141 @@ for (const bundled of [false, true]) {
     app.run("{ const games = getLocalStorage('savedGames'); games[0].usTeamName = 'New Name'; setLocalStorage('savedGames', games, { sync: false }); }");
     assert.equal(app.run("getLibrarySearchText(getLocalStorage('savedGames')[0]).includes('new name')"), true);
   });
+
+  test(`${label}: Home launch is stable and initialization only runs once`, () => {
+    const app = createRuntime(bundled);
+    app.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    app.document.documentElement.classList.add('home-boot');
+    app.run('initializeRookApp()');
+    const home = app.elements.get('homeScreen');
+    assert.equal(home.inert, false);
+    assert.equal(home.classList.contains('home-animate'), false);
+    assert.equal(app.document.body.classList.contains('home-open'), true);
+    assert.equal(app.document.documentElement.classList.contains('home-boot'), false);
+    const keydownListeners = app.listeners.document.get('keydown').length;
+    app.event('document', 'DOMContentLoaded');
+    assert.equal(app.listeners.document.get('keydown').length, keydownListeners);
+    app.run('closeHomeScreen(); openHomeScreen()');
+    assert.equal(home.classList.contains('home-animate'), true, 'later Home navigation still animates');
+  });
+
+  test(`${label}: a parsed document starts local play before DOMContentLoaded`, () => {
+    const app = createRuntime(bundled, 'interactive');
+    assert.equal(app.run('rookAppInitialized'), true);
+    const listeners = app.listeners.document.get('keydown').length;
+    app.event('document', 'DOMContentLoaded');
+    assert.equal(app.listeners.document.get('keydown').length, listeners);
+  });
+
+  test(`${label}: Home controls wait for full styling even when the core is ready`, () => {
+    const app = createRuntime(bundled);
+    const styles = app.document.getElementById('appStyles');
+    styles.tagName = 'LINK';
+    app.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    app.run('initializeRookApp()');
+    assert.equal(app.run('rookAppInitialized'), false);
+    styles.dataset.loaded = 'true';
+    app.run('initializeRookApp()');
+    assert.equal(app.run('rookAppInitialized'), true);
+    assert.equal(app.elements.get('homeScreen').inert, false);
+  });
+
+  test(`${label}: early authentication waits for the shared client and returns its result`, async () => {
+    const app = createRuntime(bundled);
+    app.run(`
+      authCalls = [];
+      firebaseClientLoadPromise = new Promise(resolve => { resolveFirebaseClient = resolve; });
+      earlySignIn = window.signInWithGoogle('home');
+      earlySignOut = window.signOutUser('menu');
+    `);
+    assert.equal(app.run('authCalls.length'), 0);
+    app.run(`
+      window.signInWithGoogle = async source => { authCalls.push(source); return { uid: 'test-user' }; };
+      window.signOutUser = async source => { authCalls.push(source); return 'signed-out'; };
+      window.startFirebaseInitialization = () => {};
+      resolveFirebaseClient();
+    `);
+    const [user, signedOut] = await app.run('Promise.all([earlySignIn, earlySignOut])');
+    assert.equal(user.uid, 'test-user');
+    assert.equal(signedOut, 'signed-out');
+    assert.equal(app.run('authCalls.join(",")'), 'home,menu');
+  });
 }
+
+test('early Home destination handles empty and invalid saves without hiding active games', () => {
+  const bootScript = read('index.html').match(/<script>([\s\S]*?)<\/script>/)[1];
+  const fixtures = [
+    [null, true], ['null', true], ['{}', true], ['[]', true], ['"bad"', true], ['{broken', true],
+    [{ rounds: [], dealers: [], usPlayers: [], demPlayers: [] }, true],
+    [{ rounds: [null, false, 5, []] }, true],
+    [{ usPlayers: [' ', 15, 'ignored third player'] }, true],
+    [{ startingTotals: { us: 'bad', dem: '0' } }, true],
+    [{ rounds: [{}] }, false], [{ biddingTeam: 'us' }, false], [{ gameOver: true }, false],
+    [{ dealers: ['Alice'] }, false], [{ usPlayers: [' Alice '] }, false],
+    [{ startingTotals: { us: '-120', dem: 0 } }, false],
+  ];
+  for (const [state, expectedHome] of fixtures) {
+    const classes = new Set();
+    vm.runInNewContext(bootScript, {
+      localStorage: { getItem: () => typeof state === 'object' && state !== null ? JSON.stringify(state) : state },
+      document: { documentElement: { classList: { add: name => classes.add(name) } } },
+    });
+    assert.equal(classes.has('home-boot'), expectedHome, JSON.stringify(state));
+  }
+  const classes = new Set();
+  vm.runInNewContext(bootScript, {
+    localStorage: { getItem: () => { throw new Error('Storage blocked'); } },
+    document: { documentElement: { classList: { add: name => classes.add(name) } } },
+  });
+  assert.equal(classes.has('home-boot'), true);
+});
+
+test('analytics replays early local-play events through its existing privacy filters', () => {
+  const app = createRuntime(true);
+  app.run(`emitRookEvent('round_recorded', { round_count: 2, player_name: 'private' }); emitRookEvent('unsupported_event');`);
+  assert.equal(app.run('rookPendingAnalyticsEvents.length'), 2);
+  app.run(`location.hostname = 'marvj69.github.io'; ${read('js/analytics.js')}`);
+  assert.equal(app.run('typeof rookPendingAnalyticsEvents'), 'undefined');
+  assert.equal(app.run(`dataLayer.filter(entry => entry[0] === 'event').length`), 1);
+  assert.equal(app.run(`dataLayer.find(entry => entry[0] === 'event')[2].round_count`), 2);
+  assert.equal(app.run(`'player_name' in dataLayer.find(entry => entry[0] === 'event')[2]`), false);
+});
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 274000, 71000], // +12 KB raw / +3 KB gzip for the home screen and onboarding
+    ['js/app.bundle.js', 276000, 72000], // Home/onboarding plus early initialization and authentication readiness
     ['js/voice-score.bundle.js', 60000, 17000],
   ]) {
     const source = read(file);
     assert.ok(Buffer.byteLength(source) < bytes, `${file} raw size`);
     assert.ok(gzipSync(source).length < gzipBytes, `${file} gzip size`);
   }
+});
+
+test('Home styling stays small and every generated asset is checked before deployment', () => {
+  const css = read('css/app.min.css');
+  const html = read('index.html');
+  const inlineStyles = html.match(/<style id="rook-startup-styles">([\s\S]*?)<\/style>/)[1];
+  assert.ok(Buffer.byteLength(css) < 127000);
+  assert.ok(gzipSync(css).length < 23000);
+  assert.ok(Buffer.byteLength(inlineStyles) < 20000);
+  assert.match(inlineStyles, /home-boot/);
+  assert.match(inlineStyles, /\.home-tile/);
+  assert.match(read('.github/workflows/pages.yml'), /git diff --exit-code -- index\.html[^\n]*css\/app\.min\.css/);
+});
+
+test('stylesheet minification preserves every authored rule, value and browser fallback', () => {
+  const postcss = require('postcss');
+  const semanticTree = node => {
+    if (node.type === 'comment') return null;
+    const result = { type: node.type };
+    for (const field of ['selector', 'name', 'params', 'prop', 'value', 'important']) {
+      if (node[field] !== undefined) result[field] = node[field];
+    }
+    if (node.nodes) result.nodes = node.nodes.map(semanticTree).filter(Boolean);
+    return result;
+  };
+  assert.deepEqual(semanticTree(postcss.parse(read('css/app.min.css'))), semanticTree(postcss.parse(read('css/app.css'))));
 });
 
 test('Pages ships every local precache asset and the runtime model requested by the app', () => {

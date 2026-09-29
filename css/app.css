@@ -2958,6 +2958,8 @@ body.home-open { overflow: hidden; }
 html.home-boot main#app,
 html.home-boot .hamburger-menu,
 html.home-boot #versionBadge,
+html.home-boot nav,
+html.home-boot #menuOverlay,
 body.home-open main#app,
 body.home-open .hamburger-menu,
 body.home-open #versionBadge,
@@ -3067,12 +3069,12 @@ body.home-open .voice-score-control { visibility: hidden; }
   color: rgba(226, 232, 240, 0.82);
 }
 @media (prefers-reduced-motion: no-preference) {
-  body.home-open .home-hero__card { animation: homeFanIn 0.6s var(--bounce) both; }
-  body.home-open .home-hero__card--rook { animation-delay: 0.05s; }
-  body.home-open .home-hero__card--dem { animation-delay: 0.1s; }
-  body.home-open .home-status,
-  body.home-open .home-actions { animation: cardPopIn 0.45s var(--bounce) both; }
-  body.home-open .home-actions { animation-delay: 0.06s; }
+  body.home-open .home-animate .home-hero__card { animation: homeFanIn 0.6s var(--bounce) both; }
+  body.home-open .home-animate .home-hero__card--rook { animation-delay: 0.05s; }
+  body.home-open .home-animate .home-hero__card--dem { animation-delay: 0.1s; }
+  body.home-open .home-animate .home-status,
+  body.home-open .home-animate .home-actions { animation: cardPopIn 0.45s var(--bounce) both; }
+  body.home-open .home-animate .home-actions { animation-delay: 0.06s; }
 }
 @keyframes homeFanIn {
   from { opacity: 0; transform: translateY(1.2rem) rotate(0deg); }

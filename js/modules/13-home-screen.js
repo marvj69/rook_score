@@ -56,7 +56,7 @@ function setHomeScreenChromeInert(isInert) {
   });
 }
 
-function openHomeScreen({ focus = false } = {}) {
+function openHomeScreen({ focus = false, animate = true } = {}) {
   const home = document.getElementById("homeScreen");
   if (!home) return false;
   closeMenuOverlay();
@@ -65,6 +65,7 @@ function openHomeScreen({ focus = false } = {}) {
   renderHomeScreen();
   document.documentElement.classList.remove(HOME_BOOT_CLASS);
   document.body.classList.add("home-open");
+  home.classList.toggle("home-animate", animate);
   if ("inert" in home) home.inert = document.body.classList.contains("modal-open");
   setHomeScreenChromeInert(true);
   home.scrollTop = 0;
@@ -409,7 +410,7 @@ function initializeHomeScreen() {
   if (hasActiveGame()) {
     closeHomeScreen();
   } else {
-    openHomeScreen();
+    openHomeScreen({ animate: false });
   }
   maybeStartOnboarding();
 }

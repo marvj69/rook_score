@@ -40,7 +40,7 @@ jobs:
         run: npm test
 
       - name: Verify generated assets are committed
-        run: git diff --exit-code -- js/app.bundle.js js/voice-score.bundle.js css/tailwind.css service-worker.js
+        run: git diff --exit-code -- index.html js/app.bundle.js js/voice-score.bundle.js css/tailwind.css css/app.min.css service-worker.js
 
       - name: Prepare Pages artifact
         run: node scripts/stage-static-site.mjs _pages

@@ -62,6 +62,7 @@
 *   **Quieter Saves:** Rounds, settings, and presets save silently. A warning appears only when something needs attention, like full storage or a blocked microphone.
 *   **More Reliable Sync:** Cleared games no longer come back after a cloud restore, and cloud sync works again on the GitHub Pages version of the app.
 *   **Voice and Accessibility Polish:** Voice scoring handles themes, presets, and sign-in more reliably. The mic button moves out of the keypad's way, screen readers skip hidden panels, reduced-motion settings are respected, and startup is faster.
+*   **Faster Home Launch:** Home paints with a small set of inline styles while the complete stylesheet and game code load. Empty saved states open Home immediately, launch animations no longer hide already visible controls, and local play starts independently of cloud and analytics downloads.
 
 ## 🛠️ Tech Stack
 
@@ -201,7 +202,7 @@ Rook Score! is a PWA, offering:
 ### Prerequisites
 A modern web browser and Node.js 20 or newer for building and testing changes.
 
-Run `npm ci`, `npm run build`, and `npm test` before publishing. The build minifies the core and optional voice bundles while preserving the global handlers used by HTML and Firebase, then stamps `service-worker.js` with a cache name derived from the contents of every runtime asset (`npm run build:sw`), so any change to the shipped files automatically installs a fresh offline cache; there is no manual cache-name bump. Edit `js/modules/`, then commit the generated `js/app.bundle.js`, `js/voice-score.bundle.js`, `service-worker.js`, and any updated CSS with the source changes.
+Run `npm ci`, `npm run build`, and `npm test` before publishing. The build minifies the core and optional voice bundles while preserving the global handlers used by HTML and Firebase, then stamps `service-worker.js` with a cache name derived from the contents of every runtime asset (`npm run build:sw`), so any change to the shipped files automatically installs a fresh offline cache; there is no manual cache-name bump. Edit `js/modules/` and `css/app.css`, then commit the generated `js/app.bundle.js`, `js/voice-score.bundle.js`, `css/app.min.css`, inline Home styles in `index.html`, `service-worker.js`, and any updated Tailwind CSS with the source changes. App CSS minification removes only formatting and comments; the inline Home styles are extracted from that same output, so colors, layout, and browser fallbacks keep one source.
 
 The files that make up the deployed site are listed once in `scripts/static-site-files.cjs`. `scripts/stage-static-site.mjs` copies exactly those files into an output directory: Vercel runs it as the build command and serves only `public/`, and the GitHub Pages workflow runs it to build the Pages artifact. Everything else in the repository (tests, source modules, training data, Firestore rules, scripts) is never published.
 

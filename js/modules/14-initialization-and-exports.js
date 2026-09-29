@@ -29,7 +29,61 @@ ROOK_APP_INTERACTION_EVENTS.forEach(eventName => {
   });
 });
 
-document.addEventListener("DOMContentLoaded", () => {
+let rookAppInitialized = false;
+let rookAppWaitingForStyles = false;
+let firebaseClientLoadPromise = null;
+let firebaseClientLoadRetries = 0;
+
+function loadFirebaseClient() {
+  if (typeof window.startFirebaseInitialization === "function") return Promise.resolve();
+  if (!firebaseClientLoadPromise) {
+    const url = new URL("js/firebase-init.js", document.baseURI);
+    if (firebaseClientLoadRetries) url.searchParams.set("retry", String(firebaseClientLoadRetries));
+    firebaseClientLoadPromise = import(url.href).catch(error => {
+      firebaseClientLoadPromise = null;
+      firebaseClientLoadRetries += 1;
+      throw error;
+    });
+  }
+  return firebaseClientLoadPromise;
+}
+
+// Home, the menu, and voice can request authentication before the async client
+// has arrived. Keep the request and return the real handler's result to callers.
+function createDeferredFirebaseAuthAction(action) {
+  const deferredAction = async (...args) => {
+    try {
+      await loadFirebaseClient();
+      const handler = window[action];
+      if (typeof handler !== "function" || handler === deferredAction) return null;
+      return await handler(...args);
+    } catch (error) {
+      console.warn("Unable to load cloud sign-in. Try again when connected.", error);
+      return null;
+    }
+  };
+  return deferredAction;
+}
+
+if (typeof window.signInWithGoogle !== "function") {
+  window.signInWithGoogle = createDeferredFirebaseAuthAction("signInWithGoogle");
+}
+if (typeof window.signOutUser !== "function") {
+  window.signOutUser = createDeferredFirebaseAuthAction("signOutUser");
+}
+
+function initializeRookApp() {
+  if (rookAppInitialized) return;
+  const styles = document.getElementById("appStyles");
+  if (styles?.tagName === "LINK" && !styles.dataset.loaded) {
+    if (!rookAppWaitingForStyles) {
+      rookAppWaitingForStyles = true;
+      styles.addEventListener("load", initializeRookApp, { once: true });
+      styles.addEventListener("error", initializeRookApp, { once: true });
+    }
+    return;
+  }
+  rookAppInitialized = true;
   performTeamPlayerMigration();
   document.body.classList.remove('modal-open');
   document.getElementById('app')?.classList.remove('modal-active');
@@ -141,7 +195,15 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     modalCloseHandlers[dialogId]();
   });
-});
+}
+
+// A defer script already has the full DOM. Analytics and cloud downloads must
+// not delay local play; retain the event path for non-deferred/test loaders.
+if (document.readyState === "interactive" || document.readyState === "complete") {
+  initializeRookApp();
+} else {
+  document.addEventListener("DOMContentLoaded", initializeRookApp, { once: true });
+}
 
 if ('serviceWorker' in navigator) {
   let refreshing = false;

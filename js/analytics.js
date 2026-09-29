@@ -67,6 +67,11 @@
     return true;
   };
 
+  // Local play can start before this optional script arrives. Replay through
+  // the same hostname, event, and parameter filters used for live events.
+  const pendingEvents = window.rookPendingAnalyticsEvents || [];
+  delete window.rookPendingAnalyticsEvents;
+
   const measurementId = GOOGLE_ANALYTICS_MEASUREMENT_ID.trim();
 
   if (!GOOGLE_ANALYTICS_HOSTNAMES.has(window.location.hostname)) {
@@ -91,4 +96,5 @@
   gtagScript.async = true;
   gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
   document.head.appendChild(gtagScript);
+  pendingEvents.forEach(([eventName, params]) => window.trackRookEvent(eventName, params));
 })();

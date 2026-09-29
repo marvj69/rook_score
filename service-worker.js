@@ -1,13 +1,13 @@
 // CACHE_NAME is stamped by scripts/stamp-service-worker.mjs from the contents
 // of the files below, so any runtime change ships a fresh cache automatically.
-const CACHE_NAME = "rook-cache-d377ef22b651f24a";
+const CACHE_NAME = "rook-cache-992f1e1fc2da7589";
 const CACHE_NAME_PREFIX = "rook-cache-";
 const OFFLINE_URL = "index.html"; // Use relative path
 
 const urlsToCache = [
   "./index.html",
   "./css/tailwind.css",
-  "./css/app.css",
+  "./css/app.min.css",
   "./js/analytics.js",
   "./js/app.bundle.js",
   "./js/model_runtime_v2.json",

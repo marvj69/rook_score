@@ -7,6 +7,8 @@ module.exports = [
   "index.html",
   "manifest.json",
   "service-worker.js",
+  "css/app.min.css",
+  // Keep the previous URL while cached HTML/CDN copies move to app.min.css.
   "css/app.css",
   "css/tailwind.css",
   "icons/icon-192x192.png",
