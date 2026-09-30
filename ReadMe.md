@@ -62,7 +62,7 @@
 *   **Quieter Saves:** Rounds, settings, and presets save silently. A warning appears only when something needs attention, like full storage or a blocked microphone.
 *   **More Reliable Sync:** Cleared games no longer come back after a cloud restore, and cloud sync works again on the GitHub Pages version of the app.
 *   **Voice and Accessibility Polish:** Voice scoring handles themes, presets, and sign-in more reliably. The mic button moves out of the keypad's way, screen readers skip hidden panels, reduced-motion settings are respected, and startup is faster.
-*   **Faster Home Launch:** Home's styles and utility foundation are inline, so no stylesheet download delays its first render. Empty saved states open Home immediately, launch animations no longer hide already visible controls, and local play starts independently of cloud and analytics downloads. iPhone Home Screen installations also have dark portrait and landscape launch backgrounds.
+*   **Faster Home Launch:** Home's styles and utility foundation are inline, so no stylesheet download delays its first render. Empty saved states open Home immediately, launch animations no longer hide already visible controls, and local play starts independently of cloud and analytics downloads. iPhone Home Screen installations also have dark portrait and landscape launch backgrounds. Home now appears once, already filled in and in your team colors, instead of changing after it is on screen, and the side menu no longer flashes past at launch. An app update waits until the app is in the background instead of reloading the screen you are looking at.
 
 ## 🛠️ Tech Stack
 

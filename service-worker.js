@@ -1,6 +1,6 @@
 // CACHE_NAME is stamped by scripts/stamp-service-worker.mjs from the contents
 // of the files below, so any runtime change ships a fresh cache automatically.
-const CACHE_NAME = "rook-cache-b964c468ebd34e26";
+const CACHE_NAME = "rook-cache-7f30fe2d113d6774";
 const CACHE_NAME_PREFIX = "rook-cache-";
 const OFFLINE_URL = "index.html"; // Use relative path
 
@@ -35,8 +35,15 @@ function isAppShellUrl(url) {
   return url.pathname === scopePath || url.pathname === `${scopePath}${OFFLINE_URL}`;
 }
 
+// Look only in this version's cache. caches.match() would search every cache
+// on the origin, and other apps on the shared GitHub Pages origin keep theirs.
+async function matchAppCache(request) {
+  const cache = await caches.open(CACHE_NAME);
+  return cache.match(request);
+}
+
 async function getCachedOfflineShell() {
-  return caches.match(OFFLINE_URL);
+  return matchAppCache(OFFLINE_URL);
 }
 
 // Bypass the HTTP cache for background refreshes so a stale CDN copy (GitHub
@@ -57,7 +64,7 @@ function fetchAndCache(request, cacheRequest = request, { revalidate = false } =
 
 async function staleWhileRevalidate(event) {
   const { request } = event;
-  const cachedResponse = await caches.match(request);
+  const cachedResponse = await matchAppCache(request);
 
   if (cachedResponse) {
     event.waitUntil(fetchAndCache(request, request, { revalidate: true }).catch(() => undefined));

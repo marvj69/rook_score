@@ -47,6 +47,18 @@ html.app-boot #menuOverlay {
   visibility: hidden;
 }
 
+/* The full stylesheet usually arrives while a boot class still hides the page.
+   Apply its values instantly: a transition started then (the menu sliding
+   closed) would still be running, and visible, once the page is revealed. */
+html.home-boot *,
+html.home-boot *::before,
+html.home-boot *::after,
+html.app-boot *,
+html.app-boot *::before,
+html.app-boot *::after {
+  transition: none !important;
+}
+
 body.app-content-overflows main#app {
   max-height: calc(100dvh - var(--safe-area-inset-top-effective));
   overflow-y: auto;
@@ -2990,7 +3002,17 @@ html.home-boot #menuOverlay,
 body.home-open main#app,
 body.home-open .hamburger-menu,
 body.home-open #versionBadge,
+body.home-open nav,
+body.home-open #menuOverlay,
 body.home-open .voice-score-control { visibility: hidden; }
+/* Launch: the markup is only a placeholder until initialization fills in the
+   saved games, counts and colors, so it stays out of sight and fades in once,
+   complete. The boot script reveals it anyway if the app never starts. */
+html.home-boot .home-screen__inner { opacity: 0; }
+html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .home-screen__inner { transition: opacity 0.18s ease-out; }
+}
 
 .home-screen__inner {
   display: flex;

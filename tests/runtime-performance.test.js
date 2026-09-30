@@ -401,8 +401,9 @@ test('early Home destination handles empty and invalid saves without hiding acti
   for (const [state, expectedHome] of fixtures) {
     const classes = new Set();
     vm.runInNewContext(bootScript, {
-      localStorage: { getItem: () => typeof state === 'object' && state !== null ? JSON.stringify(state) : state },
-      document: { documentElement: { classList: { add: name => classes.add(name) } } },
+      localStorage: { getItem: key => key !== 'activeGameState' ? null : typeof state === 'object' && state !== null ? JSON.stringify(state) : state },
+      document: { documentElement: { classList: { add: name => classes.add(name), contains: name => classes.has(name) } } },
+      setTimeout: () => {},
     });
     assert.equal(classes.has('home-boot'), expectedHome, JSON.stringify(state));
     assert.equal(classes.has('app-boot'), !expectedHome, JSON.stringify(state));
@@ -410,9 +411,121 @@ test('early Home destination handles empty and invalid saves without hiding acti
   const classes = new Set();
   vm.runInNewContext(bootScript, {
     localStorage: { getItem: () => { throw new Error('Storage blocked'); } },
-    document: { documentElement: { classList: { add: name => classes.add(name) } } },
+    document: { documentElement: { classList: { add: name => classes.add(name), contains: name => classes.has(name) } } },
+    setTimeout: () => {},
   });
   assert.equal(classes.has('home-boot'), true);
+});
+
+// Runs the head boot script against stored values; returns its root classes,
+// the injected first-frame color rule, and its pending timers.
+function runBootScript(stored) {
+  const classes = new Set();
+  const styles = [];
+  const timers = [];
+  vm.runInNewContext(read('index.html').match(/<script>([\s\S]*?)<\/script>/)[1], {
+    localStorage: { getItem: key => stored[key] ?? null },
+    document: {
+      documentElement: { classList: { add: name => classes.add(name), contains: name => classes.has(name), remove: name => classes.delete(name) } },
+      createElement: () => ({}),
+      head: { appendChild: style => styles.push(style) },
+    },
+    setTimeout: (callback, ms) => timers.push({ callback, ms }),
+  });
+  return { classes, style: styles[0], timers };
+}
+
+test('launch paints saved team colors in the first frame, sanitized like the app', () => {
+  const { style } = runBootScript({ customUsColor: '"#16A34A"', customDemColor: '"f90"' });
+  assert.equal(style.id, 'rookBootColors');
+  assert.equal(style.textContent, 'body{--primary-color:#16A34A;--accent-color:#ff9900;}');
+  assert.equal(runBootScript({ customUsColor: '"#12"', customDemColor: '"red"' }).style, undefined);
+  assert.equal(runBootScript({}).style, undefined);
+  assert.equal(runBootScript({ customDemColor: '"#ef4444"' }).style.textContent, 'body{--accent-color:#ef4444;}');
+  // Initialization owns the colors afterwards; the first-frame copy must go.
+  assert.match(read('js/modules/14-initialization-and-exports.js'), /initializeCustomThemeColors\(\);[^\n]*\n\s*document\.getElementById\("rookBootColors"\)\?\.remove\(\);/);
+});
+
+test('launch Home stays hidden until it is filled in, with a timed fallback reveal', () => {
+  const home = runBootScript({});
+  assert.equal(home.timers.length, 1);
+  assert.ok(home.timers[0].ms >= 1000 && home.timers[0].ms <= 4000);
+  home.timers[0].callback();
+  assert.equal(home.classes.has('home-boot-timeout'), true);
+
+  const initialized = runBootScript({});
+  initialized.classes.delete('home-boot');
+  initialized.timers[0].callback();
+  assert.equal(initialized.classes.has('home-boot-timeout'), false, 'no stray class after initialization');
+  assert.equal(runBootScript({ activeGameState: '{"rounds":[{}]}' }).timers.length, 0);
+
+  const inline = read('index.html').match(/<style id="rook-startup-styles">([\s\S]*?)<\/style>/)[1];
+  for (const css of [read('css/app.css'), inline]) {
+    assert.match(css, /html\.home-boot \.home-screen__inner\s*\{\s*opacity:\s*0;?\s*\}/);
+    assert.match(css, /html\.home-boot\.home-boot-timeout \.home-screen__inner\s*\{\s*opacity:\s*1;?\s*\}/);
+    // Nothing may still be animating toward its styled state when a boot class lifts.
+    assert.match(css, /html\.app-boot \*::after\s*\{\s*transition:\s*none !important;?\s*\}/);
+    // The menu sits under Home's transparent background; keep it out of sight.
+    assert.match(css, /body\.home-open nav,\s*body\.home-open #menuOverlay,/);
+  }
+});
+
+test('an activated update reloads only once the untouched app is in the background', () => {
+  const source = read('js/modules/14-initialization-and-exports.js');
+  const listeners = { document: new Map(), serviceWorker: new Map() };
+  const listen = map => (name, callback) => map.set(name, callback);
+  let reloads = 0;
+  let interactions = 0;
+  const document = { visibilityState: 'visible', addEventListener: listen(listeners.document) };
+  const context = vm.createContext({
+    document,
+    window: { location: { reload: () => { reloads += 1; } }, addEventListener: () => {} },
+    navigator: { serviceWorker: { controller: {}, addEventListener: listen(listeners.serviceWorker) } },
+    console: { info: () => {} },
+    getRookAppInteractionRevision: () => interactions,
+    shouldReloadForServiceWorkerUpdate: (hasController, atStartup, current) => Boolean(hasController) && current === atStartup,
+  });
+  vm.runInContext(source.match(/if \('serviceWorker' in navigator\) \{[\s\S]*?\n\}\n/)[0], context);
+
+  listeners.document.get('visibilitychange')();
+  assert.equal(reloads, 0, 'backgrounding without an update does nothing');
+  listeners.serviceWorker.get('controllerchange')();
+  assert.equal(reloads, 0, 'an update never swaps the page on screen');
+  document.visibilityState = 'hidden';
+  listeners.document.get('visibilitychange')();
+  assert.equal(reloads, 1);
+  listeners.document.get('visibilitychange')();
+  assert.equal(reloads, 1, 'reloads once');
+});
+
+test('service worker lookups stay inside this version cache on the shared Pages origin', () => {
+  const source = read('service-worker.js');
+  assert.doesNotMatch(source.replace(/\/\/.*$/gm, ''), /caches\.match\(/);
+  assert.match(source, /async function matchAppCache\(request\) \{\s*const cache = await caches\.open\(CACHE_NAME\);/);
+  assert.match(source, /return matchAppCache\(OFFLINE_URL\);/);
+  assert.match(source, /const cachedResponse = await matchAppCache\(request\);/);
+});
+
+test('an activated update never reloads an app that is in use', () => {
+  const source = read('js/modules/14-initialization-and-exports.js');
+  const listeners = new Map();
+  let reloads = 0;
+  let interactions = 0;
+  const document = { visibilityState: 'visible', addEventListener: (name, callback) => listeners.set(name, callback) };
+  const context = vm.createContext({
+    document,
+    window: { location: { reload: () => { reloads += 1; } }, addEventListener: () => {} },
+    navigator: { serviceWorker: { controller: {}, addEventListener: (name, callback) => listeners.set(name, callback) } },
+    console: { info: () => {} },
+    getRookAppInteractionRevision: () => interactions,
+    shouldReloadForServiceWorkerUpdate: (hasController, atStartup, current) => Boolean(hasController) && current === atStartup,
+  });
+  vm.runInContext(source.match(/if \('serviceWorker' in navigator\) \{[\s\S]*?\n\}\n/)[0], context);
+  listeners.get('controllerchange')();
+  interactions += 1;
+  document.visibilityState = 'hidden';
+  listeners.get('visibilitychange')();
+  assert.equal(reloads, 0);
 });
 
 test('analytics replays early local-play events through its existing privacy filters', () => {

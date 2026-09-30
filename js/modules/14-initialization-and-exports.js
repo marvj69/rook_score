@@ -91,6 +91,7 @@ function initializeRookApp() {
   enforceDarkMode();
   initializeTheme(); // Predefined themes
   initializeCustomThemeColors(); // Custom primary/accent
+  document.getElementById("rookBootColors")?.remove(); // The boot script's first-frame copy
   loadCurrentGameState(); // Load after theme
   initializeCurrentGameTimer();
   loadSettings(); // Load settings after game state
@@ -208,22 +209,34 @@ if (document.readyState === "interactive" || document.readyState === "complete")
 
 if ('serviceWorker' in navigator) {
   let refreshing = false;
+  let updateActivated = false;
   const reloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
   const interactionRevisionAtStartup = getRookAppInteractionRevision();
+  const canReloadForUpdate = () => shouldReloadForServiceWorkerUpdate(
+    reloadOnControllerChange,
+    interactionRevisionAtStartup,
+    getRookAppInteractionRevision(),
+  );
+
+  // Swapping pages while the app is on screen reads as a blink after launch,
+  // so an update loads the next time the app goes to the background.
+  const reloadForUpdateWhileHidden = () => {
+    if (refreshing || !updateActivated || document.visibilityState !== 'hidden' || !canReloadForUpdate()) return;
+    refreshing = true;
+    window.location.reload();
+  };
+  document.addEventListener('visibilitychange', reloadForUpdateWhileHidden);
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing || !shouldReloadForServiceWorkerUpdate(
-      reloadOnControllerChange,
-      interactionRevisionAtStartup,
-      getRookAppInteractionRevision(),
-    )) {
-      if (reloadOnControllerChange && !refreshing) {
+    if (refreshing) return;
+    if (!canReloadForUpdate()) {
+      if (reloadOnControllerChange) {
         console.info("App update activated; reload deferred until the next launch because the app is in use.");
       }
       return;
     }
-    refreshing = true;
-    window.location.reload();
+    updateActivated = true;
+    reloadForUpdateWhileHidden();
   });
 
   const activateUpdatedWorker = (worker) => {
