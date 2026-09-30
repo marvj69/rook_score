@@ -241,6 +241,9 @@ const {
   bucketScore,
   getBucketRange,
   generateComplexProbabilityBreakdown,
+  generateProbabilityBreakdown,
+  buildProbabilityTimeline,
+  enhanceProbabilityExplanation,
   buildProbabilityIndex,
   MODEL_FEATURE_SET,
   LEGACY_MODEL_FEATURE_SET,
@@ -3778,6 +3781,73 @@ test('probability explanation distinguishes display bounds from extreme model es
   assert.match(html, /Us<\/span><strong>99\.9%/);
   assert.match(html, /Dem<\/span><strong>0\.1%/);
   assert.match(html, /before any player or library adjustment/);
+});
+
+test('probability explanation charts show the estimate, the hand-by-hand path, and only the stages that contribute', () => {
+  const rounds = [
+    { biddingTeam: 'us', bidAmount: 120, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } },
+    { biddingTeam: 'dem', bidAmount: 130, usPoints: 40, demPoints: -130, runningTotals: { us: 180, dem: -90 } },
+    { biddingTeam: 'us', bidAmount: 110, usPoints: -110, demPoints: 100, runningTotals: { us: 70, dem: 10 } },
+  ];
+  const history = Array.from({ length: 8 }, (_, index) => ({
+    id: `chart-${index}`, winner: 'us', finalScore: { us: 500, dem: 300 },
+    usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'],
+  }));
+  const context = { model: FALLBACK_RUNTIME_MODEL, personalization: null };
+  const build = (games, names = { us: ['Alice', 'Bob'], dem: ['Carol', 'Dan'] }) => {
+    const current = { ...names, usPlayers: names.us, demPlayers: names.dem, rounds };
+    const timeline = [{ hand: 0, us: 0, dem: 0, prob: 50 }, ...rounds.map((round, index) => ({
+      hand: index + 1, us: round.runningTotals.us, dem: round.runningTotals.dem,
+      prob: calculateWinProbabilityComplex({ ...current, rounds: rounds.slice(0, index + 1) }, games, context).us,
+    }))];
+    const result = calculateWinProbabilityComplex(current, games, context);
+    const snapshot = getModelProbabilitySnapshotForState(current, context.model, null, games);
+    return {
+      timeline, result, snapshot,
+      html: generateComplexProbabilityBreakdown(60, 3, 'Us & Co', '<b>Dem</b>', result, games, { us: 70, dem: 10 }, context, snapshot, timeline),
+    };
+  };
+
+  const withPlayers = build(history);
+  const { html, timeline, result } = withPlayers;
+  assert.equal((html.match(/probability-dot--us/g) || []).length + (html.match(/probability-dot--dem/g) || []).length, 100);
+  assert.match(html, /data-probability-chart="timeline"/);
+  assert.equal(html.match(/data-points="([^"]+)"/)[1].split(';').length, rounds.length + 1);
+  assert.equal(timeline[timeline.length - 1].prob, result.us, 'the last point is the number the score screen shows');
+  assert.match(html, /data-probability-chart="swings"/);
+  assert.match(html, /data-probability-chart="stages"/);
+  assert.match(html, /data-probability-chart="factors"/);
+  assert.match(html, /Combined pull/);
+  assert.match(html, /probability-split-us" style="width:/);
+  assert.match(html, /Race to 500/);
+  assert.match(html, /&lt;b&gt;Dem&lt;\/b&gt;/);
+  assert.doesNotMatch(html, /<b>Dem<\/b>/);
+
+  // With no saved history there is no intermediate stage, so no step chart.
+  const noHistory = build([]).html;
+  assert.doesNotMatch(noHistory, /data-probability-chart="stages"/);
+  assert.match(noHistory, /data-probability-chart="factors"/);
+
+  // Without a timeline (for example an older caller) the rest still renders.
+  const plain = generateComplexProbabilityBreakdown(60, 3, 'Us', 'Dem', withPlayers.result, history, { us: 70, dem: 10 }, context, withPlayers.snapshot);
+  assert.doesNotMatch(plain, /data-probability-chart="timeline"/);
+  assert.match(plain, /data-probability-section="estimate"/);
+});
+
+test('probability timeline replays each hand through the live calculator', () => {
+  const rounds = [
+    { biddingTeam: 'us', bidAmount: 120, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } },
+    { biddingTeam: 'dem', bidAmount: 130, usPoints: 40, demPoints: 140, runningTotals: { us: 180, dem: 180 } },
+  ];
+  updateState({ rounds, showWinProbability: true, gameOver: false, usPlayers: [], demPlayers: [] });
+  const context = getProbabilityContext([]);
+  const points = buildProbabilityTimeline([], context);
+  assert.deepEqual(points.map(point => point.hand), [0, 1, 2]);
+  assert.equal(points[0].prob, 50);
+  assert.equal(points[2].prob, getWinProbability({ rounds }, [], context).us);
+  assert.match(generateProbabilityBreakdown(), /data-probability-chart="timeline"/);
+  updateState({ rounds: [] });
+  assert.equal(generateProbabilityBreakdown(), '');
 });
 
 test('model feature set includes all expected runtime features', () => {

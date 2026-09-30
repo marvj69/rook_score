@@ -430,7 +430,8 @@ test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
     ['js/app.bundle.js', 276000, 72000], // Home/onboarding plus early initialization and authentication readiness
     ['js/voice-score.bundle.js', 60000, 17000],
-    ['js/probability-explanation.bundle.js', 16000, 5500],
+    ['js/probability-explanation.bundle.js', 26000, 8800],
+    ['css/probability-explanation.css', 12000, 2800],
   ]) {
     const source = read(file);
     assert.ok(Buffer.byteLength(source) < bytes, `${file} raw size`);
@@ -513,7 +514,7 @@ test('Pages ships every local precache asset and the runtime model requested by 
   const precacheBlock = read('service-worker.js').match(/const urlsToCache = \[([\s\S]*?)\];/)[1];
   const precacheFiles = [...precacheBlock.matchAll(/"\.\/([^"]+)"/g)].map(match => match[1]);
   const modelFile = read('js/modules/02-win-prob-engine.js').match(/RUNTIME_MODEL_PATH = "\.\/([^"]+)"/)[1];
-  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js', 'js/probability-explanation.bundle.js']) {
+  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js', 'js/probability-explanation.bundle.js', 'css/probability-explanation.css']) {
     assert.equal(existsSync(path.join(root, file)), true, `${file} exists`);
     assert.equal(copiedFiles.includes(file), true, `${file} is deployed`);
   }

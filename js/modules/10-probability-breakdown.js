@@ -26,6 +26,27 @@ function loadProbabilityExplanation() {
   return probabilityExplanationLoadPromise;
 }
 
+// The explanation's chart styles ship outside the startup CSS. Plain text is
+// still readable if the stylesheet fails, so a failure never blocks the modal.
+let probabilityStylesLoadPromise = null;
+
+function loadProbabilityStyles() {
+  if (probabilityStylesLoadPromise) return probabilityStylesLoadPromise;
+  probabilityStylesLoadPromise = new Promise(resolve => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = new URL("css/probability-explanation.css", document.baseURI).href;
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", () => {
+      probabilityStylesLoadPromise = null;
+      link.remove();
+      resolve();
+    }, { once: true });
+    document.head.appendChild(link);
+  });
+  return probabilityStylesLoadPromise;
+}
+
 async function openProbabilityModal() {
   if (document.getElementById("probabilityModal")) return;
   probabilityReturnFocus = document.activeElement;
@@ -65,9 +86,12 @@ async function openProbabilityModal() {
     }
   });
   try {
-    await loadProbabilityExplanation();
+    await Promise.all([loadProbabilityExplanation(), loadProbabilityStyles()]);
     const content = document.querySelector("#probabilityModal .probability-modal-scroll");
-    if (content) content.innerHTML = generateProbabilityBreakdown();
+    if (content) {
+      content.innerHTML = generateProbabilityBreakdown();
+      enhanceProbabilityExplanation(content);
+    }
   } catch {
     const content = document.querySelector("#probabilityModal .probability-modal-scroll");
     if (content) content.innerHTML = '<p role="alert">The explanation could not load. Close this panel and try again.</p>';

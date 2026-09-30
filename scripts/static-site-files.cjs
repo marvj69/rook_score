@@ -11,6 +11,7 @@ module.exports = [
   // Keep the previous URL while cached HTML/CDN copies move to app.min.css.
   "css/app.css",
   "css/tailwind.css",
+  "css/probability-explanation.css",
   "icons/icon-192x192.png",
   "icons/icon-512x512.png",
   ...require("./ios-launch-screens.cjs").flatMap(([width, height, scale]) => [

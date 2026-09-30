@@ -1246,8 +1246,9 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   color: #e2e8f0;
   background: #141b35;
 }
+.probability-modal-header { background: linear-gradient(180deg, rgba(148,163,184,0.08), transparent); }
 .probability-modal-close { background: rgba(148,163,184,0.1); }
-.probability-modal-close:focus-visible, .probability-math summary:focus-visible {
+.probability-modal-close:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 3px;
 }
@@ -1258,27 +1259,6 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   -webkit-overflow-scrolling: touch;
   padding: 1.25rem;
 }
-.probability-explanation { font-size: 0.9375rem; line-height: 1.65; overflow-wrap: anywhere; }
-.probability-explanation :is(h3,h4) { font-weight: 700; color: #f8fafc; margin-bottom: 0.75rem; }
-.probability-explanation p + p { margin-top: 0.75rem; }
-.probability-explanation strong { color: #f8fafc; }
-.probability-example { color: #cbd5e1; padding-left: 0.875rem; border-left: 2px solid #64748b; }
-.probability-live { margin: 1.5rem 0; padding: 1rem; border: 1px solid rgba(148,163,184,0.25); border-radius: 0.875rem; background: rgba(15,23,42,0.35); }
-.probability-team { min-width: 0; padding-left: 0.75rem; border-left: 3px solid; }
-.probability-team--us { border-color: var(--primary-color); }
-.probability-team--dem { border-color: var(--accent-color); }
-.probability-team strong { display: block; font-size: 1.75rem; line-height: 1.35; font-variant-numeric: tabular-nums; }
-.probability-note { font-size: 0.8125rem; color: #b8c5d8; }
-.probability-detail { margin-top: 1.25rem; }
-.probability-inputs { margin: 0.875rem 0; }
-.probability-inputs > div + div { margin-top: 0.75rem; }
-.probability-inputs dt { font-weight: 650; color: #f8fafc; }
-.probability-inputs dd { color: #cbd5e1; }
-.probability-current-effect { padding: 0.75rem; background: rgba(148,163,184,0.09); border-radius: 0.625rem; }
-.probability-explanation code { font-size: 0.8125rem; color: #dbeafe; }
-.probability-math { margin-top: 1.5rem; border-top: 1px solid rgba(148,163,184,0.2); padding-top: 0.875rem; }
-.probability-math summary { cursor: pointer; font-weight: 650; color: #dbeafe; padding: 0.5rem 0; }
-.probability-math-body { padding-top: 0.75rem; }
 
 /* ══════════════════════════════════════════════════════════════════
    STATISTICS MODAL — Refreshed Cartoony 3-D UI
