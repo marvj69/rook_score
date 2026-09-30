@@ -20,6 +20,7 @@ module.exports = [
   "js/analytics.js",
   "js/app.bundle.js",
   "js/voice-score.bundle.js",
+  "js/probability-explanation.bundle.js",
   "js/firebase-init.js",
   "js/model_runtime_v2.json",
   "vendor/canvas-confetti.min.js",

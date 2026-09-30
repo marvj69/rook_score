@@ -41,7 +41,8 @@ async function buildBundle(relativePaths, outputPath, description) {
   await writeFile(join(rootDir, outputPath), `${result.code}\n`, "utf8");
 }
 
-const coreModuleFiles = moduleFiles.filter(relativePath => !lazyVoiceModulePaths.includes(relativePath));
+const probabilityModuleFiles = ["js/modules/10-probability-explanation.js"];
+const coreModuleFiles = moduleFiles.filter(relativePath => ![...lazyVoiceModulePaths, ...probabilityModuleFiles].includes(relativePath));
 const voiceModuleFiles = moduleFiles.filter(relativePath => lazyVoiceModulePaths.includes(relativePath));
 
 if (voiceModuleFiles.join() !== lazyVoiceModulePaths.join()) {
@@ -51,4 +52,5 @@ if (voiceModuleFiles.join() !== lazyVoiceModulePaths.join()) {
 await Promise.all([
   buildBundle(coreModuleFiles, "js/app.bundle.js", "core app bundle"),
   buildBundle(voiceModuleFiles, "js/voice-score.bundle.js", "lazy voice bundle"),
+  buildBundle(probabilityModuleFiles, "js/probability-explanation.bundle.js", "lazy probability explanation bundle"),
 ]);

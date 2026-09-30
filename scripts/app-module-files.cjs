@@ -15,6 +15,7 @@ module.exports = [
   "js/modules/09-voice-tools.js",
   "js/modules/09-voice-scoring.js",
   "js/modules/09-settings-validation-misc.js",
+  "js/modules/10-probability-explanation.js",
   "js/modules/10-probability-breakdown.js",
   "js/modules/11-rendering.js",
   "js/modules/12-saved-games-and-stats-modals.js",

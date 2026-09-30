@@ -8,6 +8,7 @@ const { gzipSync, inflateSync } = require('node:zlib');
 const root = path.join(__dirname, '..');
 const modules = require('../scripts/app-module-files.cjs');
 const voiceModules = ['js/modules/09-voice-tools.js', 'js/modules/09-voice-scoring.js'];
+const probabilityModules = ['js/modules/10-probability-explanation.js'];
 const read = file => readFileSync(path.join(root, file), 'utf8');
 
 // Run the real classic scripts without CommonJS exports, in their browser order.
@@ -65,7 +66,7 @@ function createRuntime(bundled, readyState = 'loading') {
     get length() { return storage.size; },
   };
   const context = vm.createContext({
-    console, document, localStorage,
+    console, document, localStorage, URL,
     navigator: { userAgent: 'test', platform: 'test' },
     location: { hostname: 'localhost', origin: 'http://localhost' },
     innerHeight: 844, innerWidth: 390, addEventListener: listen('window'),
@@ -82,7 +83,7 @@ function createRuntime(bundled, readyState = 'loading') {
   });
   vm.runInContext('window = globalThis; self = globalThis;', context);
   const run = code => vm.runInContext(code, context);
-  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => !voiceModules.includes(file))) {
+  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => ![...voiceModules, ...probabilityModules].includes(file))) {
     run(read(file));
   }
   return {
@@ -94,6 +95,7 @@ function createRuntime(bundled, readyState = 'loading') {
     },
     listeners,
     loadVoice() { for (const file of bundled ? ['js/voice-score.bundle.js'] : voiceModules) run(read(file)); },
+    loadProbability() { for (const file of bundled ? ['js/probability-explanation.bundle.js'] : probabilityModules) run(read(file)); },
   };
 }
 
@@ -174,6 +176,7 @@ for (const bundled of [false, true]) {
       globalThis.predicted = calculateWinProbabilityComplex(state, testGames);
     `);
     assert.equal(app.run('PROB_CACHE.size'), 0);
+    app.loadProbability();
     app.run('state.showWinProbability = true; generateProbabilityBreakdown();');
     assert.equal(app.run('PROB_CACHE.size'), 0, 'the explanation also skips the unused table');
     assert.equal(app.run(`JSON.stringify(predicted) === JSON.stringify(
@@ -183,6 +186,49 @@ for (const bundled of [false, true]) {
       model: ${read('js/model_runtime_v1.json')}, personalization: null
     });`);
     assert.equal(app.run('PROB_CACHE.size'), 1);
+  });
+
+  test(`${label}: probability explanation loads once from the Pages base path`, async () => {
+    const app = createRuntime(bundled);
+    assert.equal(app.run('typeof generateProbabilityBreakdown'), 'undefined');
+    app.document.baseURI = 'https://marvj69.github.io/rook_score/index.html';
+    const scripts = [];
+    app.document.createElement = () => ({
+      events: {}, addEventListener(name, callback) { this.events[name] = callback; }, remove() {},
+    });
+    app.document.head.appendChild = script => scripts.push(script);
+    const first = app.run('loadProbabilityExplanation()');
+    const concurrent = app.run('loadProbabilityExplanation()');
+    assert.equal(first, concurrent);
+    assert.equal(scripts.length, 1);
+    assert.equal(scripts[0].src, 'https://marvj69.github.io/rook_score/js/probability-explanation.bundle.js');
+    app.loadProbability();
+    scripts[0].events.load();
+    await first;
+    await app.run('loadProbabilityExplanation()');
+    assert.equal(scripts.length, 1);
+    assert.equal(app.run('typeof generateComplexProbabilityBreakdown'), 'function');
+  });
+
+  test(`${label}: probability explanation can retry a failed download`, async () => {
+    const app = createRuntime(bundled);
+    app.document.baseURI = 'http://localhost/';
+    const scripts = [];
+    app.document.createElement = () => ({
+      events: {}, removed: false,
+      addEventListener(name, callback) { this.events[name] = callback; },
+      remove() { this.removed = true; },
+    });
+    app.document.head.appendChild = script => scripts.push(script);
+    const first = app.run('loadProbabilityExplanation()');
+    scripts[0].events.error();
+    await assert.rejects(first, /could not load/);
+    assert.equal(scripts[0].removed, true);
+    const retry = app.run('loadProbabilityExplanation()');
+    assert.equal(scripts.length, 2);
+    app.loadProbability();
+    scripts[1].events.load();
+    await retry;
   });
 
   test(`${label}: classic global handlers and lazy voice integration survive packaging`, () => {
@@ -384,6 +430,7 @@ test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
     ['js/app.bundle.js', 276000, 72000], // Home/onboarding plus early initialization and authentication readiness
     ['js/voice-score.bundle.js', 60000, 17000],
+    ['js/probability-explanation.bundle.js', 16000, 5500],
   ]) {
     const source = read(file);
     assert.ok(Buffer.byteLength(source) < bytes, `${file} raw size`);
@@ -466,7 +513,7 @@ test('Pages ships every local precache asset and the runtime model requested by 
   const precacheBlock = read('service-worker.js').match(/const urlsToCache = \[([\s\S]*?)\];/)[1];
   const precacheFiles = [...precacheBlock.matchAll(/"\.\/([^"]+)"/g)].map(match => match[1]);
   const modelFile = read('js/modules/02-win-prob-engine.js').match(/RUNTIME_MODEL_PATH = "\.\/([^"]+)"/)[1];
-  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js']) {
+  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js', 'js/probability-explanation.bundle.js']) {
     assert.equal(existsSync(path.join(root, file)), true, `${file} exists`);
     assert.equal(copiedFiles.includes(file), true, `${file} is deployed`);
   }

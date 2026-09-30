@@ -3612,15 +3612,11 @@ test('probability breakdown hides history and personalization when they do not c
     },
   );
 
-  assert.match(html, /Method: Regression model/);
-  assert.match(html, /Model Estimate/);
-  assert.match(html, /100% Regression model/);
-  assert.doesNotMatch(html, /Saved-Game Matches/);
-  assert.doesNotMatch(html, /Per-User Calibration/);
-  assert.doesNotMatch(html, /Confidence:/);
-  assert.doesNotMatch(html, /Score Classification/);
-  assert.doesNotMatch(html, /<strong>Saved-game history:<\/strong>/);
-  assert.doesNotMatch(html, /<strong>Personalization:<\/strong>/);
+  assert.ok(html.indexOf('data-probability-section="overview"') < html.indexOf('data-probability-section="details"'));
+  assert.match(html, /Us<\/span><strong>39\.3%/);
+  assert.match(html, /Dem<\/span><strong>60\.7%/);
+  assert.doesNotMatch(html, /data-probability-step="history"/);
+  assert.doesNotMatch(html, /data-probability-step="personalization"/);
 });
 
 test('probability breakdown shows saved history and personalization only when they contribute', () => {
@@ -3675,11 +3671,11 @@ test('probability breakdown shows saved history and personalization only when th
     },
   );
 
-  assert.match(html, /Saved-Game Matches/);
-  assert.match(html, /Probability Blend/);
-  assert.match(html, /Per-User Calibration/);
-  assert.match(html, /<strong>Saved-game history:<\/strong>/);
-  assert.match(html, /<strong>Personalization:<\/strong>/);
+  assert.match(html, /data-probability-step="history"/);
+  assert.match(html, /data-probability-step="personalization"/);
+  assert.match(html, /20\.2% history/);
+  assert.match(html, /79\.8% model/);
+  assert.doesNotMatch(html, /data-probability-step="players"/);
 });
 
 test('runtime v2 probability breakdown explains player strength without legacy blending', () => {
@@ -3712,12 +3708,76 @@ test('runtime v2 probability breakdown explains player strength without legacy b
     },
   );
 
-  assert.match(html, /Method: Player-adjusted model/);
-  assert.match(html, /Player Strength Adjustment/);
-  assert.match(html, /State model: 57% -&gt; Player-adjusted: 61%/);
-  assert.match(html, /<strong>Player strength:<\/strong>/);
-  assert.doesNotMatch(html, /Saved-Game Matches/);
-  assert.doesNotMatch(html, /Per-User Calibration/);
+  assert.match(html, /data-probability-step="players"/);
+  assert.match(html, /from <strong>57\.1%<\/strong> to <strong>61\.2%/);
+  assert.match(html, /12 qualifying four-player games across your library/);
+  assert.doesNotMatch(html, /data-probability-step="history"/);
+  assert.doesNotMatch(html, /data-probability-step="personalization"/);
+});
+
+test('probability explanation reports real player adjustment and escapes team names', () => {
+  const history = Array.from({ length: 8 }, (_, index) => ({
+    id: `explanation-${index}`, winner: 'us', finalScore: { us: 500, dem: 300 },
+    usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'],
+  }));
+  const current = {
+    usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'],
+    rounds: [
+      { biddingTeam: 'us', bidAmount: 120, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } },
+      { biddingTeam: 'dem', bidAmount: 130, usPoints: 40, demPoints: 140, runningTotals: { us: 180, dem: 180 } },
+    ],
+  };
+  const context = { model: FALLBACK_RUNTIME_MODEL, personalization: null };
+  const snapshot = getModelProbabilitySnapshotForState(current, context.model, null, history);
+  const result = calculateWinProbabilityComplex(current, history, context);
+  const html = generateComplexProbabilityBreakdown(0, 2, '<img src=x onerror=alert(1)>', 'Carol & Dan', result, history, { us: 180, dem: 180 }, context, snapshot);
+
+  assert.equal(snapshot.hierarchicalPlayerPriorActive, true);
+  assert.ok(snapshot.hierarchicalPlayerPrior.correction > 0);
+  assert.ok(html.includes(`c = ${snapshot.hierarchicalPlayerPrior.correction.toFixed(4)}`));
+  assert.ok(html.includes(`to <strong>${(snapshot.modelProbUs * 100).toFixed(1)}%`));
+  assert.ok(html.includes(`<strong>${result.us.toFixed(1)}%</strong>`));
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html, /Carol &amp; Dan/);
+  assert.doesNotMatch(html, /<img/);
+  assert.doesNotMatch(html, /data-probability-step="history"/);
+});
+
+test('probability explanation distinguishes balanced player history from missing history', () => {
+  const current = {
+    usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'],
+    rounds: [{ biddingTeam: 'us', bidAmount: 120, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } }],
+  };
+  const history = ['us', 'dem'].map(winner => ({
+    winner, usPlayers: current.usPlayers, demPlayers: current.demPlayers,
+  }));
+  const context = { model: FALLBACK_RUNTIME_MODEL, personalization: null };
+  const render = games => {
+    const snapshot = getModelProbabilitySnapshotForState(current, context.model, null, games);
+    return generateComplexProbabilityBreakdown(100, 1, 'Us', 'Dem', calculateWinProbabilityComplex(current, games, context), games, { us: 140, dem: 40 }, context, snapshot);
+  };
+  assert.match(render(history), /history is available, but the two sides' adjustments balance out/);
+  assert.match(render([]), /No player adjustment is contributing here/);
+  assert.doesNotMatch(render([]), /qualifying four-player games/);
+});
+
+test('probability explanation distinguishes display bounds from extreme model estimates', () => {
+  const current = {
+    rounds: [{ biddingTeam: 'us', bidAmount: 120, usPoints: 180, demPoints: 0, runningTotals: { us: 450, dem: -450 } }],
+  };
+  const context = {
+    model: { ...FALLBACK_RUNTIME_MODEL, coefficients: { ...FALLBACK_RUNTIME_MODEL.coefficients, diff: 1 } },
+    personalization: null,
+  };
+  const snapshot = getModelProbabilitySnapshotForState(current, context.model, null, []);
+  const result = calculateWinProbabilityComplex(current, [], context);
+  const html = generateComplexProbabilityBreakdown(900, 1, 'Us', 'Dem', result, [], { us: 450, dem: -450 }, context, snapshot);
+  assert.ok(snapshot.modelProbUs * 100 > 99.9);
+  assert.equal(result.us, 99.9);
+  assert.equal(result.dem, 0.1);
+  assert.match(html, /Us<\/span><strong>99\.9%/);
+  assert.match(html, /Dem<\/span><strong>0\.1%/);
+  assert.match(html, /before any player or library adjustment/);
 });
 
 test('model feature set includes all expected runtime features', () => {
