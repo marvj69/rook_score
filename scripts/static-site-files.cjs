@@ -13,6 +13,10 @@ module.exports = [
   "css/tailwind.css",
   "icons/icon-192x192.png",
   "icons/icon-512x512.png",
+  ...require("./ios-launch-screens.cjs").flatMap(([width, height, scale]) => [
+    `icons/startup-${width * scale}x${height * scale}.png`,
+    `icons/startup-${height * scale}x${width * scale}.png`,
+  ]),
   "js/analytics.js",
   "js/app.bundle.js",
   "js/voice-score.bundle.js",

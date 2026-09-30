@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { readFileSync, existsSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { gzipSync } = require('node:zlib');
+const { gzipSync, inflateSync } = require('node:zlib');
 
 const root = path.join(__dirname, '..');
 const modules = require('../scripts/app-module-files.cjs');
@@ -300,6 +300,24 @@ for (const bundled of [false, true]) {
     assert.equal(app.elements.get('homeScreen').inert, false);
   });
 
+  test(`${label}: restoring an active game hides the page only until styles and initialization are ready`, () => {
+    const app = createRuntime(bundled);
+    const styles = app.document.getElementById('appStyles');
+    styles.tagName = 'LINK';
+    app.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    app.localStorage.setItem('activeGameState', JSON.stringify({ biddingTeam: 'us', bidAmount: '125' }));
+    app.document.documentElement.classList.add('app-boot');
+    app.run('initializeRookApp()');
+    assert.equal(app.run('rookAppInitialized'), false);
+    assert.equal(app.document.documentElement.classList.contains('app-boot'), true);
+    styles.dataset.loaded = 'true';
+    app.run('initializeRookApp()');
+    assert.equal(app.run('rookAppInitialized'), true);
+    assert.equal(app.document.documentElement.classList.contains('app-boot'), false);
+    assert.equal(app.run('isHomeScreenOpen()'), false);
+    assert.equal(app.run('state.biddingTeam'), 'us');
+  });
+
   test(`${label}: early authentication waits for the shared client and returns its result`, async () => {
     const app = createRuntime(bundled);
     app.run(`
@@ -341,6 +359,7 @@ test('early Home destination handles empty and invalid saves without hiding acti
       document: { documentElement: { classList: { add: name => classes.add(name) } } },
     });
     assert.equal(classes.has('home-boot'), expectedHome, JSON.stringify(state));
+    assert.equal(classes.has('app-boot'), !expectedHome, JSON.stringify(state));
   }
   const classes = new Set();
   vm.runInNewContext(bootScript, {
@@ -378,10 +397,52 @@ test('Home styling stays small and every generated asset is checked before deplo
   const inlineStyles = html.match(/<style id="rook-startup-styles">([\s\S]*?)<\/style>/)[1];
   assert.ok(Buffer.byteLength(css) < 127000);
   assert.ok(gzipSync(css).length < 23000);
-  assert.ok(Buffer.byteLength(inlineStyles) < 20000);
+  // The utility reset/rules now travel with Home, eliminating a blocking fetch.
+  assert.ok(Buffer.byteLength(inlineStyles) < 45000);
+  assert.ok(gzipSync(inlineStyles).length < 10000);
+  assert.equal(inlineStyles.startsWith(read('css/tailwind.css')), true);
   assert.match(inlineStyles, /home-boot/);
   assert.match(inlineStyles, /\.home-tile/);
   assert.match(read('.github/workflows/pages.yml'), /git diff --exit-code -- index\.html[^\n]*css\/app\.min\.css/);
+});
+
+test('Home can parse and paint without any external render-blocking CSS', () => {
+  const head = read('index.html').split('</head>')[0].replace(/<noscript>[\s\S]*?<\/noscript>/g, '');
+  const stylesheets = [...head.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*>/g)];
+  assert.equal(stylesheets.length, 1);
+  assert.match(stylesheets[0][0], /id="appStyles"/);
+  assert.match(stylesheets[0][0], /media="print"/);
+  const synchronousScripts = [...head.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1]).join('\n');
+  assert.doesNotMatch(synchronousScripts, /\.media\s*=\s*["']all["']/);
+  assert.match(head, /name="color-scheme" content="dark"/);
+});
+
+test('iPhone launch images are real, correctly sized dark PNGs and ship under relative URLs', () => {
+  const html = read('index.html');
+  const screens = require('../scripts/ios-launch-screens.cjs');
+  const deployed = require('../scripts/static-site-files.cjs');
+  for (const [width, height, scale] of screens) {
+    for (const [orientation, w, h] of [['portrait', width * scale, height * scale], ['landscape', height * scale, width * scale]]) {
+      const file = `icons/startup-${w}x${h}.png`;
+      const image = readFileSync(path.join(root, file));
+      assert.equal(image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), true);
+      assert.equal(image.readUInt32BE(16), w);
+      assert.equal(image.readUInt32BE(20), h);
+      assert.equal(deployed.includes(file), true);
+      assert.ok(html.includes(`href="${file}" media="(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${scale}) and (orientation: ${orientation})"`));
+    }
+  }
+  const expectedColor = Buffer.from(JSON.parse(read('manifest.json')).background_color.slice(1), 'hex');
+  for (const [w, h] of [[1206, 2622], [2622, 1206]]) {
+    const image = readFileSync(path.join(root, `icons/startup-${w}x${h}.png`));
+    const idatSize = image.readUInt32BE(33);
+    const pixels = inflateSync(image.subarray(41, 41 + idatSize));
+    const row = Buffer.alloc(1 + w * 3);
+    row.fill(expectedColor, 1);
+    assert.equal(pixels.length, row.length * h);
+    for (let y = 0; y < h; y++) assert.equal(pixels.subarray(y * row.length, (y + 1) * row.length).equals(row), true);
+  }
+  assert.match(read('.github/workflows/pages.yml'), /icons\/startup-\*\.png/);
 });
 
 test('stylesheet minification preserves every authored rule, value and browser fallback', () => {

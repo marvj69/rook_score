@@ -195,6 +195,7 @@ function initializeRookApp() {
     e.preventDefault();
     modalCloseHandlers[dialogId]();
   });
+  document.documentElement.classList.remove("app-boot");
 }
 
 // A defer script already has the full DOM. Analytics and cloud downloads must

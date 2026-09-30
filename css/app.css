@@ -26,6 +26,7 @@
 
 html {
   background-color: var(--app-status-bar-color);
+  color-scheme: dark;
 }
 
 body {
@@ -35,6 +36,15 @@ body {
 
 body.ios-standalone-safe-area-fallback {
   --safe-area-inset-top-effective: 44px;
+}
+
+/* Restore real games after initialization without exposing an unstyled page. */
+html.app-boot main#app,
+html.app-boot .hamburger-menu,
+html.app-boot #versionBadge,
+html.app-boot nav,
+html.app-boot #menuOverlay {
+  visibility: hidden;
 }
 
 body.app-content-overflows main#app {
