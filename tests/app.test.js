@@ -12,182 +12,7 @@ const paperGamePhotoHandler = require('../api/paper-game-photo.js');
 const bugReportHandler = require('../api/bug-report.js');
 const LEGACY_RUNTIME_MODEL = require('../js/model_runtime_v1.json');
 
-function setupDomStubs() {
-  const noop = () => {};
-
-  const createClassList = () => ({
-    add: noop,
-    remove: noop,
-    toggle: noop,
-    contains: () => false,
-  });
-
-  const createStyle = () =>
-    new Proxy(
-      {},
-      {
-        get: () => '',
-        set: () => true,
-        has: () => false,
-      },
-    );
-
-  function createElementStub() {
-    const classList = createClassList();
-    const style = createStyle();
-    const element = {
-      classList,
-      style,
-      dataset: {},
-      textContent: '',
-      innerHTML: '',
-      appendChild: noop,
-      removeChild: noop,
-      append: noop,
-      remove: noop,
-      focus: noop,
-      blur: noop,
-      click: noop,
-      insertAdjacentHTML: noop,
-      setAttribute: noop,
-      removeAttribute: noop,
-      getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 }),
-      addEventListener: noop,
-      removeEventListener: noop,
-      querySelector: () => createElementStub(),
-      querySelectorAll: () => [],
-      scrollIntoView: noop,
-      contains: () => false,
-    };
-
-    return new Proxy(element, {
-      get(target, prop) {
-        if (prop in target) return target[prop];
-        if (prop === 'innerHTML') {
-          // Simulate browser's HTML escaping behavior
-          const text = target.textContent || '';
-          return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-        }
-        if (prop === 'outerHTML' || prop === 'textContent') return target.textContent || '';
-        if (prop === 'value') return target.value ?? '';
-        if (prop === 'checked') return false;
-        if (prop === Symbol.iterator) {
-          return function* () {};
-        }
-        return noop;
-      },
-      set(target, prop, value) {
-        if (prop === 'textContent') {
-          target.textContent = value;
-          return true;
-        }
-        target[prop] = value;
-        return true;
-      },
-    });
-  }
-
-  const body = createElementStub();
-  const documentElement = createElementStub();
-  const head = createElementStub();
-
-  const documentStub = {
-    body,
-    documentElement,
-    head,
-    title: '',
-    readyState: 'loading',
-    addEventListener: noop,
-    removeEventListener: noop,
-    getElementById: () => createElementStub(),
-    querySelector: () => createElementStub(),
-    querySelectorAll: () => [],
-    createElement: () => createElementStub(),
-    createElementNS: () => createElementStub(),
-    createDocumentFragment: () => createElementStub(),
-    createTextNode: () => createElementStub(),
-    createRange: () => ({
-      selectNodeContents: noop,
-      setStart: noop,
-      setEnd: noop,
-      collapse: noop,
-    }),
-    execCommand: noop,
-  };
-
-  const storageMap = new Map();
-  const storage = {
-    getItem: key => (storageMap.has(key) ? storageMap.get(key) : null),
-    setItem: (key, value) => storageMap.set(key, String(value)),
-    removeItem: key => storageMap.delete(key),
-    clear: () => storageMap.clear(),
-    key: index => Array.from(storageMap.keys())[index] ?? null,
-    get length() {
-      return storageMap.size;
-    },
-  };
-
-  const navigatorStub = {
-    userAgent: 'node-test',
-    clipboard: { writeText: noop },
-    serviceWorker: {
-      controller: null,
-      addEventListener: noop,
-      ready: Promise.resolve({}),
-      register: () => Promise.resolve({}),
-    },
-  };
-
-  const windowStub = {
-    document: documentStub,
-    localStorage: storage,
-    navigator: navigatorStub,
-    innerWidth: 1024,
-    innerHeight: 768,
-    devicePixelRatio: 2,
-    addEventListener: noop,
-    removeEventListener: noop,
-    dispatchEvent: noop,
-    requestAnimationFrame: cb => setTimeout(cb, 0),
-    cancelAnimationFrame: id => clearTimeout(id),
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
-    alert: noop,
-    confirm: () => false,
-    scrollTo: noop,
-    location: { href: 'http://localhost/', reload: noop, assign: noop },
-    matchMedia: () => ({
-      matches: false,
-      addListener: noop,
-      removeListener: noop,
-      addEventListener: noop,
-      removeEventListener: noop,
-    }),
-    getComputedStyle: () => ({ getPropertyValue: () => '' }),
-    performance: { now: () => Date.now() },
-    crypto: { getRandomValues: array => array.fill(0) },
-  };
-
-  windowStub.window = windowStub;
-  windowStub.globalThis = windowStub;
-
-  global.window = windowStub;
-  global.document = documentStub;
-  global.localStorage = storage;
-  global.navigator = navigatorStub;
-  global.getComputedStyle = windowStub.getComputedStyle;
-  global.self = windowStub;
-  global.globalThis = global;
-
-  return { documentStub, storage, windowStub };
-}
+const { setupDomStubs } = require('./helpers/dom-stubs.cjs');
 
 setupDomStubs();
 
@@ -5336,16 +5161,16 @@ test('firestore sync coalesces rapid writes into one document update and skips f
   assert.equal(writePayloads[1].activeGameState, null);
 });
 
-test('version surfaces are aligned for the 2.5 release', () => {
+test('version surfaces are aligned for the 2.6 release', () => {
   const configSource = readFileSync(path.join(repoRoot, 'js/modules/00-config.js'), 'utf8');
   const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '2.5.0');
-  assert.match(configSource, /const APP_VERSION = "2\.5";/);
-  assert.match(configSource, /Version 2\.5 adds a home screen/);
-  assert.match(htmlSource, /<p>2\.5<\/p>/);
-  assert.match(htmlSource, /What's New in v2\.5/);
+  assert.equal(packageJson.version, '2.6.0');
+  assert.match(configSource, /const APP_VERSION = "2\.6";/);
+  assert.match(configSource, /Version 2\.6 rebuilds Statistics/);
+  assert.match(htmlSource, /<p>2\.6<\/p>/);
+  assert.match(htmlSource, /What's New in v2\.6/);
   assert.doesNotMatch(htmlSource, /Version 2\.1/);
 });
 

@@ -42,7 +42,9 @@ async function buildBundle(relativePaths, outputPath, description) {
 }
 
 const probabilityModuleFiles = ["js/modules/10-probability-explanation.js"];
-const coreModuleFiles = moduleFiles.filter(relativePath => ![...lazyVoiceModulePaths, ...probabilityModuleFiles].includes(relativePath));
+// The Statistics screens (engine, charts, UI) load when the sheet first opens.
+const statsModuleFiles = ["js/modules/12-stats-engine.js", "js/modules/12-stats-charts.js", "js/modules/12-stats-ui.js"];
+const coreModuleFiles = moduleFiles.filter(relativePath => ![...lazyVoiceModulePaths, ...probabilityModuleFiles, ...statsModuleFiles].includes(relativePath));
 const voiceModuleFiles = moduleFiles.filter(relativePath => lazyVoiceModulePaths.includes(relativePath));
 
 if (voiceModuleFiles.join() !== lazyVoiceModulePaths.join()) {
@@ -53,4 +55,5 @@ await Promise.all([
   buildBundle(coreModuleFiles, "js/app.bundle.js", "core app bundle"),
   buildBundle(voiceModuleFiles, "js/voice-score.bundle.js", "lazy voice bundle"),
   buildBundle(probabilityModuleFiles, "js/probability-explanation.bundle.js", "lazy probability explanation bundle"),
+  buildBundle(statsModuleFiles, "js/stats.bundle.js", "lazy statistics bundle"),
 ]);

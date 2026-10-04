@@ -12,6 +12,7 @@ module.exports = [
   "css/app.css",
   "css/tailwind.css",
   "css/probability-explanation.css",
+  "css/stats.css",
   "icons/icon-192x192.png",
   "icons/icon-512x512.png",
   ...require("./ios-launch-screens.cjs").flatMap(([width, height, scale]) => [
@@ -22,6 +23,7 @@ module.exports = [
   "js/app.bundle.js",
   "js/voice-score.bundle.js",
   "js/probability-explanation.bundle.js",
+  "js/stats.bundle.js",
   "js/firebase-init.js",
   "js/model_runtime_v2.json",
   "vendor/canvas-confetti.min.js",

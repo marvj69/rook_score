@@ -637,11 +637,111 @@ function closeSettingsModal() {
 }
 function openAboutModal() { openSheetModal("aboutModal", closeAboutModal); }
 function closeAboutModal() { closeSheetModal("aboutModal"); }
-function openStatisticsModal() { renderStatisticsContent(); openModal("statisticsModal"); }
+// --- Statistics ---
+// The screens ship as their own script and stylesheet (precached by the service
+// worker) so launch never pays for them. Styles are best-effort: the screens
+// still read, just plainly, if the stylesheet fails.
+let statisticsScriptPromise = null;
+let statisticsStylesPromise = null;
+let statisticsSkeletonHtml = "";
+
+function loadStatisticsScript() {
+  if (typeof renderStatisticsApp === "function") return Promise.resolve();
+  if (statisticsScriptPromise) return statisticsScriptPromise;
+  statisticsScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = new URL("js/stats.bundle.js", document.baseURI).href;
+    script.async = true;
+    const fail = () => {
+      statisticsScriptPromise = null;
+      script.remove();
+      reject(new Error("Statistics could not load."));
+    };
+    script.addEventListener("error", fail, { once: true });
+    script.addEventListener("load", () => {
+      if (typeof renderStatisticsApp === "function") resolve();
+      else fail();
+    }, { once: true });
+    document.head.appendChild(script);
+  });
+  return statisticsScriptPromise;
+}
+
+function loadStatisticsStyles() {
+  if (statisticsStylesPromise) return statisticsStylesPromise;
+  statisticsStylesPromise = new Promise(resolve => {
+    try {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = new URL("css/stats.css", document.baseURI).href;
+      link.addEventListener("load", resolve, { once: true });
+      link.addEventListener("error", () => {
+        statisticsStylesPromise = null;
+        link.remove();
+        resolve();
+      }, { once: true });
+      document.head.appendChild(link);
+    } catch {
+      resolve(); // best-effort: the screens still read without it
+    }
+  });
+  return statisticsStylesPromise;
+}
+
+function loadStatistics() {
+  return Promise.all([loadStatisticsScript(), loadStatisticsStyles()]);
+}
+
+// `controls` ({ view, metric, sort, entityMode, entityKey }) lets voice commands
+// land on a specific screen; it resolves once the screens are drawn.
+async function openStatisticsModal(controls) {
+  cancelSheetClose("statisticsModal");
+  // Open first: a hidden sheet cannot restore its scroll position.
+  openSheetModal("statisticsModal", closeStatisticsModal);
+  if (typeof renderStatisticsApp === "function") {
+    loadStatisticsStyles(); // already in: a no-op; one that failed earlier gets another try
+    renderStatisticsApp(controls);
+    return true;
+  }
+  // A retry after a failed load starts from the loading placeholder again, not the old error.
+  const waiting = document.getElementById("statisticsModalContent");
+  if (waiting) {
+    if (waiting.hasAttribute("aria-busy")) statisticsSkeletonHtml = statisticsSkeletonHtml || waiting.innerHTML;
+    else if (statisticsSkeletonHtml) {
+      waiting.innerHTML = statisticsSkeletonHtml;
+      waiting.setAttribute("aria-busy", "true");
+    }
+  }
+  try {
+    await loadStatistics();
+  } catch {
+    const content = document.getElementById("statisticsModalContent");
+    if (content) {
+      content.removeAttribute("aria-busy");
+      content.innerHTML = `<div class="stats-empty"><h3 class="stats-empty__title">Statistics didn't load</h3><p class="stats-empty__body">Check your connection and try again.</p><button type="button" class="st-retry" onclick="openStatisticsModal()">Try again</button></div>`;
+    }
+    return false;
+  }
+  // The sheet may have been dismissed while the screens were on their way.
+  if (document.getElementById("statisticsModal")?.classList.contains("hidden")) return false;
+  renderStatisticsApp(controls);
+  return true;
+}
 function closeStatisticsModal() {
-  closeModal("statisticsModal");
-  document.getElementById("statisticsModalContent").innerHTML = "";
   closeEntityStatisticsModal();
+  closeSheetModal("statisticsModal");
+}
+async function openEntityStatisticsModal(mode, entityKey) {
+  try {
+    await loadStatistics();
+  } catch {
+    return false;
+  }
+  return showStatisticsProfile(mode, entityKey);
+}
+function closeEntityStatisticsModal() {
+  if (typeof statsResetProfile === "function") statsResetProfile();
+  closeSheetModal("entityStatisticsModal");
 }
 function openViewSavedGameModal({ returnToLibrary = true } = {}) {
   cancelSheetClose("viewSavedGameModal");

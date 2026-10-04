@@ -1,6 +1,6 @@
 // CACHE_NAME is stamped by scripts/stamp-service-worker.mjs from the contents
 // of the files below, so any runtime change ships a fresh cache automatically.
-const CACHE_NAME = "rook-cache-7f30fe2d113d6774";
+const CACHE_NAME = "rook-cache-00f07543b2fea4c6";
 const CACHE_NAME_PREFIX = "rook-cache-";
 const OFFLINE_URL = "index.html"; // Use relative path
 
@@ -9,9 +9,11 @@ const urlsToCache = [
   "./css/tailwind.css",
   "./css/app.min.css",
   "./css/probability-explanation.css",
+  "./css/stats.css",
   "./js/analytics.js",
   "./js/app.bundle.js",
   "./js/probability-explanation.bundle.js",
+  "./js/stats.bundle.js",
   "./js/model_runtime_v2.json",
   "./js/firebase-init.js",
   "./manifest.json",

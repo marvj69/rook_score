@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..');
 const modules = require('../scripts/app-module-files.cjs');
 const voiceModules = ['js/modules/09-voice-tools.js', 'js/modules/09-voice-scoring.js'];
 const probabilityModules = ['js/modules/10-probability-explanation.js'];
+const statsModules = ['js/modules/12-stats-engine.js', 'js/modules/12-stats-charts.js', 'js/modules/12-stats-ui.js'];
 const read = file => readFileSync(path.join(root, file), 'utf8');
 
 // Run the real classic scripts without CommonJS exports, in their browser order.
@@ -38,7 +39,7 @@ function createRuntime(bundled, readyState = 'loading') {
         },
       },
       insertAdjacentHTML(position, html) { this.innerHTML += html; }, closest: () => null,
-      appendChild: noop, remove: noop, setAttribute: noop, removeAttribute: noop,
+      appendChild: noop, remove: noop, setAttribute: noop, removeAttribute: noop, hasAttribute: () => false, getAttribute: () => null,
       addEventListener: noop, removeEventListener: noop, focus: noop, blur: noop,
       querySelector: () => null, querySelectorAll: () => [],
       getBoundingClientRect: () => ({ top: 0, left: 0, width: 390, height: 100 }),
@@ -83,7 +84,7 @@ function createRuntime(bundled, readyState = 'loading') {
   });
   vm.runInContext('window = globalThis; self = globalThis;', context);
   const run = code => vm.runInContext(code, context);
-  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => ![...voiceModules, ...probabilityModules].includes(file))) {
+  for (const file of bundled ? ['js/app.bundle.js'] : modules.filter(file => ![...voiceModules, ...probabilityModules, ...statsModules].includes(file))) {
     run(read(file));
   }
   return {
@@ -96,6 +97,7 @@ function createRuntime(bundled, readyState = 'loading') {
     listeners,
     loadVoice() { for (const file of bundled ? ['js/voice-score.bundle.js'] : voiceModules) run(read(file)); },
     loadProbability() { for (const file of bundled ? ['js/probability-explanation.bundle.js'] : probabilityModules) run(read(file)); },
+    loadStats() { for (const file of bundled ? ['js/stats.bundle.js'] : statsModules) run(read(file)); },
   };
 }
 
@@ -229,6 +231,132 @@ for (const bundled of [false, true]) {
     app.loadProbability();
     scripts[1].events.load();
     await retry;
+  });
+
+  test(`${label}: statistics stay out of the core and load once, script and styles, from the Pages base path`, async () => {
+    const app = createRuntime(bundled);
+    for (const name of ['renderStatisticsApp', 'buildStatsModel', 'statsRenderOverview', 'getStatsModel']) {
+      assert.equal(app.run(`typeof ${name}`), 'undefined', `${name} belongs to the lazy bundle`);
+    }
+    assert.equal(app.run('typeof openStatisticsModal'), 'function');
+    assert.equal(app.run('typeof getStatisticsRoster'), 'function', 'voice resolves names from the core roster');
+    app.document.baseURI = 'https://marvj69.github.io/rook_score/index.html';
+    const added = [];
+    app.document.createElement = tag => ({
+      tag, events: {}, addEventListener(name, callback) { this.events[name] = callback; }, remove() {},
+    });
+    app.document.head.appendChild = node => added.push(node);
+    const first = app.run('loadStatistics()');
+    app.run('loadStatistics()');
+    assert.equal(added.length, 2, 'one script and one stylesheet, however many callers');
+    const script = added.find(node => node.tag === 'script');
+    const link = added.find(node => node.tag === 'link');
+    assert.equal(script.src, 'https://marvj69.github.io/rook_score/js/stats.bundle.js');
+    assert.equal(link.href, 'https://marvj69.github.io/rook_score/css/stats.css');
+    assert.equal(link.rel, 'stylesheet');
+    app.loadStats();
+    script.events.load();
+    link.events.load();
+    await first;
+    assert.equal(app.run('typeof renderStatisticsApp'), 'function');
+    await app.run('loadStatistics()');
+    assert.equal(added.length, 2, 'nothing loads twice');
+  });
+
+  test(`${label}: statistics can retry a failed download, and a missing stylesheet never blocks them`, async () => {
+    const app = createRuntime(bundled);
+    app.document.baseURI = 'http://localhost/';
+    const added = [];
+    app.document.createElement = tag => ({
+      tag, events: {}, removed: false,
+      addEventListener(name, callback) { this.events[name] = callback; },
+      remove() { this.removed = true; },
+    });
+    app.document.head.appendChild = node => added.push(node);
+    const first = app.run('loadStatistics()');
+    added.find(node => node.tag === 'script').events.error();
+    added.find(node => node.tag === 'link').events.error();
+    await assert.rejects(first, /could not load/);
+    assert.equal(added.find(node => node.tag === 'script').removed, true);
+    const retry = app.run('loadStatistics()');
+    const scripts = added.filter(node => node.tag === 'script');
+    const links = added.filter(node => node.tag === 'link');
+    assert.equal(scripts.length, 2, 'the script is requested again');
+    assert.equal(links.length, 2, 'so is the stylesheet that failed');
+    app.loadStats();
+    scripts[1].events.load();
+    links[1].events.error();
+    await retry;
+  });
+
+  test(`${label}: opening Statistics shows the sheet at once, draws it when the bundle lands, and says so when it cannot`, async () => {
+    const game = { usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'], usTeamName: 'Ann & Bob', demTeamName: 'Cy & Di', winner: 'us',
+      timestamp: new Date(100000 - 3600000).toISOString(), finalScore: { us: 520, dem: 300 },
+      rounds: [{ biddingTeam: 'us', bidAmount: 120, usPoints: 130, demPoints: 50, runningTotals: { us: 130, dem: 50 } }] };
+    const open = () => {
+      const app = createRuntime(bundled);
+      app.document.baseURI = 'http://localhost/';
+      app.localStorage.setItem('savedGames', JSON.stringify([game]));
+      const added = [];
+      app.document.createElement = tag => ({ tag, events: {}, addEventListener(name, callback) { this.events[name] = callback; }, remove() {} });
+      app.document.head.appendChild = node => added.push(node);
+      // The sheet ships with its loading placeholder and aria-busy, as index.html has them.
+      const content = app.document.getElementById('statisticsModalContent');
+      const attributes = new Set(['aria-busy']);
+      Object.assign(content, { hasAttribute: name => attributes.has(name), setAttribute: name => attributes.add(name), removeAttribute: name => attributes.delete(name) });
+      content.innerHTML = '<div class="st-skeleton"></div><p class="sr-only" role="status">Loading statistics…</p>';
+      return { app, added, content, attributes, opening: app.run('openStatisticsModal()') };
+    };
+
+    const good = open();
+    assert.equal(good.app.document.getElementById('statisticsModal').classList.contains('hidden'), false, 'the sheet is up before anything has loaded');
+    assert.equal(good.app.run('typeof renderStatisticsApp'), 'undefined');
+    good.app.loadStats();
+    good.added.find(node => node.tag === 'script').events.load();
+    good.added.find(node => node.tag === 'link').events.load();
+    assert.equal(await good.opening, true);
+    assert.match(good.app.document.getElementById('statisticsModalContent').innerHTML, /st-hero/);
+    assert.equal(await good.app.run('openStatisticsModal()'), true, 'already loaded, so it draws straight away');
+
+    const broken = open();
+    broken.added.find(node => node.tag === 'script').events.error();
+    broken.added.find(node => node.tag === 'link').events.error();
+    assert.equal(await broken.opening, false);
+    assert.match(broken.app.document.getElementById('statisticsModalContent').innerHTML, /Statistics didn't load/);
+    assert.match(broken.app.document.getElementById('statisticsModalContent').innerHTML, /openStatisticsModal\(\)/);
+    assert.equal(broken.attributes.has('aria-busy'), false);
+
+    // Trying again goes back to the loading placeholder instead of leaving the old error up while it waits.
+    const retry = broken.app.run('openStatisticsModal()');
+    assert.match(broken.content.innerHTML, /st-skeleton/);
+    assert.doesNotMatch(broken.content.innerHTML, /didn't load/);
+    assert.equal(broken.attributes.has('aria-busy'), true);
+    assert.equal(broken.added.filter(node => node.tag === 'script').length, 2, 'the script is requested again');
+    broken.app.loadStats();
+    broken.added.filter(node => node.tag === 'script')[1].events.load();
+    broken.added.filter(node => node.tag === 'link')[1].events.load();
+    assert.equal(await retry, true);
+    assert.match(broken.content.innerHTML, /st-hero/);
+  });
+
+  test(`${label}: a stylesheet that failed once is requested again the next time Statistics opens`, async () => {
+    const app = createRuntime(bundled);
+    app.document.baseURI = 'http://localhost/';
+    app.localStorage.setItem('savedGames', JSON.stringify([]));
+    const added = [];
+    app.document.createElement = tag => ({ tag, events: {}, addEventListener(name, callback) { this.events[name] = callback; }, remove() {} });
+    app.document.head.appendChild = node => added.push(node);
+    const opening = app.run('openStatisticsModal()');
+    app.loadStats();
+    added.find(node => node.tag === 'script').events.load();
+    added.find(node => node.tag === 'link').events.error(); // the script arrived; the stylesheet did not
+    assert.equal(await opening, true);
+    assert.equal(added.filter(node => node.tag === 'link').length, 1);
+    assert.equal(await app.run('openStatisticsModal()'), true);
+    assert.equal(added.filter(node => node.tag === 'link').length, 2, 'opened again, the stylesheet gets another try');
+    added.filter(node => node.tag === 'link')[1].events.load();
+    await app.run('openStatisticsModal()');
+    assert.equal(added.filter(node => node.tag === 'link').length, 2, 'once it is in, it is not requested again');
   });
 
   test(`${label}: classic global handlers and lazy voice integration survive packaging`, () => {
@@ -541,10 +669,12 @@ test('analytics replays early local-play events through its existing privacy fil
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 276000, 72000], // Home/onboarding plus early initialization and authentication readiness
+    ['js/app.bundle.js', 252000, 67000], // Home/onboarding plus early initialization; statistics load on demand
     ['js/voice-score.bundle.js', 60000, 17000],
     ['js/probability-explanation.bundle.js', 26000, 8800],
     ['css/probability-explanation.css', 12000, 2800],
+    ['js/stats.bundle.js', 104000, 33000], // engine, charts, and screens: fetched when Statistics first opens
+    ['css/stats.css', 29000, 6300],
   ]) {
     const source = read(file);
     assert.ok(Buffer.byteLength(source) < bytes, `${file} raw size`);
@@ -620,6 +750,13 @@ test('stylesheet minification preserves every authored rule, value and browser f
   assert.deepEqual(semanticTree(postcss.parse(read('css/app.min.css'))), semanticTree(postcss.parse(read('css/app.css'))));
 });
 
+test('statistics work offline: their lazy bundle and styles are precached', () => {
+  const precache = read('service-worker.js').match(/const urlsToCache = \[([\s\S]*?)\];/)[1];
+  assert.match(precache, /"\.\/js\/stats\.bundle\.js"/);
+  assert.match(precache, /"\.\/css\/stats\.css"/);
+  assert.match(read('.github/workflows/pages.yml'), /git diff --exit-code -- [^\n]*js\/stats\.bundle\.js/);
+});
+
 test('Pages ships every local precache asset and the runtime model requested by the app', () => {
   const workflow = read('.github/workflows/pages.yml');
   assert.match(workflow, /node scripts\/stage-static-site\.mjs _pages/);
@@ -627,7 +764,7 @@ test('Pages ships every local precache asset and the runtime model requested by 
   const precacheBlock = read('service-worker.js').match(/const urlsToCache = \[([\s\S]*?)\];/)[1];
   const precacheFiles = [...precacheBlock.matchAll(/"\.\/([^"]+)"/g)].map(match => match[1]);
   const modelFile = read('js/modules/02-win-prob-engine.js').match(/RUNTIME_MODEL_PATH = "\.\/([^"]+)"/)[1];
-  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js', 'js/probability-explanation.bundle.js', 'css/probability-explanation.css']) {
+  for (const file of [...precacheFiles, modelFile, 'js/voice-score.bundle.js', 'js/probability-explanation.bundle.js', 'css/probability-explanation.css', 'js/stats.bundle.js', 'css/stats.css']) {
     assert.equal(existsSync(path.join(root, file)), true, `${file} exists`);
     assert.equal(copiedFiles.includes(file), true, `${file} is deployed`);
   }

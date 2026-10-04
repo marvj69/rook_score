@@ -271,7 +271,7 @@ function getVoiceScoreLibraryContext(storageKey) {
 // Players are sent as names and teams as [name, name] ({players, name} for a
 // custom team name); the planner copies these into entityKey.
 function getVoiceScoreStatisticsContext() {
-  const statistics = getStatistics();
+  const statistics = getStatisticsRoster();
   return {
     players: statistics.playersData
       .slice(0, VOICE_SCORE_STATISTICS_CONTEXT_LIMIT)
@@ -1234,7 +1234,7 @@ function resolveVoiceScoreStatisticsSelection(action = {}) {
   const requestedKey = typeof action.entityKey === "string" ? action.entityKey.trim() : "";
   if (!requestedKey) return null;
 
-  const statistics = getStatistics();
+  const statistics = getStatisticsRoster();
   const requestedMode = action.entityMode === "teams" || action.entityMode === "players"
     ? action.entityMode
     : action.statsView === "teams" || action.statsView === "players"
@@ -1271,7 +1271,7 @@ function resolveVoiceScoreStatisticsSelection(action = {}) {
   return null;
 }
 
-function applyVoiceScoreStatsControls(action) {
+async function applyVoiceScoreStatsControls(action) {
   const metricAliases = {
     bidSuccessPct: "bidMakePct",
     "360s": "perfect360s",
@@ -1280,14 +1280,14 @@ function applyVoiceScoreStatsControls(action) {
   if (action.entityKey && !entitySelection) {
     throw new Error(`No saved statistics were found for ${action.entityKey}.`);
   }
-  openStatisticsModal();
-  setStatisticsControls({
+  const shown = await openStatisticsModal({
     view: entitySelection?.mode || action.statsView,
     metric: metricAliases[action.statsMetric] || action.statsMetric,
     sort: action.statsSort,
     entityMode: entitySelection?.mode,
     entityKey: entitySelection?.key,
   });
+  if (!shown) throw new Error("Statistics could not load. Check your connection and try again.");
   return entitySelection ? `Showing statistics for ${entitySelection.name}.` : "Statistics updated.";
 }
 

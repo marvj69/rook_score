@@ -1,8 +1,8 @@
 "use strict";
 
 // --- Configuration & Constants ---
-const APP_VERSION = "2.5";
-const APP_RELEASE_SUMMARY = "Version 2.5 adds a home screen with a quick first-run intro, imports a paper game's full round history from a photo, keeps routine saves quiet, makes cloud sync and restore more reliable, and polishes voice scoring, accessibility, and startup speed.";
+const APP_VERSION = "2.6";
+const APP_RELEASE_SUMMARY = "Version 2.6 rebuilds Statistics with an Overview, leaderboards, player and team profiles, bidding insights, records, and charts, and loads them on demand so the app starts faster.";
 const MUST_WIN_BY_BID_KEY = "rookMustWinByBid";
 const TABLE_TALK_PENALTY_TYPE_KEY = "tableTalkPenaltyType";
 const TABLE_TALK_PENALTY_POINTS_KEY = "tableTalkPenaltyPoints";

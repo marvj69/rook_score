@@ -1,6 +1,6 @@
 {
   "name": "rook-score",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
   "scripts": {
     "build": "npm run build:js && npm run build:css && npm run build:ios && npm run build:sw",
@@ -10,7 +10,7 @@
     "build:css:app": "node scripts/build-app-css.mjs",
     "build:ios": "node scripts/build-ios-launch-screens.mjs",
     "build:sw": "node scripts/stamp-service-worker.mjs",
-    "test": "node --test tests/app.test.js tests/runtime-performance.test.js tests/training-data.test.mjs tests/timer.test.js",
+    "test": "node --test tests/app.test.js tests/runtime-performance.test.js tests/stats-engine.test.js tests/stats-ui.test.js tests/training-data.test.mjs tests/timer.test.js",
     "training:normalize:live": "node scripts/export-live-rook-training-data.mjs",
     "training:candidate": "python3 'Logistic Regression Model/run_normalized_candidate.py'",
     "training:replay": "python3 'Logistic Regression Model/run_engine_replay.py'",

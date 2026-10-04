@@ -25,8 +25,7 @@
     *   Anonymous sign-in is supported for local play, with an option to upgrade to a Google account and merge data.
 *   **Team & Player Management:**
     *   Use default "Us" & "Dem" or set custom team names, with optional player names for each side.
-    *   Track both **team** and **individual player** statistics: wins, losses, games played, average bid, bid success percentage, 360s, and sandbagger detection.
-    *   Delete team statistics (including associated player stats) and associated game data.
+    *   Track both **team** and **individual player** statistics: wins, losses, games played, average bid, bid success percentage, 360s, sets forced, comebacks, streaks, and a rating that accounts for the opposition faced (see Statistics below).
 *   **Customization:**
     *   **Always-On Dark Theme:** Optimized visuals for low-light environments.
     *   **Customizable Team Colors:** Personalize the "Us" and "Dem" team colors.
@@ -54,7 +53,15 @@
 *   **Bug Reporting:** In-app issue form with optional privacy-conscious diagnostics and backend email delivery.
 *   **Version Tracking:** Displays current app version.
 
-## 🚀 What's New in 2.5
+## 🚀 What's New in 2.6
+
+*   **Statistics, Rebuilt:** Five tabs (Overview, Players, Teams, Bidding, and Records) with charts, leaderboards you can rank by anything, and a period filter for all time, this year, or the last 90 or 30 days.
+*   **Player and Team Profiles:** Tap anyone for a rating that tracks the opposition you face, results game by game, best partners, head-to-head records, bidding by size, and recent games.
+*   **Bidding Insights:** How each bid size really performs (make rate and average points), how bidding changes when ahead or behind, who sets the most bids, and who bids boldly or safely.
+*   **Records and Highlights:** Biggest comebacks and upsets, closest finishes, streaks, a calendar of when you play, and plain-language highlights. Tap a record to open that game.
+*   **Lighter Launch:** Statistics ship as a separate bundle that loads on first open and is cached for offline use, so the script the app parses at launch is about a tenth smaller.
+
+## What Was New in 2.5
 
 *   **Home Screen:** When no game is in progress, Home offers Start New Game, your latest frozen game, the last result, and quick tiles for Games, Stats, Paper Game, and Settings. Open it mid-game from the menu.
 *   **First-Run Intro:** New players get a short three-card walkthrough the first time they open the app. Replay it anytime from “How it works” on Home.
@@ -63,6 +70,21 @@
 *   **More Reliable Sync:** Cleared games no longer come back after a cloud restore, and cloud sync works again on the GitHub Pages version of the app.
 *   **Voice and Accessibility Polish:** Voice scoring handles themes, presets, and sign-in more reliably. The mic button moves out of the keypad's way, screen readers skip hidden panels, reduced-motion settings are respected, and startup is faster.
 *   **Faster Home Launch:** Home's styles and utility foundation are inline, so no stylesheet download delays its first render. Empty saved states open Home immediately, launch animations no longer hide already visible controls, and local play starts independently of cloud and analytics downloads. iPhone Home Screen installations also have dark portrait and landscape launch backgrounds. Home now appears once, already filled in and in your team colors, instead of changing after it is on screen, and the side menu no longer flashes past at launch. An app update waits until the app is in the background instead of reloading the screen you are looking at.
+
+## 📊 Statistics
+
+Open **Statistics** from the menu or the Home screen. Everything is computed on the device from your saved games.
+
+*   **Period filter:** One control in the header scopes every screen to all time, this year, or the last 90 or 30 days. The Overview's game count shows how the period compares with the one before it.
+*   **Overview:** Games, hands, and time at the table; plain-language highlights (hot streaks, the best bid size, the biggest comeback); a leaderboard preview; a calendar of when you play; how games end and by how much; and a bids-made summary.
+*   **Players and Teams:** Leaderboards you can rank by win rate, rating, wins, games, average margin, bid make rate, sets forced, comebacks, close wins, perfect 360s, misdeals, streak, or last played, in either direction. Each row shows a bar for the ranked figure and the last five results. Small samples are marked **New** and held back from the ranking (3 games for rates, 8 bids for make rates).
+*   **Profiles:** Tap a row for the win rate and form, rating with its rank among peers, a results chart (margin of each game), a rating-over-time chart, bidding by bid size, partners (players) or members (teams), head-to-head records, highlights, and recent games. Partners and opponents are tappable.
+*   **Bidding:** Make rate and average points per hand by bid size, make rate when behind or ahead, the most-called bids, a map of who bids boldly or safely, and who sets the most bids. Bids are recorded for the side, not the person, so a player's bidding figures cover every hand their side bid.
+*   **Records:** A hall of fame (highest score, biggest blowout, comeback and upset, the game-changing hand, closest finish, longest game, lead swaps, biggest single-hand swing, highest bid made, longest streaks) and lists of standout games (closest, blowouts, comebacks, upsets, lead swaps, longest) with a small chart of how each lead moved. Tap a record to open that game. Upset and game-changing-hand odds replay each game through the same win-probability model Pro Mode uses, from the score alone.
+*   **Rating:** An Elo-style number that starts everyone at 1,000. A side's strength is the average of its players, both partners move together, and beating stronger opponents is worth more. It is a ranking aid, not a prediction.
+*   **Charts:** Press or drag across any chart to read values, or focus it and use the arrow keys. Every chart has a data table for screen readers.
+
+The statistics code is a separate bundle (`js/stats.bundle.js` and `css/stats.css`) that loads the first time the sheet opens and is precached by the service worker.
 
 ## 🛠️ Tech Stack
 
@@ -146,7 +168,7 @@ Accessible via the hamburger icon (☰) in the top-left:
 *   **Freeze Game:** Saves the current game state to "Freezer Games" and starts a new game. Useful for pausing a game to resume later.
 *   **Settings:** Opens the settings modal (see "Settings & Customization" below).
 *   **About:** Shows information about the app, features, and a bug report option.
-*   **Statistics:** Displays overall and team-specific statistics.
+*   **Statistics:** Opens the Statistics sheet (see "Statistics" below).
 *   **Sign in/out with Google:** Manages Firebase cloud synchronization.
 
 ### Key Modals
@@ -163,7 +185,7 @@ Accessible via the hamburger icon (☰) in the top-left:
 *   **Confirmation:** A generic modal to confirm actions like starting a new game, deleting items, etc.
 *   **Zero Points Helper:** Assists in correctly scoring when one team gets 0 points.
 *   **About:** App information, changelog, and bug report link.
-*   **Statistics:** View various game, team, and individual player statistics.
+*   **Statistics:** Five tabs of charts and rankings, plus a profile for every player and team (see "Statistics" below).
 
 ## ⚙️ Settings & Customization
 
