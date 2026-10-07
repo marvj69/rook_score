@@ -202,6 +202,9 @@ Access these via **Menu -> Settings**:
     *   **Customize Theme Colors:** Opens a modal to pick custom colors for "Us" and "Dem" teams using color pickers. Includes options to randomize or reset to defaults.
     *   **Edit Bid Presets:** Opens a modal to customize the values for the quick bid buttons. Values must be multiples of 5.
     *   **Table-Talk Penalties:** Choose whether penalties subtract the bid amount or a custom point value (multiples of 5).
+*   **Game Data:**
+    *   **Export / Import Game Data:** Save a backup file of all app data, or restore one (importing replaces this device's app data).
+    *   **Delete All Game Data:** Erases every completed, frozen, and in-progress game, saved teams, and learned statistics from this device and cloud sync. Settings, team colors, and bid presets are kept. The dialog lists exactly what will be erased, offers a backup first, and stays disabled until you type `DELETE`. Unless you opt out, a recovery copy stays on this device for 30 days under **Recently Deleted**, where you can restore it (games played since are kept) or erase it.
 
 ## 🔥 Firebase Cloud Sync
 
@@ -211,6 +214,7 @@ Access these via **Menu -> Settings**:
     *   Access your data seamlessly across different devices by signing in with the same Google account.
 *   **Anonymous Users:** If you don't sign in, the app will use anonymous Firebase authentication. Your data is still saved locally. If you later sign in with Google, your local data will be merged with any existing cloud data.
 *   **Data Merging:** When signing in or switching accounts, the app attempts to intelligently merge local and cloud data, prioritizing local data for the active game to prevent overwriting unsaved changes and merging arrays of games.
+*   **Deletes Stay Deleted:** The cloud document records the time of the latest Delete All Game Data (`gameDataResetAt`). A device or cloud copy that missed the delete drops its game data from before it on the next merge, and the Firestore rules refuse writes that name an older delete, so another device cannot upload the deleted games again. A device signing in to an account for the first time keeps its own games.
 
 ## 📱 Progressive Web App (PWA)
 
@@ -291,7 +295,7 @@ Google Analytics is loaded from `js/analytics.js` on the GitHub Pages host for `
 
 ### Firestore Rules
 
-The checked-in `firestore.rules` keeps existing `rookData/{userId}` documents owner-only and permits authenticated users to create strictly validated samples under `voiceImprovement/{userId}/samples/{sampleId}`. Client reads, updates, and deletes of improvement samples are denied. Deploy the rules with:
+The checked-in `firestore.rules` keeps existing `rookData/{userId}` documents owner-only, refuses writes to them that predate the document's latest game data delete, and permits authenticated users to create strictly validated samples under `voiceImprovement/{userId}/samples/{sampleId}`. Client reads, updates, and deletes of improvement samples are denied. Deploy the rules with:
 
 ```bash
 npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID

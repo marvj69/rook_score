@@ -1128,11 +1128,73 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
           <input id="gameDataImportInput" type="file" accept=".json,application/json" class="hidden" onchange="importGameData(this)" />
           <p id="gameDataTransferStatus" class="hidden sheet-status" role="status" aria-live="polite"></p>
           <p class="sheet-footnote">Save a complete copy of this app's games, active game, teams, statistics data, settings, and preferences. Importing replaces this device's current app data.</p>
+
+          <h3 class="sheet-label">Delete Data</h3>
+          <div class="sheet-group">
+            <button type="button" id="deleteGameDataButton" onclick="openDeleteGameDataModal()" class="sheet-row sheet-row--danger">
+              <span class="sheet-row__icon" style="--tone:#ef4444" aria-hidden="true"><svg class="ui-icon"><use href="#dialog-icon-trash"/></svg></span>
+              <span class="sheet-row__text">
+                <span class="sheet-row__title">Delete All Game Data</span>
+                <span id="deleteGameDataDesc" class="sheet-row__desc">Erase every game, team, and statistic.</span>
+              </span>
+              <svg class="ui-icon sheet-row__chevron" aria-hidden="true"><use href="#ui-icon-chevron"/></svg>
+            </button>
+            <div id="restoreGameDataRow" class="sheet-row-set hidden">
+              <div class="sheet-row sheet-row--stack">
+                <div class="sheet-row__main">
+                  <span class="sheet-row__icon" style="--tone:#10b981" aria-hidden="true"><svg class="ui-icon"><use href="#dialog-icon-refresh"/></svg></span>
+                  <span class="sheet-row__text">
+                    <span class="sheet-row__title">Recently Deleted</span>
+                    <span id="restoreGameDataDesc" class="sheet-row__desc"></span>
+                  </span>
+                </div>
+                <div class="sheet-row__controls sheet-row__controls--pair">
+                  <button type="button" onclick="confirmEraseGameDataRecovery()" class="dialog-btn dialog-btn--secondary dialog-btn--sm">Erase Copy</button>
+                  <button type="button" onclick="confirmRestoreDeletedGameData()" class="dialog-btn dialog-btn--primary dialog-btn--sm">Restore</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="sheet-footnote">Settings, team colors, and bid presets are kept.</p>
         </div>
         <footer class="sheet-footer">
           <button type="button" onclick="closeSettingsModal()" class="dialog-btn dialog-btn--primary">Done</button>
         </footer>
       </div>
+    </div>
+
+<!-- Delete All Game Data: itemized, backup offered, armed only by typing DELETE -->
+    <div id="deleteGameDataModal" class="hidden modal dialog-modal" role="alertdialog" aria-modal="true" aria-labelledby="deleteGameDataTitle" aria-describedby="deleteGameDataMessage" tabindex="-1">
+      <form id="deleteGameDataForm" class="dialog-card dialog-card--danger dialog-card--wide" novalidate>
+        <div class="dialog-body">
+          <span class="dialog-icon" aria-hidden="true"><svg aria-hidden="true"><use href="#dialog-icon-trash"/></svg></span>
+          <p class="dialog-eyebrow">Permanent</p>
+          <h2 id="deleteGameDataTitle" class="dialog-title">Delete all game data?</h2>
+          <p id="deleteGameDataMessage" class="dialog-message">This erases:</p>
+          <ul id="deleteGameDataSummary" class="dialog-list"></ul>
+          <p id="deleteGameDataScope" class="dialog-note">It is erased from this device and its cloud backup.</p>
+          <p class="dialog-note">Settings, team colors, and bid presets are kept.</p>
+          <button type="button" onclick="exportGameDataBeforeDelete()" class="dialog-btn dialog-btn--secondary dialog-btn--sm dialog-btn--block">
+            <svg class="ui-icon" aria-hidden="true"><use href="#ui-icon-download"/></svg>
+            Export a backup first
+          </button>
+          <p id="deleteGameDataBackupStatus" class="dialog-status hidden" role="status" aria-live="polite"></p>
+          <label class="dialog-option">
+            <input type="checkbox" id="deleteGameDataKeepCopy" checked />
+            <span>
+              <span class="dialog-option__title">Keep a recovery copy for 30 days</span>
+              <span class="dialog-option__body">Stored only on this device, so you can restore it from Settings.</span>
+            </span>
+          </label>
+          <label for="deleteGameDataConfirmInput" class="dialog-field__label">Type <strong>DELETE</strong> to confirm</label>
+          <input type="text" id="deleteGameDataConfirmInput" class="sheet-input dialog-confirm-input" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-describedby="deleteGameDataError" />
+          <p id="deleteGameDataError" class="dialog-error hidden" role="alert"></p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" onclick="closeDeleteGameDataModal()" class="dialog-btn dialog-btn--secondary">Cancel</button>
+          <button type="submit" id="deleteGameDataConfirmButton" class="dialog-btn dialog-btn--primary" disabled>Delete All</button>
+        </div>
+      </form>
     </div>
 
 <!-- Experimental voice onboarding and optional model-improvement consent -->

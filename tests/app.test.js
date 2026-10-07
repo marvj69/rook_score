@@ -12,7 +12,7 @@ const paperGamePhotoHandler = require('../api/paper-game-photo.js');
 const bugReportHandler = require('../api/bug-report.js');
 const LEGACY_RUNTIME_MODEL = require('../js/model_runtime_v1.json');
 
-const { setupDomStubs } = require('./helpers/dom-stubs.cjs');
+const { setupDomStubs, installLiveDocument } = require('./helpers/dom-stubs.cjs');
 
 setupDomStubs();
 
@@ -5096,7 +5096,13 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
     clearTimeout,
     console: { log: () => {}, warn: () => {}, error: () => {}, info: () => {} },
     __getDoc: async () => ({ exists: () => true, data: () => structuredClone(cloudData) }),
-    __setDoc: async (_docRef, payload) => { writePayloads.push(structuredClone(payload)); },
+    __setDoc: async (_docRef, payload) => {
+      if (windowForFirebase.__rejectWrite?.()) {
+        throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+      }
+      writePayloads.push(structuredClone(payload));
+      windowForFirebase.__afterWrite?.(payload);
+    },
   };
   windowForFirebase.window = windowForFirebase;
   const instrumentedSource = firebaseSource
@@ -5554,4 +5560,443 @@ test('onboarding is only for devices with no games yet', () => {
   setLocalStorage(app.ONBOARDING_COMPLETED_KEY, true);
   assert.equal(app.isOnboardingComplete(), true);
   assert.ok(app.ONBOARDING_COMPLETED_KEY.startsWith('localOnly:'), 'onboarding stays per-device, never synced');
+});
+
+// --- Delete All Game Data ---
+
+function seedGameDataForDeleteTests() {
+  localStorage.setItem('savedGames', JSON.stringify([
+    { id: 'old-1', timestamp: '2026-09-01T10:00:00.000Z', rounds: [] },
+    { id: 'old-2', timestamp: '2026-09-02T10:00:00.000Z', rounds: [] },
+  ]));
+  localStorage.setItem('freezerGames', JSON.stringify([{ id: 'frozen-1', timestamp: '2026-09-03T10:00:00.000Z' }]));
+  localStorage.setItem('teams', JSON.stringify({
+    __storageVersion: 2,
+    'alice||bob': { players: ['Alice', 'Bob'], displayName: 'Alice & Bob', wins: 2, losses: 1, gamesPlayed: 3 },
+  }));
+  localStorage.setItem('probabilityPersonalizationV1', JSON.stringify({ modelId: 'x' }));
+  localStorage.setItem('customPresetBids', JSON.stringify([120, 125, 'other']));
+  localStorage.setItem('rookSelectedTheme', JSON.stringify('theme-sunset'));
+  localStorage.setItem('localOnly:onboardingCompleted', 'true');
+}
+
+test('game data keys and delete bookkeeping keys match firebase-init and stay out of backups', () => {
+  const app = require('../js/app.js');
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  const mirrored = firebaseSource.match(/const GAME_DATA_KEYS = \[([\s\S]*?)\];/)[1]
+    .match(/"([^"]+)"/g).map(value => value.slice(1, -1));
+  assert.deepEqual(mirrored, app.GAME_DATA_KEYS);
+  app.GAME_DATA_KEYS.forEach(key => assert.equal(isCloudSyncStorageKey(key), true, key));
+  assert.match(firebaseSource, /GAME_DATA_RESET_DEVICE_KEY = `\$\{LOCAL_ONLY_STORAGE_PREFIX\}gameDataResetAt`/);
+  assert.match(firebaseSource, /GAME_DATA_RESET_MARKERS_KEY = `\$\{LOCAL_ONLY_STORAGE_PREFIX\}gameDataResetMarkers`/);
+  assert.equal(app.GAME_DATA_RESET_DEVICE_KEY, 'localOnly:gameDataResetAt');
+  assert.equal(app.GAME_DATA_RESET_MARKERS_KEY, 'localOnly:gameDataResetMarkers');
+
+  resetState();
+  localStorage.setItem('savedGames', '[]');
+  localStorage.setItem(app.GAME_DATA_RESET_DEVICE_KEY, '"2026-10-01T00:00:00.000Z"');
+  localStorage.setItem(app.DELETED_GAME_DATA_RECOVERY_KEY, '{"entries":{}}');
+  const exported = buildGameDataExport(localStorage, new Date('2026-10-02T00:00:00Z'));
+  assert.deepEqual(exported.storage.map(entry => entry.key), ['savedGames']);
+
+  // An old backup cannot wind back this device's delete or recovery copy.
+  replaceAppStorage([
+    { key: 'savedGames', value: '[{"id":"backup"}]' },
+    { key: app.GAME_DATA_RESET_DEVICE_KEY, value: '""' },
+    { key: app.DELETED_GAME_DATA_RECOVERY_KEY, value: 'null' },
+  ]);
+  assert.equal(localStorage.getItem(app.GAME_DATA_RESET_DEVICE_KEY), '"2026-10-01T00:00:00.000Z"');
+  assert.equal(localStorage.getItem(app.DELETED_GAME_DATA_RECOVERY_KEY), '{"entries":{}}');
+  assert.equal(localStorage.getItem('savedGames'), '[{"id":"backup"}]');
+});
+
+test('the delete confirmation only accepts the typed word DELETE', () => {
+  const { isGameDataDeletePhrase } = require('../js/app.js');
+  ['DELETE', 'delete', '  Delete '].forEach(value => assert.equal(isGameDataDeletePhrase(value), true, value));
+  ['', 'DELET', 'DELETE ALL', 'yes', null, undefined].forEach(value => assert.equal(isGameDataDeletePhrase(value), false, String(value)));
+});
+
+test('deleting all game data erases games, teams, and the current game but keeps settings', () => {
+  resetState();
+  const app = require('../js/app.js');
+  seedGameDataForDeleteTests();
+  loadCurrentGameState();
+  updateState({ usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dave'], rounds: [{ bidAmount: 120, biddingTeam: 'us', usPoints: 130, demPoints: 50, runningTotals: { us: 130, dem: 50 } }] });
+  app.saveCurrentGameState();
+  assert.deepEqual(app.getGameDataSummary(), { savedGames: 2, frozenGames: 1, activeGame: true, teams: 1 });
+  assert.deepEqual(app.describeGameDataSummary(app.getGameDataSummary()), [
+    '2 completed games', '1 frozen game', 'The game in progress', '1 saved team',
+  ]);
+
+  const previousSync = window.syncGameDataReset;
+  const resets = [];
+  window.syncGameDataReset = async marker => { resets.push(marker); return true; };
+  try {
+    const now = Date.parse('2026-10-07T12:00:00.000Z');
+    const result = app.deleteAllGameData({ now });
+    assert.equal(result.deletedAt, '2026-10-07T12:00:00.000Z');
+    assert.deepEqual(resets, ['2026-10-07T12:00:00.000Z']);
+    assert.equal(localStorage.getItem('savedGames'), null);
+    assert.equal(localStorage.getItem('freezerGames'), null);
+    assert.equal(localStorage.getItem('teams'), null);
+    assert.equal(localStorage.getItem('activeGameState'), 'null');
+    assert.equal(getStateForTests().rounds.length, 0);
+    assert.equal(getLocalStorage('savedGames').length, 0);
+    assert.deepEqual(app.getGameDataSummary(), { savedGames: 0, frozenGames: 0, activeGame: false, teams: 0 });
+    // Settings, presets, theme, and device-only flags are untouched.
+    assert.equal(localStorage.getItem('customPresetBids'), JSON.stringify([120, 125, 'other']));
+    assert.equal(localStorage.getItem('rookSelectedTheme'), JSON.stringify('theme-sunset'));
+    assert.equal(localStorage.getItem('localOnly:onboardingCompleted'), 'true');
+    assert.deepEqual(getLocalStorage(app.GAME_DATA_RESET_DEVICE_KEY), { at: '2026-10-07T12:00:00.000Z', uid: null });
+
+    const recovery = app.readGameDataRecovery(now);
+    assert.equal(recovery.deletedAt, '2026-10-07T12:00:00.000Z');
+    assert.equal(recovery.expiresAt, '2026-11-06T12:00:00.000Z');
+    assert.deepEqual(recovery.entries.savedGames.map(game => game.id), ['old-1', 'old-2']);
+    assert.deepEqual(recovery.entries.freezerGames.map(game => game.id), ['frozen-1']);
+    assert.equal(recovery.entries.teams['alice||bob'].wins, 2);
+    assert.equal(recovery.entries.activeGameState.rounds.length, 1);
+
+    // A second delete is strictly later and keeps the first one restorable.
+    localStorage.setItem('savedGames', JSON.stringify([{ id: 'new-1', timestamp: '2026-10-07T12:30:00.000Z' }]));
+    const second = app.deleteAllGameData({ now: now - 60000 });
+    assert.equal(second.deletedAt, '2026-10-07T12:00:00.001Z');
+    assert.deepEqual(app.readGameDataRecovery(now).entries.savedGames.map(game => game.id), ['old-1', 'old-2', 'new-1']);
+  } finally {
+    window.syncGameDataReset = previousSync;
+  }
+});
+
+test('deleting without a recovery copy keeps an earlier copy, and expired copies are pruned', () => {
+  resetState();
+  const app = require('../js/app.js');
+  seedGameDataForDeleteTests();
+  loadCurrentGameState();
+  const now = Date.parse('2026-10-07T12:00:00.000Z');
+  app.deleteAllGameData({ now });
+  assert.ok(app.readGameDataRecovery(now));
+  localStorage.setItem('savedGames', JSON.stringify([{ id: 'later', timestamp: '2026-10-07T13:00:00.000Z' }]));
+  app.deleteAllGameData({ now, keepRecoveryCopy: false });
+  assert.equal(localStorage.getItem('savedGames'), null);
+  assert.deepEqual(app.readGameDataRecovery(now).entries.savedGames.map(game => game.id), ['old-1', 'old-2']);
+  localStorage.removeItem(app.DELETED_GAME_DATA_RECOVERY_KEY);
+
+  seedGameDataForDeleteTests();
+  app.deleteAllGameData({ now });
+  const thirtyOneDaysLater = now + 31 * 24 * 60 * 60 * 1000;
+  assert.equal(app.readGameDataRecovery(thirtyOneDaysLater), null);
+  app.pruneExpiredGameDataRecovery(thirtyOneDaysLater);
+  assert.equal(localStorage.getItem(app.DELETED_GAME_DATA_RECOVERY_KEY), null);
+});
+
+test('a delete that cannot store its recovery copy erases nothing', () => {
+  resetState();
+  const app = require('../js/app.js');
+  seedGameDataForDeleteTests();
+  loadCurrentGameState();
+  const before = new Map(app.GAME_DATA_KEYS.map(key => [key, localStorage.getItem(key)]));
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = (key, value) => {
+    if (key === app.DELETED_GAME_DATA_RECOVERY_KEY) throw new Error('QuotaExceededError');
+    return originalSetItem(key, value);
+  };
+  const previousSync = window.syncGameDataReset;
+  let synced = false;
+  window.syncGameDataReset = async () => { synced = true; };
+  try {
+    assert.throws(() => app.deleteAllGameData(), /too full to keep a recovery copy, so nothing was deleted/);
+  } finally {
+    localStorage.setItem = originalSetItem;
+    window.syncGameDataReset = previousSync;
+  }
+  before.forEach((raw, key) => assert.equal(localStorage.getItem(key), raw, key));
+  assert.equal(getLocalStorage('savedGames').length, 2);
+  assert.equal(localStorage.getItem(app.GAME_DATA_RESET_DEVICE_KEY), null);
+  assert.equal(synced, false);
+});
+
+test('restoring deleted game data keeps games played since and recounts team records from the games', () => {
+  resetState();
+  const app = require('../js/app.js');
+  seedGameDataForDeleteTests();
+  const game = (id, timestamp) => ({ id, timestamp, usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dave'], winner: 'us', rounds: [] });
+  localStorage.setItem('savedGames', JSON.stringify([game('old-1', '2026-09-01T10:00:00.000Z'), game('old-2', '2026-09-02T10:00:00.000Z')]));
+  loadCurrentGameState();
+  const now = Date.parse('2026-10-07T12:00:00.000Z');
+  app.deleteAllGameData({ now });
+
+  localStorage.setItem('savedGames', JSON.stringify([game('new-1', '2026-10-08T10:00:00.000Z')]));
+  localStorage.setItem('freezerGames', JSON.stringify([{ id: 'frozen-new', timestamp: '2026-10-08T11:00:00.000Z' }]));
+  localStorage.setItem('teams', JSON.stringify({
+    __storageVersion: 2,
+    'alice||bob': { players: ['Alice', 'Bob'], displayName: 'Alice & Bob', wins: 1, losses: 0, gamesPlayed: 1 },
+  }));
+  const result = app.restoreDeletedGameData({ now: now + 1000 });
+  assert.deepEqual(result.restored, { savedGames: 2, frozenGames: 1, activeGame: false, teams: 1 });
+  assert.equal(result.activeGameLeftBehind, false);
+  assert.deepEqual(getLocalStorage('savedGames').map(game => game.id), ['old-1', 'old-2', 'new-1']);
+  assert.deepEqual(getLocalStorage('freezerGames').map(game => game.id), ['frozen-new', 'frozen-1']);
+  const record = team => (({ wins, losses, gamesPlayed }) => ({ wins, losses, gamesPlayed }))(getLocalStorage('teams')[team]);
+  assert.deepEqual(record('alice||bob'), { wins: 3, losses: 0, gamesPlayed: 3 });
+  assert.deepEqual(record('carol||dave'), { wins: 0, losses: 3, gamesPlayed: 3 });
+  // Restored games count as newer than any delete made before the restore.
+  const restoredAt = new Date(now + 1000).toISOString();
+  assert.deepEqual(getLocalStorage('savedGames').map(saved => saved.restoredAt), [restoredAt, restoredAt, undefined]);
+  assert.equal(localStorage.getItem(app.DELETED_GAME_DATA_RECOVERY_KEY), null);
+  assert.throws(() => app.restoreDeletedGameData({ now: now + 2000 }), /expired or was erased/);
+});
+
+test('restoring brings back the deleted game in progress only when the scoreboard is free', () => {
+  resetState();
+  const app = require('../js/app.js');
+  loadCurrentGameState();
+  const round = { bidAmount: 120, biddingTeam: 'us', usPoints: 130, demPoints: 50, runningTotals: { us: 130, dem: 50 } };
+  updateState({ usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dave'], rounds: [round] });
+  app.saveCurrentGameState();
+  const now = Date.now();
+  app.deleteAllGameData({ now });
+
+  updateState({ usPlayers: ['Eve', 'Frank'], demPlayers: ['Gina', 'Hal'], rounds: [round, round] });
+  app.saveCurrentGameState();
+  const busy = app.restoreDeletedGameData({ now: now + 1000 });
+  assert.equal(busy.activeGameLeftBehind, true);
+  assert.equal(getStateForTests().rounds.length, 2);
+  assert.deepEqual(Object.keys(app.readGameDataRecovery(now + 1000).entries), ['activeGameState']);
+
+  app.resetGame();
+  const free = app.restoreDeletedGameData({ now: now + 2000 });
+  assert.equal(free.activeGameLeftBehind, false);
+  assert.equal(free.restored.activeGame, true);
+  assert.equal(getStateForTests().rounds.length, 1);
+  assert.deepEqual(getStateForTests().usPlayers, ['Alice', 'Bob']);
+  assert.equal(localStorage.getItem(app.DELETED_GAME_DATA_RECOVERY_KEY), null);
+});
+
+test('the delete dialog does nothing until DELETE is typed', () => {
+  resetState();
+  const app = require('../js/app.js');
+  seedGameDataForDeleteTests();
+  loadCurrentGameState();
+  const live = installLiveDocument();
+  const previousSync = window.syncGameDataReset;
+  window.syncGameDataReset = async () => true;
+  try {
+    live.get('deleteGameDataKeepCopy').checked = true;
+    const input = live.get('deleteGameDataConfirmInput');
+    input.value = 'DELET';
+    assert.equal(app.syncDeleteGameDataConfirmButton(), false);
+    assert.equal(live.get('deleteGameDataConfirmButton').disabled, true);
+    let prevented = false;
+    assert.equal(app.handleDeleteGameDataSubmit({ preventDefault: () => { prevented = true; } }), false);
+    assert.equal(prevented, true);
+    assert.equal(live.get('deleteGameDataError').textContent, 'Type DELETE to confirm.');
+    assert.equal(getLocalStorage('savedGames').length, 2);
+
+    input.value = 'delete';
+    assert.equal(app.syncDeleteGameDataConfirmButton(), true);
+    assert.equal(live.get('deleteGameDataConfirmButton').disabled, false);
+    assert.equal(app.handleDeleteGameDataSubmit({ preventDefault() {} }), true);
+    assert.equal(localStorage.getItem('savedGames'), null);
+    assert.equal(input.value, '');
+    assert.equal(live.get('noticeModalTitle').textContent, 'Game data deleted');
+  } finally {
+    window.syncGameDataReset = previousSync;
+    live.restore();
+  }
+});
+
+test('cloud merge drops this device\'s games from before a delete made on another device', async () => {
+  const deletedAt = '2026-10-07T12:00:00.000Z';
+  const storageValues = new Map([
+    ['savedGames', JSON.stringify([
+      { id: 'before', timestamp: '2026-10-01T00:00:00.000Z' },
+      { id: 'after', timestamp: '2026-10-08T00:00:00.000Z' },
+    ])],
+    ['freezerGames', JSON.stringify([{ id: 'frozen-before', timestamp: '2026-10-02T00:00:00.000Z' }])],
+    ['teams', JSON.stringify({ 'a|b': { players: ['A', 'B'], wins: 4 } })],
+    ['activeGameState', JSON.stringify({ rounds: [{}], timerLastActivityAt: Date.parse('2026-10-03T00:00:00.000Z') })],
+    ['proModeEnabled', 'true'],
+  ]);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: { gameDataResetAt: deletedAt, savedGames: null, freezerGames: null, teams: null, activeGameState: null },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')).map(game => game.id), ['after']);
+  assert.deepEqual(JSON.parse(storage.getItem('freezerGames')), []);
+  assert.equal(storage.getItem('teams'), null);
+  assert.equal(storage.getItem('activeGameState'), 'null');
+  assert.equal(storage.getItem('proModeEnabled'), 'true');
+  assert.deepEqual(JSON.parse(storage.getItem('localOnly:gameDataResetMarkers')), { agreed: { 'test-user': deletedAt }, lastUid: 'test-user' });
+  assert.equal(writePayloads.length, 1);
+  assert.deepEqual(writePayloads[0].savedGames.map(game => game.id), ['after']);
+  assert.equal(writePayloads[0].gameDataResetAt, deletedAt);
+});
+
+test('cloud merge after an offline delete drops the cloud\'s older games and publishes the delete', async () => {
+  const deletedAt = '2026-10-07T12:00:00.000Z';
+  const storageValues = new Map([
+    ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })],
+    ['localOnly:gameDataResetAt', JSON.stringify({ at: deletedAt, uid: 'test-user' })],
+    ['activeGameState', 'null'],
+    ['savedGames', JSON.stringify([{ id: 'after', timestamp: '2026-10-08T00:00:00.000Z' }])],
+  ]);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: {
+      savedGames: [{ id: 'before', timestamp: '2026-10-01T00:00:00.000Z' }],
+      freezerGames: [{ id: 'frozen-before', timestamp: '2026-10-02T00:00:00.000Z' }],
+      teams: { 'a|b': { players: ['A', 'B'], wins: 4 } },
+      probabilityPersonalizationV1: { modelId: 'x' },
+      activeGameState: { rounds: [{}], timerLastActivityAt: Date.parse('2026-10-03T00:00:00.000Z') },
+      rookMustWinByBid: true,
+    },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  const payload = writePayloads[0];
+  assert.equal(payload.gameDataResetAt, deletedAt);
+  assert.deepEqual(payload.savedGames.map(game => game.id), ['after']);
+  assert.deepEqual(payload.freezerGames, []);
+  assert.equal(payload.teams, null);
+  assert.equal(payload.probabilityPersonalizationV1, null);
+  assert.equal(payload.activeGameState, null);
+  assert.equal('rookMustWinByBid' in payload, false);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')).map(game => game.id), ['after']);
+  assert.equal(storage.getItem('teams'), null);
+  assert.equal(storage.getItem('rookMustWinByBid'), 'true');
+  assert.deepEqual(JSON.parse(storage.getItem('localOnly:gameDataResetMarkers')), { agreed: { 'test-user': deletedAt }, lastUid: 'test-user' });
+});
+
+test('a device joining an account for the first time keeps its own games despite an older delete', async () => {
+  const storageValues = new Map([
+    ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'anonymous-user': '' }, lastUid: 'anonymous-user' })],
+    ['savedGames', JSON.stringify([{ id: 'mine', timestamp: '2026-09-01T00:00:00.000Z' }])],
+  ]);
+  const { windowForFirebase, storage } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: { gameDataResetAt: '2026-10-07T12:00:00.000Z', savedGames: [{ id: 'theirs', timestamp: '2026-10-08T00:00:00.000Z' }] },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')).map(game => game.id).sort(), ['mine', 'theirs']);
+  assert.equal(JSON.parse(storage.getItem('localOnly:gameDataResetMarkers')).agreed['test-user'], '2026-10-07T12:00:00.000Z');
+});
+
+test('a cloud delete clears every game key in the same write and replaces queued saves', async () => {
+  const deletedAt = '2026-10-07T12:00:00.000Z';
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })]]),
+  });
+  windowForFirebase.syncToFirestore('savedGames', [{ id: 'saved-just-before' }]);
+  windowForFirebase.syncToFirestore('proModeEnabled', true);
+  assert.equal(await windowForFirebase.syncGameDataReset(deletedAt), true);
+  assert.equal(writePayloads.length, 1);
+  const { timestamp, ...payload } = writePayloads[0];
+  assert.ok(timestamp);
+  assert.deepEqual(payload, {
+    savedGames: null,
+    proModeEnabled: true,
+    activeGameState: null,
+    freezerGames: null,
+    teams: null,
+    probabilityPersonalizationV1: null,
+    gameDataResetAt: deletedAt,
+  });
+  assert.deepEqual(JSON.parse(storage.getItem('localOnly:gameDataResetMarkers')), { agreed: { 'test-user': deletedAt }, lastUid: 'test-user' });
+
+  // Later writes name the delete they know about.
+  await windowForFirebase.syncToFirestore('proModeEnabled', false);
+  assert.equal(writePayloads[1].gameDataResetAt, deletedAt);
+  assert.equal(await windowForFirebase.syncGameDataReset('not a date'), false);
+});
+
+test('a write refused for missing a newer delete triggers a fresh merge', async () => {
+  let rejectNextWrite = true;
+  const { windowForFirebase, storage } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })],
+      ['savedGames', JSON.stringify([{ id: 'before', timestamp: '2026-10-01T00:00:00.000Z' }])],
+    ]),
+    cloudData: { gameDataResetAt: '2026-10-07T12:00:00.000Z', savedGames: null },
+  });
+  // Reject the first write the way the security rules do, then let the merge through.
+  const merged = new Promise(resolve => { windowForFirebase.renderApp = resolve; });
+  windowForFirebase.__rejectWrite = () => {
+    if (!rejectNextWrite) return false;
+    rejectNextWrite = false;
+    return true;
+  };
+  assert.equal(await windowForFirebase.syncToFirestore('savedGames', [{ id: 'before', timestamp: '2026-10-01T00:00:00.000Z' }]), false);
+  await merged;
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), []);
+});
+
+test('firestore rules refuse writes that predate the latest game data delete', () => {
+  const rules = readFileSync(path.join(repoRoot, 'firestore.rules'), 'utf8');
+  assert.match(rules, /function keepsLatestGameDataReset\(\)/);
+  assert.match(rules, /request\.resource\.data\.gameDataResetAt >= resource\.data\.gameDataResetAt/);
+  assert.match(rules, /allow create, update: if isSignedInOwner\(userId\) && keepsLatestGameDataReset\(\);/);
+  assert.doesNotMatch(rules, /match \/rookData\/\{userId\} \{\s*allow read, write/);
+});
+
+test('a game saved during a merge that applies a delete is uploaded without the deleted games', async () => {
+  const deletedAt = '2026-10-07T12:00:00.000Z';
+  const before = { id: 'before', timestamp: '2026-10-01T00:00:00.000Z' };
+  const saved = { id: 'saved-mid-merge', timestamp: '2026-10-08T00:00:00.000Z' };
+  const storageValues = new Map([['savedGames', JSON.stringify([before])]]);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: { gameDataResetAt: deletedAt, savedGames: null },
+  });
+  windowForFirebase.__afterWrite = () => {
+    windowForFirebase.__afterWrite = null;
+    storage.setItem('savedGames', JSON.stringify([before, saved]));
+  };
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(writePayloads.length, 2);
+  assert.deepEqual(writePayloads[1].savedGames, [saved]);
+  assert.equal(writePayloads[1].gameDataResetAt, deletedAt);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [saved]);
+});
+
+test('a delete made in one account never spreads to another account on this device', async () => {
+  const deletedAt = '2026-10-07T12:00:00.000Z';
+  const cloudGames = [{ id: 'google-game', timestamp: '2026-10-01T00:00:00.000Z' }];
+  const storageValues = new Map([
+    ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '', 'anonymous-2': deletedAt }, lastUid: 'anonymous-2' })],
+    ['localOnly:gameDataResetAt', JSON.stringify({ at: deletedAt, uid: 'anonymous-2' })],
+    ['activeGameState', 'null'],
+  ]);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues,
+    cloudData: { savedGames: cloudGames },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), cloudGames);
+  assert.equal(writePayloads.some(payload => payload.gameDataResetAt === deletedAt || payload.savedGames?.length === 0), false);
+
+  // An offline delete (no account known) belongs to the account this device last synced with.
+  const offline = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })],
+      ['localOnly:gameDataResetAt', JSON.stringify({ at: deletedAt, uid: null })],
+    ]),
+    cloudData: { savedGames: cloudGames },
+  });
+  await offline.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' });
+  assert.deepEqual(offline.writePayloads[0].savedGames, []);
+  assert.equal(offline.writePayloads[0].gameDataResetAt, deletedAt);
+});
+
+test('restored games survive a newer delete from another device that this device had not seen', async () => {
+  const restoredAt = '2026-10-09T00:00:00.000Z';
+  const restored = { id: 'restored', timestamp: '2026-09-01T00:00:00.000Z', restoredAt };
+  const { windowForFirebase, storage } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '2026-10-07T00:00:00.000Z' }, lastUid: 'test-user' })],
+      ['savedGames', JSON.stringify([restored, { id: 'stale', timestamp: '2026-09-02T00:00:00.000Z' }])],
+    ]),
+    cloudData: { gameDataResetAt: '2026-10-08T00:00:00.000Z', savedGames: null },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [restored]);
 });

@@ -152,6 +152,125 @@ function captureCloudSyncStorageSnapshot() {
   return snapshot;
 }
 
+// "Delete All Game Data" bookkeeping. The cloud document carries the time of
+// the latest delete (GAME_DATA_RESET_FIELD). Each device remembers, per account,
+// the delete time it last agreed on with the cloud. Whichever side has not seen
+// a newer delete drops its game data from before it, so a stale device or a
+// stale cloud copy cannot bring deleted games back. Mirrors GAME_DATA_KEYS and
+// the localOnly key names in js/modules/03-storage-icons-presets.js.
+const GAME_DATA_RESET_FIELD = "gameDataResetAt";
+const GAME_DATA_RESET_DEVICE_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}gameDataResetAt`;
+const GAME_DATA_RESET_MARKERS_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}gameDataResetMarkers`;
+const GAME_DATA_KEYS = [
+  "activeGameState",
+  "savedGames",
+  "freezerGames",
+  "teams",
+  "probabilityPersonalizationV1",
+];
+
+function parseGameDataResetTime(marker) {
+  const time = typeof marker === "string" && marker ? Date.parse(marker) : NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function laterGameDataResetMarker(left, right) {
+  const safeLeft = typeof left === "string" ? left : "";
+  const safeRight = typeof right === "string" ? right : "";
+  return parseGameDataResetTime(safeRight) > parseGameDataResetTime(safeLeft) ? safeRight : safeLeft;
+}
+
+// { agreed: { [uid]: marker }, lastUid } — the delete time this device last
+// agreed on with each account, and the account it last synced with.
+function readGameDataResetMarkers() {
+  const markers = deserializeLocalStorageValue(
+    GAME_DATA_RESET_MARKERS_KEY,
+    localStorage.getItem(GAME_DATA_RESET_MARKERS_KEY),
+  );
+  if (!markers || typeof markers !== "object" || Array.isArray(markers)) return null;
+  const agreed = markers.agreed && typeof markers.agreed === "object" && !Array.isArray(markers.agreed)
+    ? markers.agreed
+    : {};
+  return { agreed, lastUid: typeof markers.lastUid === "string" ? markers.lastUid : "" };
+}
+
+// The delete time this device last agreed on with an account's cloud copy, or
+// null when this device has never synced with that account (its games were
+// never part of the account, so an older delete there says nothing about them).
+// Installs that synced before deletes existed have no markers yet; they count
+// as having synced with whichever account they sync with first.
+function getAgreedGameDataResetMarker(userId) {
+  const markers = readGameDataResetMarkers();
+  if (!markers) return "";
+  if (!Object.prototype.hasOwnProperty.call(markers.agreed, userId)) return null;
+  return typeof markers.agreed[userId] === "string" ? markers.agreed[userId] : "";
+}
+
+// The latest delete made on this device: { at, uid }. uid is the account that
+// was signed in at the time, or null when cloud sync had not loaded.
+function readDeviceGameDataReset() {
+  const reset = deserializeLocalStorageValue(
+    GAME_DATA_RESET_DEVICE_KEY,
+    localStorage.getItem(GAME_DATA_RESET_DEVICE_KEY),
+  );
+  if (!reset || typeof reset !== "object" || typeof reset.at !== "string") return null;
+  return { at: reset.at, uid: typeof reset.uid === "string" && reset.uid ? reset.uid : null };
+}
+
+// Adds a delete made on this device that the account has not heard about yet.
+// A delete belongs only to the account it was made in (or, offline, the one
+// this device last synced with), so signing in elsewhere never spreads it.
+function getLocalGameDataResetMarker(userId) {
+  const agreed = getAgreedGameDataResetMarker(userId);
+  if (agreed === null) return null;
+  const deviceReset = readDeviceGameDataReset();
+  if (!deviceReset) return agreed;
+  const deleteAccount = deviceReset.uid || readGameDataResetMarkers()?.lastUid || userId;
+  return deleteAccount === userId ? laterGameDataResetMarker(agreed, deviceReset.at) : agreed;
+}
+
+function rememberGameDataResetMarker(userId, marker) {
+  const markers = readGameDataResetMarkers() || { agreed: {}, lastUid: "" };
+  markers.agreed[userId] = typeof marker === "string" ? marker : "";
+  markers.lastUid = userId;
+  try {
+    localStorage.setItem(GAME_DATA_RESET_MARKERS_KEY, JSON.stringify(markers));
+  } catch (error) {
+    console.warn("Could not record the cloud delete marker on this device.", error);
+  }
+}
+
+// Restored games carry restoredAt, so they count as newer than any delete made
+// before they were restored.
+function getGameDataTime(value) {
+  if (!value || typeof value !== "object") return 0;
+  return [value.timestamp, value.frozenAt, value.timerLastActivityAt, value.timerLastSavedAt, value.startTime, value.restoredAt]
+    .map(time => (typeof time === "number" ? time : Date.parse(time || "")))
+    .filter(Number.isFinite)
+    .reduce((latest, time) => Math.max(latest, time), 0);
+}
+
+// Keeps only the game data created after a delete this side had not seen.
+// Teams and learned probabilities are totals that cannot be split by date, so
+// they go entirely; they rebuild from the games that remain.
+function dropGameDataBefore(data, marker) {
+  const resetTime = parseGameDataResetTime(marker);
+  const kept = { ...data };
+  const droppedKeys = [];
+  GAME_DATA_KEYS.forEach(key => {
+    if (!Object.prototype.hasOwnProperty.call(kept, key)) return;
+    const value = kept[key];
+    if ((key === "savedGames" || key === "freezerGames") && Array.isArray(value)) {
+      kept[key] = value.filter(game => getGameDataTime(game) > resetTime);
+      return;
+    }
+    if (key === "activeGameState" && getGameDataTime(value) > resetTime) return;
+    delete kept[key];
+    droppedKeys.push(key);
+  });
+  return { kept, droppedKeys };
+}
+
 function getCloudSyncStorageChanges(snapshot) {
   if (typeof window.getCloudSyncStorageChanges === "function") {
     return window.getCloudSyncStorageChanges(snapshot, localStorage);
@@ -327,13 +446,33 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   const docRef = doc(db, "rookData", user.uid);
   const docSnap = await getDoc(docRef);
   if (auth?.currentUser?.uid !== userId) return false;
-  const firestoreData = docSnap.exists() ? docSnap.data() : {};
+  let firestoreData = docSnap.exists() ? docSnap.data() : {};
   const localRawSnapshot = captureCloudSyncStorageSnapshot();
-  const localData = {};
+  let localData = {};
 
   localRawSnapshot.forEach((rawValue, key) => {
     localData[key] = deserializeLocalStorageValue(key, rawValue);
   });
+
+  // A side that missed a "Delete All Game Data" loses its game data from before it.
+  const cloudResetMarker = typeof firestoreData[GAME_DATA_RESET_FIELD] === "string"
+    ? firestoreData[GAME_DATA_RESET_FIELD]
+    : "";
+  const localResetMarker = getLocalGameDataResetMarker(userId);
+  const resetMarker = laterGameDataResetMarker(localResetMarker ?? "", cloudResetMarker);
+  const localResetTime = parseGameDataResetTime(localResetMarker);
+  const cloudResetTime = parseGameDataResetTime(cloudResetMarker);
+  let staleKeys = [];
+  const localWasStale = localResetMarker !== null && cloudResetTime > localResetTime;
+  if (localWasStale) {
+    const { kept, droppedKeys } = dropGameDataBefore(localData, cloudResetMarker);
+    localData = kept;
+    staleKeys = droppedKeys;
+  } else if (localResetMarker !== null && localResetTime > cloudResetTime) {
+    const { kept, droppedKeys } = dropGameDataBefore(firestoreData, localResetMarker);
+    firestoreData = kept;
+    staleKeys = droppedKeys;
+  }
 
   const mergedData = {};
   const allKeys = new Set([...Object.keys(localData), ...Object.keys(firestoreData)]);
@@ -349,7 +488,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     if (key === "activeGameState") { // ACTIVE_GAME_KEY from main script
       // Local wins so unsaved progress is never overwritten; a device with no
       // game does not persist an empty one.
-      if (localRawSnapshot.has(key)) mergedData[key] = localValue;
+      if (Object.prototype.hasOwnProperty.call(localData, key)) mergedData[key] = localValue;
       else if (firestoreValue !== undefined) mergedData[key] = firestoreValue;
     } else if (Array.isArray(localValue) && Array.isArray(firestoreValue) && (key === "savedGames" || key === "freezerGames")) {
       // Merge arrays of games, ensuring uniqueness by timestamp or a unique ID if available
@@ -383,17 +522,30 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     }
   });
 
+  // Stale game data with no newer copy on the other side is cleared everywhere.
+  staleKeys.forEach(key => {
+    if (!Object.prototype.hasOwnProperty.call(mergedData, key)) mergedData[key] = null;
+  });
+
   // Only send what differs from the cloud copy: an unchanged startup merge
-  // costs no document write.
+  // costs no document write. The original cloud values are compared so data
+  // dropped for predating a delete is cleared there as well.
+  const cloudSnapshot = docSnap.exists() ? docSnap.data() : {};
   const payload = {};
   Object.entries(mergedData).forEach(([key, value]) => {
-    if (JSON.stringify(value) !== JSON.stringify(firestoreData[key])) payload[key] = value;
+    if (JSON.stringify(value) !== JSON.stringify(cloudSnapshot[key])) payload[key] = value;
   });
+  if (resetMarker !== cloudResetMarker) payload[GAME_DATA_RESET_FIELD] = resetMarker;
   if (auth?.currentUser?.uid !== userId) return false;
   if (Object.keys(payload).length) {
-    await setDoc(docRef, { ...payload, timestamp: new Date().toISOString() }, { merge: true });
+    await setDoc(docRef, {
+      ...payload,
+      [GAME_DATA_RESET_FIELD]: resetMarker,
+      timestamp: new Date().toISOString(),
+    }, { merge: true });
   }
   if (auth?.currentUser?.uid !== userId) return false;
+  rememberGameDataResetMarker(userId, resetMarker);
   const localChangesDuringMerge = getCloudSyncStorageChanges(localRawSnapshot);
 
   // Update localStorage with merged data
@@ -419,12 +571,33 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   });
 
   if (localChangesDuringMerge.size > 0) {
-    const latestLocalData = { timestamp: new Date().toISOString() };
+    const latestLocalData = {
+      [GAME_DATA_RESET_FIELD]: resetMarker,
+      timestamp: new Date().toISOString(),
+    };
+    let changedLocalData = {};
     localChangesDuringMerge.forEach((rawValue, key) => {
-      latestLocalData[key] = rawValue === null
+      changedLocalData[key] = rawValue === null
         ? null
         : deserializeLocalStorageValue(key, rawValue);
     });
+    // A save made mid-merge still carries this device's pre-delete games.
+    if (localWasStale) {
+      const { kept, droppedKeys } = dropGameDataBefore(changedLocalData, cloudResetMarker);
+      droppedKeys.forEach(key => { kept[key] = null; });
+      GAME_DATA_KEYS.forEach(key => {
+        if (!Object.prototype.hasOwnProperty.call(kept, key)) return;
+        if (JSON.stringify(kept[key]) === JSON.stringify(changedLocalData[key])) return;
+        const serialized = key === "activeGameState" && kept[key] === null
+          ? "null"
+          : serializeForLocalStorage(kept[key]);
+        if (serialized === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, serialized);
+        localStorageUpdatedByMerge = true;
+      });
+      changedLocalData = kept;
+    }
+    Object.assign(latestLocalData, changedLocalData);
     await setDoc(docRef, latestLocalData, { merge: true });
     if (auth?.currentUser?.uid !== userId) return false;
   }
@@ -458,9 +631,17 @@ async function mergeUserDataForCurrentUser(user) {
 
   const mergePromise = (async () => {
     try {
-      const merged = await window.mergeLocalStorageWithFirestore(user);
-      if (merged && auth?.currentUser?.uid === userId) lastMergedAuthUid = userId;
-      return merged;
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          const merged = await window.mergeLocalStorageWithFirestore(user);
+          if (merged && auth?.currentUser?.uid === userId) lastMergedAuthUid = userId;
+          return merged;
+        } catch (error) {
+          // Another device deleted all game data between this merge's read and
+          // write; one fresh merge picks up that delete.
+          if (!isStaleGameDataWrite(error) || attempt >= 2) throw error;
+        }
+      }
     } catch (error) {
       console.error("Firestore merge error:", error);
       trackSyncFailure("other", "merge_failed");
@@ -552,30 +733,76 @@ async function flushPendingSync() {
     return false;
   }
 
+  // Every write names the delete it knows about. The security rules refuse a
+  // write that predates the cloud's latest delete, so a device that missed the
+  // delete cannot quietly upload the deleted games again.
+  const agreedResetMarker = getAgreedGameDataResetMarker(user.uid);
+  const resetMarker = values.has(GAME_DATA_RESET_FIELD)
+    ? values.get(GAME_DATA_RESET_FIELD)
+    : agreedResetMarker ?? "";
+  values.delete(GAME_DATA_RESET_FIELD);
   try {
     await setDoc(
       doc(db, "rookData", user.uid),
-      { ...Object.fromEntries(values), timestamp: new Date().toISOString() },
+      {
+        ...Object.fromEntries(values),
+        [GAME_DATA_RESET_FIELD]: resetMarker,
+        timestamp: new Date().toISOString(),
+      },
       { merge: true }
     );
+    const nextAgreedResetMarker = laterGameDataResetMarker(agreedResetMarker ?? "", resetMarker);
+    if (nextAgreedResetMarker !== agreedResetMarker
+        || readGameDataResetMarkers()?.lastUid !== user.uid) {
+      rememberGameDataResetMarker(user.uid, nextAgreedResetMarker);
+    }
     console.log(`Successfully synced ${keys.join(", ")} to Firestore.`);
     return true;
   } catch (error) {
     console.error("Firestore sync error:", error);
     keys.forEach(key => trackSyncFailure(key, "write_failed"));
+    // The local copy still holds these values; a fresh merge applies the newer
+    // delete to them and uploads whatever survives it.
+    if (isStaleGameDataWrite(error) && auth?.currentUser?.uid === user.uid) {
+      if (lastMergedAuthUid === user.uid) lastMergedAuthUid = null;
+      mergeUserDataForCurrentUser(user);
+    }
     return false;
   }
 }
 
-window.syncToFirestore = function(key, value) {
-  if (!isCloudSyncStorageKey(key)) return Promise.resolve(false);
-  pendingSyncValues.set(key, value);
+function isStaleGameDataWrite(error) {
+  return error?.code === "permission-denied";
+}
+
+function schedulePendingSyncFlush() {
   if (!pendingSyncFlush) {
     pendingSyncFlush = new Promise(resolve => {
       setTimeout(() => resolve(flushPendingSync()), SYNC_FLUSH_DELAY_MS);
     });
   }
   return pendingSyncFlush;
+}
+
+// Clears every game-data key in the cloud and records the delete in the same
+// write. Queued writes of those keys are replaced, so a save made just before
+// the delete cannot land after it.
+window.syncGameDataReset = function(resetMarker) {
+  if (typeof resetMarker !== "string" || !parseGameDataResetTime(resetMarker)) {
+    return Promise.resolve(false);
+  }
+  GAME_DATA_KEYS.forEach(key => pendingSyncValues.set(key, null));
+  pendingSyncValues.set(GAME_DATA_RESET_FIELD, laterGameDataResetMarker(
+    pendingSyncValues.get(GAME_DATA_RESET_FIELD),
+    resetMarker,
+  ));
+  return schedulePendingSyncFlush();
+};
+
+window.syncToFirestore = function(key, value) {
+  if (!isCloudSyncStorageKey(key)) return Promise.resolve(false);
+  pendingSyncValues.set(key, value);
+  return schedulePendingSyncFlush();
 };
 
 function isVoiceImprovementConsentEnabled() {

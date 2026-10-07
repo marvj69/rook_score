@@ -669,7 +669,7 @@ test('analytics replays early local-play events through its existing privacy fil
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 252000, 67000], // Home/onboarding plus early initialization; statistics load on demand
+    ['js/app.bundle.js', 258000, 68500], // Home/onboarding, early initialization, and Delete All Game Data; statistics load on demand
     ['js/voice-score.bundle.js', 60000, 17000],
     ['js/probability-explanation.bundle.js', 26000, 8800],
     ['css/probability-explanation.css', 12000, 2800],

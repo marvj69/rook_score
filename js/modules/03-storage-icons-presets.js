@@ -29,7 +29,7 @@ function setLocalStorage(key, value, { sync = true } = {}) {
   }
 }
 
-function removeLocalStorageKey(key) {
+function removeLocalStorageKey(key, { sync = true } = {}) {
   try {
     localStorage.removeItem(key);
     LOCAL_STORAGE_CACHE.delete(key);
@@ -38,7 +38,7 @@ function removeLocalStorageKey(key) {
       if (typeof invalidateProbabilityCachesForGames === "function") invalidateProbabilityCachesForGames();
       if (typeof clearStatisticsCache === "function") clearStatisticsCache();
     }
-    if (!key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
+    if (sync && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       setTimeout(() => {
         if (localStorage.getItem(key) !== null) return;
@@ -123,6 +123,29 @@ const ROOK_APP_STORAGE_KEYS = new Set([
   "darkModeEnabled",
 ]);
 
+// "Delete All Game Data" erases these keys; settings and preferences stay.
+// js/firebase-init.js mirrors this list; a test keeps the two identical.
+const GAME_DATA_KEYS = [
+  ACTIVE_GAME_KEY,
+  "savedGames",
+  "freezerGames",
+  "teams",
+  "probabilityPersonalizationV1",
+];
+
+// Device bookkeeping for deletes: when this device last deleted its game data,
+// the delete time it last agreed on with each cloud account, and the optional
+// recovery copy. A backup file never carries them and an import never replaces
+// them, so restoring an old backup cannot undo a delete's sync protection.
+const GAME_DATA_RESET_DEVICE_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}gameDataResetAt`;
+const GAME_DATA_RESET_MARKERS_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}gameDataResetMarkers`;
+const DELETED_GAME_DATA_RECOVERY_KEY = `${LOCAL_ONLY_STORAGE_PREFIX}deletedGameDataRecovery`;
+const DEVICE_BOOKKEEPING_STORAGE_KEYS = new Set([
+  GAME_DATA_RESET_DEVICE_KEY,
+  GAME_DATA_RESET_MARKERS_KEY,
+  DELETED_GAME_DATA_RECOVERY_KEY,
+]);
+
 function isRookAppStorageKey(key) {
   return typeof key === "string"
     && !isFirebaseInternalStorageKey(key)
@@ -165,7 +188,7 @@ function getAppStorageEntries(storage = localStorage) {
   const entries = [];
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
-    if (!isRookAppStorageKey(key)) continue;
+    if (!isRookAppStorageKey(key) || DEVICE_BOOKKEEPING_STORAGE_KEYS.has(key)) continue;
     const value = storage.getItem(key);
     if (value !== null) entries.push({ key, value });
   }
@@ -239,7 +262,7 @@ function normalizeImportedStorageEntries(entries) {
     }
     // Backups made on the shared GitHub Pages origin by older versions may
     // carry other apps' keys; those are neither Rook data nor safe to restore.
-    if (!isRookAppStorageKey(key)) return;
+    if (!isRookAppStorageKey(key) || DEVICE_BOOKKEEPING_STORAGE_KEYS.has(key)) return;
     normalized.push({ key, value });
   });
   return normalized;

@@ -918,6 +918,7 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
 #teamSelectionModal { z-index: 9998; }
 #viewSavedGameModal { z-index: 9996; }
 #presetEditorModal  { z-index: 9997; }
+#deleteGameDataModal { z-index: 9998; }
 
 /* ── Scrollbar Hiding ── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -2152,6 +2153,74 @@ body.liquid-glass .dialog-modal > .dialog-card,
 .dialog-option__title { display: block; font-weight: 700; font-size: 0.95rem; color: #f1f5f9; }
 .dialog-option__body { display: block; margin-top: 0.25rem; font-size: 0.82rem; line-height: 1.45; color: rgba(203, 213, 225, 0.75); }
 
+/* Delete All Game Data */
+.dialog-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.9rem;
+  list-style: none;
+  border-radius: 1rem;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+.dialog-list li {
+  position: relative;
+  padding-left: 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #f1f5f9;
+}
+.dialog-list li::before {
+  content: "";
+  position: absolute;
+  top: 0.45em;
+  left: 0.1rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--dialog-tone);
+}
+.dialog-list.is-empty li { font-weight: 600; color: rgba(203, 213, 225, 0.8); }
+.dialog-list.is-empty li::before { background: rgba(148, 163, 184, 0.6); }
+.dialog-btn--block { width: 100%; margin-top: 1rem; }
+.dialog-status { margin: 0.5rem 0 0; font-size: 0.82rem; font-weight: 650; line-height: 1.4; color: #6ee7b7; overflow-wrap: anywhere; }
+.dialog-status.is-error { color: #fecaca; }
+.dialog-status.hidden { display: none; }
+.dialog-field__label {
+  display: block;
+  margin: 1.125rem 0 0.45rem;
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-align: left;
+  color: #e2e8f0;
+}
+.dialog-field__label strong { letter-spacing: 0.06em; color: #fca5a5; }
+html.dark body.liquid-glass .dialog-card .sheet-input.dialog-confirm-input,
+.sheet-input.dialog-confirm-input {
+  --field-tone: #f87171;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+}
+#deleteGameDataConfirmButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: saturate(0.5);
+  box-shadow: none;
+  transform: none;
+}
+/* Phones: the keyboard covers the bottom half while DELETE is typed. Anchor at
+   the top for good; moving on focus would shift the buttons mid-tap. */
+@media (max-width: 640px) {
+  #deleteGameDataModal { align-items: flex-start; }
+}
+.sheet-row--danger .sheet-row__title { color: #fca5a5; }
+.sheet-row__controls--pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 /* Game over: the overlay renders inside #app, so keep it under the menu layers */
 .dialog-modal--gameover { z-index: 49; }
 
@@ -2290,6 +2359,7 @@ button.sheet-row:focus-visible, a.sheet-row:focus-visible {
 /* Fields */
 html.dark body.liquid-glass .sheet-shell .sheet-select,
 html.dark body.liquid-glass .sheet-shell .sheet-input,
+html.dark body.liquid-glass .dialog-card .sheet-input,
 .sheet-select, .sheet-input {
   width: 100%; min-width: 0; min-height: 2.9rem;
   padding: 0 0.85rem;
@@ -2308,6 +2378,7 @@ html.dark body.liquid-glass .sheet-shell .sheet-input::placeholder,
 .sheet-input::placeholder { color: rgba(148, 163, 184, 0.7); font-weight: 500; }
 html.dark body.liquid-glass .sheet-shell .sheet-select:focus,
 html.dark body.liquid-glass .sheet-shell .sheet-input:focus,
+html.dark body.liquid-glass .dialog-card .sheet-input:focus,
 .sheet-select:focus, .sheet-input:focus {
   outline: none;
   border-color: color-mix(in srgb, var(--field-tone, var(--primary-color)) 80%, #ffffff);

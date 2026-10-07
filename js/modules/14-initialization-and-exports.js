@@ -139,6 +139,9 @@ function initializeRookApp() {
   document.getElementById("closeSavedGamesModalBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeSavedGamesModal(); });
   document.getElementById("teamSelectionForm")?.addEventListener("submit", handleTeamSelectionSubmit);
   document.getElementById("dealerOrderForm")?.addEventListener("submit", handleDealerOrderSubmit);
+  document.getElementById("deleteGameDataForm")?.addEventListener("submit", handleDeleteGameDataSubmit);
+  document.getElementById("deleteGameDataConfirmInput")?.addEventListener("input", syncDeleteGameDataConfirmButton);
+  pruneExpiredGameDataRecovery();
   const resumePaperGameButton = document.getElementById("resumePaperGameButton");
   if (resumePaperGameButton) {
     resumePaperGameButton.addEventListener("click", (event) => {
@@ -168,6 +171,7 @@ function initializeRookApp() {
 	    probabilityModal: closeProbabilityModal,
 	    dealerOrderModal: closeDealerOrderModal,
 	    voiceExperimentalOnboardingModal: cancelVoiceExperimentalOnboarding,
+	    deleteGameDataModal: closeDeleteGameDataModal,
 	  };
 
   document.addEventListener("click", (e) => {
@@ -416,6 +420,23 @@ if (typeof module !== 'undefined' && module.exports) {
     loadCurrentGameState,
     resetGame,
     saveCurrentGameState,
+    GAME_DATA_KEYS,
+    GAME_DATA_RESET_DEVICE_KEY,
+    GAME_DATA_RESET_MARKERS_KEY,
+    DELETED_GAME_DATA_RECOVERY_KEY,
+    getGameDataSummary,
+    describeGameDataSummary,
+    isGameDataDeletePhrase,
+    nextGameDataResetMarker,
+    readGameDataRecovery,
+    pruneExpiredGameDataRecovery,
+    mergeGameDataEntries,
+    deleteAllGameData,
+    restoreDeletedGameData,
+    renderGameDataControls,
+    openDeleteGameDataModal,
+    handleDeleteGameDataSubmit,
+    syncDeleteGameDataConfirmButton,
     saveCompletedGameSnapshot,
     viewSavedGame,
     getStateForTests: () => state,

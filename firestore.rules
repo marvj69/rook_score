@@ -77,8 +77,20 @@ service cloud.firestore {
         && data.createdAt.size() <= 40;
     }
 
+    // gameDataResetAt records the latest "Delete All Game Data". A write must
+    // name that delete or a newer one, so a device that has not heard about the
+    // delete cannot upload the deleted games again. Writes that leave the field
+    // out keep the stored value and pass, as older app versions do.
+    function keepsLatestGameDataReset() {
+      return resource == null
+        || !('gameDataResetAt' in resource.data)
+        || (request.resource.data.gameDataResetAt is string
+          && request.resource.data.gameDataResetAt >= resource.data.gameDataResetAt);
+    }
+
     match /rookData/{userId} {
-      allow read, write: if isSignedInOwner(userId);
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && keepsLatestGameDataReset();
     }
 
     match /voiceImprovement/{userId}/samples/{sampleId} {

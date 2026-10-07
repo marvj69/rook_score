@@ -24,5 +24,6 @@ module.exports = [
   "js/modules/12-stats-ui.js",
   "js/modules/13-settings-loading.js",
   "js/modules/13-home-screen.js",
+  "js/modules/13-delete-game-data.js",
   "js/modules/14-initialization-and-exports.js",
 ];

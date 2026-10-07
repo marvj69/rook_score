@@ -628,6 +628,7 @@ function openSettingsModal() {
 
   // Load all settings using the common function
   loadSettings();
+  renderGameDataControls();
 
   openSheetModal("settingsModal", closeSettingsModal);
 }
