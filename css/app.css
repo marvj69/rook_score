@@ -73,6 +73,16 @@ body.app-content-overflows main#app {
   }
 }
 
+/* An installed app has no browser toolbar, so 100vh is the whole screen.
+   iOS 26 reports 100dvh short there by the status bar's height, which ended
+   this scroll box above the bottom edge and clipped the fixed keypad sheet
+   inside it, hiding its Submit Round button. */
+@media (display-mode: standalone) {
+  body.app-content-overflows main#app {
+    max-height: calc(100vh - var(--safe-area-inset-top-effective));
+  }
+}
+
 /* ── Cartoony 3-D Glass Theme ── */
 body.liquid-glass {
   --glass-layer: rgba(18, 24, 58, 0.5);

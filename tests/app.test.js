@@ -5304,6 +5304,17 @@ test('old installed app compatibility classes are scoped to safe area and overfl
   assert.match(css, /-webkit-overflow-scrolling:\s*touch/);
 });
 
+test('installed app scroll box reaches the bottom edge so the keypad sheet is not clipped', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+
+  // iOS 26 installed apps report 100dvh short by the status bar's height, so
+  // standalone sizes the scroll box from 100vh, after (and over) the 100dvh rule.
+  assert.match(
+    css,
+    /max-height: calc\(100dvh - var\(--safe-area-inset-top-effective\)\);[\s\S]*@media \(display-mode: standalone\) \{\s*body\.app-content-overflows main#app \{\s*max-height: calc\(100vh - var\(--safe-area-inset-top-effective\)\);\s*\}\s*\}/,
+  );
+});
+
 test('main card pop animations are gated by render state', () => {
   const stateSource = readFileSync(path.join(repoRoot, 'js/modules/01-state-and-win-prob-render.js'), 'utf8');
   const renderSource = readFileSync(path.join(repoRoot, 'js/modules/11-rendering.js'), 'utf8');
