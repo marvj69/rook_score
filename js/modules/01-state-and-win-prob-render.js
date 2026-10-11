@@ -8,6 +8,7 @@ let ephemeralPoints = "";    // Same for points
 let activeScoreKeypadTarget = "";
 let scoreKeypadShouldAnimate = false;
 let scoreKeypadCloseTimer = null;
+let lastRoundCommittedAt = 0; // Lets a second tap on Submit pass over the History rows that appear under it
 let confirmationCallback = null;
 let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first

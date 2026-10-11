@@ -88,8 +88,15 @@ const {
   calculateWinProbability,
   validateBid,
   validatePoints,
+  isUsableBid,
+  getCustomBidProblem,
   applyInAppNumericKey,
   calculateRoundPointsOutcome,
+  handleTeamClick,
+  submitStructuredRound,
+  submitRoundFromCurrentInputs,
+  startHistoryEdit,
+  commitHistoryEdit,
   clampDurationMs,
   isStartTimestampActive,
   calculateSafeTimeAccumulation,
@@ -720,6 +727,94 @@ test('round outcome preview calculation handles non-bidder 360 and empty input',
     bidAmount: 120,
     pointsValue: '',
   }).error, 'Enter points with the in-app keypad.');
+});
+
+test('a deselected team gets its bid back once, and later rounds start without it', () => {
+  resetGame();
+  handleTeamClick('us');
+  updateState({ bidAmount: '130', error: 'stale warning' });
+  handleTeamClick('us'); // deselect: the bid is remembered for one tap
+  assert.equal(getStateForTests().biddingTeam, '');
+  handleTeamClick('us'); // select again: it returns, without the old warning
+  assert.equal(getStateForTests().bidAmount, '130');
+  assert.equal(getStateForTests().error, '');
+  assert.deepEqual(getStateForTests().savedScoreInputStates, { us: null, dem: null });
+
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '130', points: 140 }), true);
+  handleTeamClick('us'); // the next round must not show round 1's bid as chosen
+  assert.equal(getStateForTests().biddingTeam, 'us');
+  assert.equal(getStateForTests().bidAmount, '');
+  assert.equal(getStateForTests().showCustomBid, false);
+});
+
+test('a bid that was remembered for a deselected team does not survive a reload', () => {
+  resetGame();
+  updateState({ savedScoreInputStates: { us: { bidAmount: '130', customBidValue: '', showCustomBid: false, enterBidderPoints: false }, dem: null } });
+  saveCurrentGameState({ sync: false, showIndicator: false });
+  loadCurrentGameState();
+  assert.deepEqual(getStateForTests().savedScoreInputStates, { us: null, dem: null });
+});
+
+test('custom bids of 5, 10, and 15 are refused everywhere with a reason', () => {
+  for (const refused of ['5', '10', '15']) {
+    assert.equal(isUsableBid(refused), false, refused);
+    assert.equal(getCustomBidProblem(refused), 'Bids start at 20.');
+  }
+  for (const accepted of ['20', '75', '100', '150', '180', '360']) {
+    assert.equal(isUsableBid(accepted), true, accepted);
+    assert.equal(getCustomBidProblem(accepted), '');
+  }
+  assert.equal(getCustomBidProblem(''), '');
+  assert.equal(getCustomBidProblem('7'), 'Bid must be multiple of 5.');
+  assert.equal(getCustomBidProblem('185'), 'Bids between 180 and 360 are not allowed.');
+  assert.equal(getCustomBidProblem('400'), 'Bid max 360.');
+  assert.equal(isUsableBid(' 120 '), true);
+});
+
+test('a second tap on Submit after the round is recorded is not an error', () => {
+  resetGame();
+  assert.equal(submitStructuredRound({ biddingTeam: 'dem', bidAmount: '120', points: 125 }), true);
+  assert.equal(getStateForTests().rounds.length, 1);
+  assert.equal(getStateForTests().biddingTeam, '');
+  submitRoundFromCurrentInputs(); // the duplicate tap: nothing is selected any more
+  assert.equal(getStateForTests().error, '');
+  assert.equal(getStateForTests().rounds.length, 1);
+});
+
+test('tapping a History cell right after a round is recorded does not open the editor', () => {
+  resetGame();
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '120', points: 125 }), true);
+  startHistoryEdit(0, 'us'); // the second tap of a double tap on Submit
+  assert.equal(getStateForTests().historyEdit, null);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 1000;
+  try {
+    startHistoryEdit(0, 'us'); // a deliberate tap a moment later still edits
+    assert.deepEqual(getStateForTests().historyEdit, { idx: 0, field: 'us' });
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('History edits only accept bids and totals that make sense', () => {
+  resetGame();
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '120', points: 125 }), true);
+  const edit = (field, value) => {
+    updateState({ historyEdit: { idx: 0, field }, error: '' });
+    commitHistoryEdit(0, field, value);
+    return getStateForTests();
+  };
+  assert.equal(edit('us', '103').error, 'Scores must be multiples of 5.');
+  assert.equal(edit('us', '10.5').error, 'Scores must be multiples of 5.');
+  assert.equal(edit('dem', '1000000000').error, 'Scores stay between -2000 and 2000.');
+  assert.equal(getStateForTests().gameOver, false);
+  assert.equal(edit('bid', '15').error, 'Bids start at 20.');
+  assert.equal(edit('bid', '185').error, 'Bids between 180 and 360 are not allowed.');
+  assert.equal(getStateForTests().rounds[0].bidAmount, 120);
+  assert.equal(edit('us', '130').error, '');
+  assert.equal(getStateForTests().rounds[0].runningTotals.us, 130);
+  assert.equal(edit('bid', '125').error, '');
+  assert.equal(getStateForTests().rounds[0].bidAmount, 125);
 });
 
 test('calculateSafeTimeAccumulation preserves full active play time and rejects invalid clocks', () => {

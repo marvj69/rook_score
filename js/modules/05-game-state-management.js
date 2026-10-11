@@ -326,6 +326,9 @@ loadedState = JSON.parse(storedStateString);
     // Transient flag must never persist across loads; a stuck `true` (from an
     // older build) would freeze every submit. Always start fresh.
     completeLoadedState.isSubmittingRound = false;
+    // A deselected team's remembered bid belongs to one tap-away moment, not to a saved game: older
+    // builds kept it for the rest of the game, so it must not come back as a ghost bid after a reload.
+    completeLoadedState.savedScoreInputStates = { us: null, dem: null };
     Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
     completeLoadedState.showWinProbability = Boolean(getLocalStorage(PRO_MODE_KEY, false));

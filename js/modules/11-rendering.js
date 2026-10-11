@@ -69,7 +69,7 @@ function renderApp() {
       const currentBidAmountDisplay = escapeHtmlValue(currentBidDisplayAmount);
       const arrow = biddingTeam === "us" ? "←" : "→";
       const teamColor = biddingTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
-      if (validateBid(currentBidDisplayAmount) === "") { // Only display if valid
+      if (isUsableBid(currentBidDisplayAmount)) { // Only display if valid
           lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
       }
   }
@@ -125,7 +125,7 @@ function renderApp() {
       ${renderRoundCard(roundNumber, lastBidDisplayHtml)}
       ${renderTeamCard("dem", totals.dem, winProb, scorePreview.active)}
     </div>
-    ${error ? `<div>${renderErrorAlert(error)}</div>` : ""}
+    ${error && activeScoreKeypadTarget !== "points" ? `<div>${renderErrorAlert(error)}</div>` : ""}
     ${renderScoreInputCard()}
     ${renderHistoryCard()}
     ${renderGameOverOverlay()}
@@ -236,6 +236,14 @@ function renderInAppNumericKeypad(target, label) {
     ? `<button type="button" class="score-keypad-sheet__submit threed" onclick="handleFormSubmit(event)">Submit Round</button>`
     : "";
   if (activeScoreKeypadTarget !== safeTarget) return "";
+  // The page's own alert sits behind this sheet on short screens, so the message lives here.
+  // A typed bid is only judged once it has three digits (the most that fit); fewer may still be growing.
+  const keypadMessage = safeTarget === "points"
+    ? String(state.error || "")
+    : (displayValue.length >= 3 ? getCustomBidProblem(displayValue) : "");
+  const keypadMessageHtml = keypadMessage
+    ? `<p class="score-keypad-sheet__message" role="${safeTarget === "points" ? "alert" : "status"}">${escapeHtmlValue(keypadMessage)}</p>`
+    : "";
   const animationClass = scoreKeypadShouldAnimate ? " score-keypad-sheet--entering" : "";
   scoreKeypadShouldAnimate = false;
 
@@ -246,6 +254,7 @@ function renderInAppNumericKeypad(target, label) {
         <span>${escapeHtmlValue(label)}</span>
         <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
       </div>
+      ${keypadMessageHtml}
       <input id="scoreKeypadDisplay" type="text" inputmode="none" readonly tabindex="-1" class="score-keypad-sheet__display" value="${displayValueAttr}" placeholder="${displayPlaceholder}" aria-label="${safeLabel} value" aria-readonly="true" aria-live="polite" />
       <div class="score-keypad" role="group" aria-label="${safeLabel}">
         ${keys.map(([key, display]) => {
@@ -262,7 +271,8 @@ function renderScoreInputCard() {
   if (gameOver || !biddingTeam) { getScoreCardAnimation(""); return ""; }
   const animation = getScoreCardAnimation(biddingTeam, { duration: "0.45s", delay: "0.05s" });
   const fadeClass = animation.className ? "animate-fadeIn " : "";
-  const hasBid = bidAmount || (showCustomBid && validateBid(customBidValue) === "");
+  const hasBid = bidAmount || (showCustomBid && isUsableBid(customBidValue));
+  const customBidProblem = showCustomBid && activeScoreKeypadTarget !== "bid" ? getCustomBidProblem(customBidValue) : "";
   const biddingTeamDisplayName = biddingTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const biddingTeamDisplayText = escapeHtmlValue(biddingTeamDisplayName);
   const customBidValueAttr = escapeAttribute(customBidValue);
@@ -303,9 +313,10 @@ function renderScoreInputCard() {
             </div>
             ${showCustomBid ? `<div class="mt-3 score-keypad-field">
               <input id="customBidInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "bid"}" value="${customBidValueAttr}" placeholder="Tap to enter bid" onclick="openScoreKeypad('bid')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('bid'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+              ${customBidProblem ? `<p class="mt-1.5 text-sm font-medium text-red-600 dark:text-red-300" role="status">${escapeHtmlValue(customBidProblem)}</p>` : ""}
             </div>` : ""}
           </div>
-          ${(bidAmount || (showCustomBid && customBidValue && validateBid(customBidValue)==="")) ? renderPointsInput() : ""}
+          ${(bidAmount || (showCustomBid && isUsableBid(customBidValue))) ? renderPointsInput() : ""}
         </form>
       </div>
     </div>`;
@@ -349,7 +360,12 @@ function renderPointsInput() {
 function isHistoryCellEditing(idx, field) {
   return state.historyEdit && state.historyEdit.idx === idx && state.historyEdit.field === field;
 }
+// A fast double tap on Submit Round makes its second tap land on the History row that has just
+// appeared under the button; that tap must not open an editor.
+const HISTORY_EDIT_TAP_SHIELD_MS = 450;
+const HISTORY_EDIT_MAX_SCORE = 2000;
 function startHistoryEdit(idx, field) {
+  if (Date.now() - lastRoundCommittedAt < HISTORY_EDIT_TAP_SHIELD_MS) return;
   updateState({ historyEdit: { idx, field }, error: "" });
   // The input only exists after the render frame queued by updateState.
   scheduleFrame(() => {
@@ -431,11 +447,18 @@ function commitHistoryEdit(idx, field, rawValue) {
     return;
   }
   if (field === "bid") {
-    const bidError = validateBid(String(numericValue));
+    const bidError = getCustomBidProblem(String(numericValue));
     if (bidError) {
       updateState({ historyEdit: null, error: bidError });
       return;
     }
+  } else if (!Number.isInteger(numericValue) || numericValue % 5 !== 0) {
+    // Every hand scores in fives, so a total that is not a multiple of 5 is a typo.
+    updateState({ historyEdit: null, error: "Scores must be multiples of 5." });
+    return;
+  } else if (Math.abs(numericValue) > HISTORY_EDIT_MAX_SCORE) {
+    updateState({ historyEdit: null, error: `Scores stay between -${HISTORY_EDIT_MAX_SCORE} and ${HISTORY_EDIT_MAX_SCORE}.` });
+    return;
   }
 
   recordCurrentGameTimerActivity();
@@ -584,16 +607,16 @@ function renderHistoryCard() {
             const demValue = Number.isFinite(Number(round.runningTotals?.dem)) ? round.runningTotals.dem : 0;
             const bidInput = isHistoryCellEditing(idx, "bid")
               ? `<input id="history-edit-${idx}-bid" type="number" inputmode="numeric" class="w-16 bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${bidValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'bid')" onblur="commitHistoryEdit(${idx}, 'bid', this.value)" />`
-              : `<button type="button" class="inline-flex items-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabelAttr} bid for round ${idx + 1}">${bidValue}</button>`;
+              : `<button type="button" class="history-edit-cell inline-flex items-center text-black dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1" onclick="startHistoryEdit(${idx}, 'bid')" aria-label="Edit ${biddingTeamLabelAttr} bid for round ${idx + 1}">${bidValue}</button>`;
             const bidContent = round.biddingTeam === "us"
               ? `<div class="flex items-center justify-center gap-1"><span class="text-gray-800 dark:text-white">←</span>${bidInput}</div>`
               : `<div class="flex items-center justify-center gap-1">${bidInput}<span class="text-gray-800 dark:text-white">→</span></div>`;
             const usScoreContent = isHistoryCellEditing(idx, "us")
               ? `<input id="history-edit-${idx}-us" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${usValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'us')" onblur="commitHistoryEdit(${idx}, 'us', this.value)" />`
-              : `<button type="button" class="w-full text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUsAttr} score for round ${idx + 1}">${usValue}</button>`;
+              : `<button type="button" class="history-edit-cell w-full text-left text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'us')" aria-label="Edit ${labelUsAttr} score for round ${idx + 1}">${usValue}</button>`;
             const demScoreContent = isHistoryCellEditing(idx, "dem")
               ? `<input id="history-edit-${idx}-dem" type="number" inputmode="numeric" class="w-full bg-white/80 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg px-2 py-0.5 text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" value="${demValue}" onkeydown="handleHistoryEditKey(event, ${idx}, 'dem')" onblur="commitHistoryEdit(${idx}, 'dem', this.value)" />`
-              : `<button type="button" class="w-full text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
+              : `<button type="button" class="history-edit-cell w-full text-right text-gray-800 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" onclick="startHistoryEdit(${idx}, 'dem')" aria-label="Edit ${labelDemAttr} score for round ${idx + 1}">${demValue}</button>`;
             return `
               <div class="grid grid-cols-3 gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-xl text-sm border border-gray-200 dark:border-gray-600 transition-shadow">
                 <div class="text-left">${usScoreContent}</div>

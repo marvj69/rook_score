@@ -172,10 +172,12 @@ victoryMethod  = "Set Other Team";
     customBidValue: "",
     enterBidderPoints: false,
     error: "",
+    savedScoreInputStates: { us: null, dem: null },
     accumulatedTime: finalAccumulated,
     startTime: gameFinished ? null : (timerRunning ? state.startTime : null),
     pendingPenalty: null
   });
+  lastRoundCommittedAt = Date.now();
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
 }
@@ -186,15 +188,17 @@ function handleTeamClick(team) {
   let timerJustStarted = false;
   if (state.biddingTeam === team) { // Click active team to deselect
     // Copy before writing: DEFAULT_STATE shares one savedScoreInputStates object with every fresh game.
-    state.savedScoreInputStates = { ...(state.savedScoreInputStates || {}), [team]: { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints, error: state.error } };
+    // The error stays out of the copy so a stale message cannot come back with the bid.
+    state.savedScoreInputStates = { ...(state.savedScoreInputStates || {}), [team]: { bidAmount: state.bidAmount, customBidValue: state.customBidValue, showCustomBid: state.showCustomBid, enterBidderPoints: state.enterBidderPoints } };
     updateState({ biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: ""});
   } else { // Select a new team
     timerJustStarted = ensureCurrentGameTimerStarted();
-    state.savedScoreInputStates = { ...(state.savedScoreInputStates || {}), [team === "us" ? "dem" : "us"]: null }; // Clear other team's saved input
+    // Tapping the team again right after deselecting it brings its bid back. Take that copy now and
+    // clear both, or it would reappear as the "chosen" bid in every later round.
+    const restoredInput = state.savedScoreInputStates?.[team];
+    state.savedScoreInputStates = { us: null, dem: null };
     let newTeamState = { biddingTeam: team, bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "" };
-    if (state.savedScoreInputStates?.[team]) { // Restore if previously selected
-      newTeamState = { ...newTeamState, ...state.savedScoreInputStates[team] };
-    }
+    if (restoredInput) newTeamState = { ...newTeamState, ...restoredInput, error: "" };
     updateState(newTeamState);
   }
   ephemeralCustomBid = ""; ephemeralPoints = ""; // Clear ephemeral inputs on team switch
@@ -205,21 +209,35 @@ function handleBidSelect(bid) {
   closeScoreKeypad(true);
   if (bid === "other") {
     // Keep the custom bid typed earlier, and keep it selected when it is still a legal bid.
-    const restoredCustomBid = validateBid(ephemeralCustomBid) === "" && !BLOCKED_BIDS.has(Number(ephemeralCustomBid)) ? ephemeralCustomBid : "";
+    const restoredCustomBid = isUsableBid(ephemeralCustomBid) ? ephemeralCustomBid : "";
     updateState({ showCustomBid: true, bidAmount: restoredCustomBid, customBidValue: ephemeralCustomBid });
   } else {
     updateState({ showCustomBid: false, bidAmount: String(bid), customBidValue: "" });
   }
   // Update last bid info only if a numeric bid is made or custom bid is valid
-  const bidVal = (bid === "other" && validateBid(state.customBidValue)==="") ? state.customBidValue : (bid !== "other" ? String(bid) : null);
+  const bidVal = (bid === "other" && isUsableBid(state.customBidValue)) ? state.customBidValue : (bid !== "other" ? String(bid) : null);
   if (bidVal) updateState({ lastBidAmount: bidVal, lastBidTeam: state.biddingTeam });
   else updateState({ lastBidAmount: null, lastBidTeam: null}); // Clear if "other" is selected with no valid custom bid yet
 
   // Save current bid selection to localStorage
   saveCurrentGameState();
 }
-// numbers that are technically "valid JSON" but we *don't* want to trigger a re-render for
+// Typing a custom bid digit by digit passes through 5, 10, and 15 on the way to 50, 100, or 150,
+// so those three are never taken as a finished bid.
 const BLOCKED_BIDS = new Set([5, 10, 15]);
+
+// The one test for "this typed value is a bid the game accepts"; validateBid alone lets 5, 10, 15 through.
+function isUsableBid(value) {
+  const text = String(value ?? "").trim();
+  return text !== "" && validateBid(text) === "" && !BLOCKED_BIDS.has(Number(text));
+}
+
+// Why a typed custom bid is refused, or "" when it is fine (or nothing is typed yet).
+function getCustomBidProblem(value) {
+  const text = String(value ?? "").trim();
+  if (!text || isUsableBid(text)) return "";
+  return validateBid(text) || "Bids start at 20.";
+}
 
 function applyInAppNumericKey(currentValue, key, maxLength = 3) {
   const normalizedValue = String(currentValue ?? "").replace(/\D/g, "").slice(0, maxLength);
@@ -237,7 +255,7 @@ function setCustomBidInputValue(value) {
   recordCurrentGameTimerActivity();
   const valStr = String(value ?? "").trim();
   ephemeralCustomBid = valStr;
-  const isValidBid = validateBid(valStr) === "" && !BLOCKED_BIDS.has(Number(valStr));
+  const isValidBid = isUsableBid(valStr);
 
   updateState({
     customBidValue: valStr,
@@ -450,9 +468,11 @@ victoryMethod  = "Set Other Team";
   updateState({
       rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod: gameFinished ? victoryMethod : null,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
+      savedScoreInputStates: { us: null, dem: null },
       accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null,
       isSubmittingRound: false,
   });
+  lastRoundCommittedAt = Date.now();
   if (gameFinished && theWinner) updateTeamsStatsOnGameEnd(theWinner);
   saveCurrentGameState();
   const analyticsState = {
@@ -499,7 +519,9 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
   let pointsVal = pointsInputEl?.value ?? ephemeralPoints ?? "";
   if (!String(pointsVal).trim()) pointsVal = "0";
 
-  if (!biddingTeam || !bidAmount) { updateState({ error: "Please select bid amount." }); return; }
+  // A second tap on Submit lands after the first one recorded the round: no bid is left, and that is not an error.
+  if (!biddingTeam) return;
+  if (!bidAmount) { updateState({ error: "Please select bid amount." }); return; }
   const bidError = validateBid(bidAmount);
   const pointsError = validatePoints(pointsVal);
   if (bidError || pointsError) { updateState({ error: bidError || pointsError }); return; }
@@ -573,7 +595,7 @@ function handleUndo() {
       newLastBid = String(newRounds[newRounds.length-1].bidAmount);
       newLastBidTeam = newRounds[newRounds.length-1].biddingTeam;
   }
-  const nextState = { rounds: newRounds, undoneRounds: newUndoneRounds, gameOver: false, winner: null, victoryMethod: null, lastBidAmount: newLastBid, lastBidTeam: newLastBidTeam };
+  const nextState = { rounds: newRounds, undoneRounds: newUndoneRounds, gameOver: false, winner: null, victoryMethod: null, lastBidAmount: newLastBid, lastBidTeam: newLastBidTeam, savedScoreInputStates: { us: null, dem: null } };
   if (!newRounds.length) {
       nextState.startTime = null;
       nextState.timerStarted = false;
@@ -641,7 +663,7 @@ function handleRedo() {
       timerUpdates.timerLastActivityAt = resumedAt;
       timerUpdates.timerPaused = false;
   }
-  updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam, ...timerUpdates });
+  updateState({ rounds: newRounds, undoneRounds: newUndoneRounds, gameOver, winner, victoryMethod, lastBidAmount: String(redoRound.bidAmount), lastBidTeam: redoRound.biddingTeam, savedScoreInputStates: { us: null, dem: null }, ...timerUpdates });
   if (gameOver && winner) updateTeamsStatsOnGameEnd(winner);
   saveCurrentGameState();
 }

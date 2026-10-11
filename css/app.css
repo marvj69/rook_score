@@ -1120,6 +1120,22 @@ button:focus-visible {
   letter-spacing: 0;
   text-transform: none;
 }
+.score-keypad-sheet__message {
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 0.75rem;
+  background: rgba(254, 226, 226, 0.95);
+  color: #991b1b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+.dark .score-keypad-sheet__message {
+  background: rgba(127, 29, 29, 0.55);
+  color: #fecaca;
+}
 .score-keypad-sheet__display {
   width: 100%;
   min-height: 3.25rem;
@@ -1200,6 +1216,14 @@ button:focus-visible {
   .score-keypad-sheet--closing {
     animation-duration: 1ms;
   }
+}
+/* History cells are about 20px tall; an invisible halo brings each tap target to roughly 34px
+   without changing the row layout (the rows keep 24px between neighbouring buttons). */
+.history-edit-cell { position: relative; }
+.history-edit-cell::after {
+  content: "";
+  position: absolute;
+  inset: -7px -4px;
 }
 .team-score-value {
   transition: transform 160ms var(--bounce), filter 160ms var(--smooth);
