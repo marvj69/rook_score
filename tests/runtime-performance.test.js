@@ -566,10 +566,12 @@ function runBootScript(stored) {
 test('launch paints saved team colors in the first frame, sanitized like the app', () => {
   const { style } = runBootScript({ customUsColor: '"#16A34A"', customDemColor: '"f90"' });
   assert.equal(style.id, 'rookBootColors');
-  assert.equal(style.textContent, 'body{--primary-color:#16A34A;--accent-color:#ff9900;}');
+  assert.match(style.textContent, /^body\{--primary-color:#16A34A;.*--accent-color:#ff9900;.*\}$/);
   assert.equal(runBootScript({ customUsColor: '"#12"', customDemColor: '"red"' }).style, undefined);
   assert.equal(runBootScript({}).style, undefined);
-  assert.equal(runBootScript({ customDemColor: '"#ef4444"' }).style.textContent, 'body{--accent-color:#ef4444;}');
+  const demOnly = runBootScript({ customDemColor: '"#ef4444"' }).style.textContent;
+  assert.match(demOnly, /--accent-color:#ef4444;/);
+  assert.doesNotMatch(demOnly, /--primary-color/);
   // Initialization owns the colors afterwards; the first-frame copy must go.
   assert.match(read('js/modules/14-initialization-and-exports.js'), /initializeCustomThemeColors\(\);[^\n]*\n\s*document\.getElementById\("rookBootColors"\)\?\.remove\(\);/);
 });

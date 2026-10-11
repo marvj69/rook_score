@@ -38,6 +38,8 @@ const {
   swallowLeakedModalTap,
   deactivateModalEnvironment,
   activateModalEnvironment,
+  getTeamColorTokens,
+  getTeamAvatarInk,
   closePresetEditorModal,
   canShowProbabilityExplanation,
   describeRequestFailure,
@@ -6586,4 +6588,68 @@ test('restored games survive a newer delete from another device that this device
   });
   assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
   assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [restored]);
+});
+
+// --- Team colours stay readable ---
+function contrastBetween(first, second) {
+  const luminance = hex => {
+    const [red, green, blue] = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255)
+      .map(unit => (unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const [light, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+test('team colour tokens leave the default colours alone and fix the ones that cannot carry white text', () => {
+  const blue = getTeamColorTokens('#4f8cff');
+  const red = getTeamColorTokens('#ff5c5c');
+  assert.deepEqual([blue.ink, red.ink], ['#ffffff', '#ffffff']);
+  assert.equal(blue.text, '#4f8cff', 'a colour that already reads as text is not lifted');
+  assert.equal(red.text, '#ff5c5c');
+  assert.equal(blue.action, '#3964bd', 'matches the former color-mix(68% blue, 32% #0a1030) button colour');
+
+  for (const light of ['#ffffff', '#ffeb3b', '#fde047', '#ffd700', '#a7f3d0']) {
+    const tokens = getTeamColorTokens(light);
+    assert.equal(tokens.ink, '#0b1020', `${light} wears dark text`);
+    assert.ok(contrastBetween(light, tokens.ink) >= 4.5, `${light} reads with its ink`);
+    assert.ok(contrastBetween(tokens.action, '#ffffff') >= 4.5, `${light} still gives white button text 4.5:1`);
+  }
+  for (const dark of ['#000000', '#0b1020', '#1e293b', '#111827', '#312e81']) {
+    const tokens = getTeamColorTokens(dark);
+    assert.equal(tokens.ink, '#ffffff');
+    assert.ok(contrastBetween(tokens.text, '#12183a') >= 4.5, `${dark} is lifted until it reads on the dark glass`);
+  }
+  assert.equal(getTeamColorTokens('not a colour'), null);
+  assert.equal(getTeamAvatarInk('#4f8cff', '#ff5c5c'), '#ffffff');
+  assert.equal(getTeamAvatarInk('#ffffff', '#ffeb3b'), '#0b1020', 'initials on a pale gradient go dark');
+});
+
+test('the launch script and the app derive the same readable colours', () => {
+  const bootScript = readFileSync(path.join(repoRoot, 'index.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+  const boot = stored => {
+    const styles = [];
+    vm.runInNewContext(bootScript, {
+      localStorage: { getItem: key => stored[key] ?? null },
+      document: {
+        documentElement: { classList: { add() {}, contains: () => false, remove() {} } },
+        createElement: () => ({}),
+        head: { appendChild: style => styles.push(style) },
+      },
+      setTimeout: () => {},
+    });
+    return Object.fromEntries((styles[0]?.textContent || '').replace(/^body\{|\}$/g, '').split(';').filter(Boolean).map(rule => rule.split(':')));
+  };
+  for (const [us, dem] of [['#16a34a', '#f90'], ['#ffeb3b', '#000000'], ['#4f8cff', '#ff5c5c'], ['#ffffff', '#0b1020'], ['#7f1d1d', '#a7f3d0']]) {
+    const painted = boot({ customUsColor: JSON.stringify(us), customDemColor: JSON.stringify(dem) });
+    const primary = getTeamColorTokens(sanitizeHexColor(us));
+    const accent = getTeamColorTokens(sanitizeHexColor(dem));
+    assert.deepEqual(
+      [painted['--primary-ink'], painted['--primary-text'], painted['--primary-action'], painted['--accent-ink'], painted['--accent-text'], painted['--avatar-ink']],
+      [primary.ink, primary.text, primary.action, accent.ink, accent.text, getTeamAvatarInk(us, dem)],
+      `${us} / ${dem}`,
+    );
+  }
+  assert.deepEqual(boot({}), {}, 'nothing is painted without a saved colour');
+  assert.equal(boot({ customDemColor: '"#ffeb3b"' })['--primary-ink'], undefined, 'an untouched side keeps the stylesheet defaults');
 });

@@ -191,6 +191,82 @@ function sanitizeHexColor(colorString) {
     : candidate.toLowerCase();
 }
 
+// --- Readable text for any team colour ---
+// Players pick any colour for each side, so the app cannot assume white text works on it, or that the
+// colour itself reads as text on the dark glass. Each colour gets companions, set on the page whenever
+// the colour is (and from the first frame by the boot script in index.html, which mirrors this):
+//   --primary-ink / --accent-ink   text to put ON the colour (white, or near-black on light colours)
+//   --primary-text / --accent-text the colour as text ON the dark surface (lifted when it is too dark)
+//   --primary-action               the primary deepened until white button text reads on it (AA)
+//   --avatar-ink                   initials on the avatar gradient, which blends both colours
+// Colours that already read (the defaults, any mid-tone) come through unchanged.
+const TEAM_TEXT_SURFACE_LUMINANCE = 0.0108; // #12183a, the dark glass team-coloured text sits on
+const TEAM_INK_LIGHT = "#ffffff";
+const TEAM_INK_DARK = "#0b1020";
+const TEAM_INK_WHITE_MIN_CONTRAST = 2.5; // below this white text is washed out and dark text takes over
+const TEAM_AVATAR_WHITE_MIN_CONTRAST = 1.8; // initials carry a text shadow, so they tolerate a little less
+
+function getTeamColorChannels(hex) {
+  const clean = sanitizeHexColor(hex);
+  return clean ? [1, 3, 5].map(index => parseInt(clean.slice(index, index + 2), 16)) : null;
+}
+function getTeamColorLuminance(channels) {
+  const [red, green, blue] = channels.map(value => {
+    const unit = value / 255;
+    return unit <= 0.03928 ? unit / 12.92 : Math.pow((unit + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+function getTeamColorContrast(first, second) {
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+// Like color-mix(in srgb, base, other weight%): the share of `other` is `weight` (0 to 1).
+function mixTeamColor(base, other, weight) {
+  const from = getTeamColorChannels(base);
+  const to = getTeamColorChannels(other);
+  const hex = value => Math.round(value).toString(16).padStart(2, "0");
+  return `#${[0, 1, 2].map(i => hex(from[i] * (1 - weight) + to[i] * weight)).join("")}`;
+}
+function getTeamColorTokens(hex) {
+  const color = sanitizeHexColor(hex);
+  if (!color) return null;
+  const luminance = getTeamColorLuminance(getTeamColorChannels(color));
+  const ink = getTeamColorContrast(1, luminance) >= TEAM_INK_WHITE_MIN_CONTRAST ? TEAM_INK_LIGHT : TEAM_INK_DARK;
+  let text = color;
+  for (let weight = 0.1; weight <= 1 && getTeamColorContrast(getTeamColorLuminance(getTeamColorChannels(text)), TEAM_TEXT_SURFACE_LUMINANCE) < 4.5; weight += 0.1) {
+    text = mixTeamColor(color, "#ffffff", weight);
+  }
+  let action = mixTeamColor(color, "#0a1030", 0.32);
+  for (let weight = 0.36; weight <= 0.96 && getTeamColorContrast(1, getTeamColorLuminance(getTeamColorChannels(action))) < 4.5; weight += 0.04) {
+    action = mixTeamColor(color, "#0a1030", weight);
+  }
+  return { ink, text, action };
+}
+function getTeamAvatarInk(usHex, demHex) {
+  const readsWithWhite = hex => {
+    const color = sanitizeHexColor(hex);
+    return !color || getTeamColorContrast(1, getTeamColorLuminance(getTeamColorChannels(mixTeamColor(color, "#ffffff", 0.22)))) >= TEAM_AVATAR_WHITE_MIN_CONTRAST;
+  };
+  return readsWithWhite(usHex) && readsWithWhite(demHex) ? TEAM_INK_LIGHT : TEAM_INK_DARK;
+}
+// Derives the companions from the team colours on the page right now.
+function syncTeamColorTokens() {
+  const body = document.getElementById("bodyRoot");
+  if (!body || !body.style || typeof body.style.setProperty !== "function" || typeof body.style.getPropertyValue !== "function") return;
+  const root = getComputedStyle(document.documentElement);
+  const pick = (name, fallback) => sanitizeHexColor(body.style.getPropertyValue(name)) || sanitizeHexColor(root.getPropertyValue(name)) || fallback;
+  const us = pick("--primary-color", "#4f8cff");
+  const dem = pick("--accent-color", "#ff5c5c");
+  const usTokens = getTeamColorTokens(us);
+  const demTokens = getTeamColorTokens(dem);
+  body.style.setProperty("--primary-ink", usTokens.ink);
+  body.style.setProperty("--primary-text", usTokens.text);
+  body.style.setProperty("--primary-action", usTokens.action);
+  body.style.setProperty("--accent-ink", demTokens.ink);
+  body.style.setProperty("--accent-text", demTokens.text);
+  body.style.setProperty("--avatar-ink", getTeamAvatarInk(us, dem));
+}
+
 function initializeCustomThemeColors() {
   const rootStyles = getComputedStyle(document.documentElement);
   const defaultUsColor = rootStyles.getPropertyValue('--primary-color').trim() || "#3b82f6";
@@ -230,6 +306,7 @@ function initializeCustomThemeColors() {
     if (body) body.style.setProperty('--accent-color', defaultDemColor);
     if (demPicker) demPicker.value = defaultDemColor;
   }
+  syncTeamColorTokens();
   updatePreview(); // Ensure preview matches
 }
 function applyCustomThemeColors() {
@@ -254,17 +331,22 @@ function applyCustomThemeColors() {
     removeLocalStorageKey('customDemColor');
   }
 
+  syncTeamColorTokens();
   closeThemeModal(null); // Pass null if event is not available or needed
 }
+// The look the app ships with (the stylesheet's own team colours), not a copy that can drift from it.
+function getDefaultTeamColors() {
+  const root = getComputedStyle(document.documentElement);
+  return {
+    us: sanitizeHexColor(root.getPropertyValue('--primary-color')) || "#4f8cff",
+    dem: sanitizeHexColor(root.getPropertyValue('--accent-color')) || "#ff5c5c",
+  };
+}
+// Like every other control here, Reset only moves the pickers; "Nothing changes until you tap Apply".
 function resetThemeColors() {
-  const defaultUs = "#3b82f6", defaultDem = "#ef4444";
-  const bodyStyle = document.getElementById('bodyRoot').style;
-  bodyStyle.setProperty('--primary-color', defaultUs);
-  bodyStyle.setProperty('--accent-color', defaultDem);
-  removeLocalStorageKey('customUsColor');
-  removeLocalStorageKey('customDemColor');
-  document.getElementById('usColorPicker').value = defaultUs;
-  document.getElementById('demColorPicker').value = defaultDem;
+  const defaults = getDefaultTeamColors();
+  document.getElementById('usColorPicker').value = defaults.us;
+  document.getElementById('demColorPicker').value = defaults.dem;
   updatePreview();
 }
 function hslToHex(h, s, l) { // Helper for random colors
@@ -300,7 +382,11 @@ function updatePreview() {
   if (!modal || !colors.us || !colors.dem) return;
   for (const team of ['us', 'dem']) {
     modal.style.setProperty(`--preview-${team}`, colors[team]);
-    modal.querySelectorAll(`[data-theme-team="${team}"]`).forEach(el => el.style.setProperty('--team', colors[team]));
+    const previewInk = (getTeamColorTokens(colors[team]) || { ink: TEAM_INK_LIGHT }).ink;
+    modal.querySelectorAll(`[data-theme-team="${team}"]`).forEach(el => {
+      el.style.setProperty('--team', colors[team]);
+      el.style.setProperty('--team-ink', previewInk);
+    });
     document.getElementById(`${team}ColorHex`).textContent = colors[team].toUpperCase();
   }
   modal.querySelectorAll('.theme-preset').forEach(button => {

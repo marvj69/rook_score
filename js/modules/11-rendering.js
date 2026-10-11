@@ -68,7 +68,7 @@ function renderApp() {
       const currentBiddingTeamDisplay = escapeHtmlValue(currentBiddingTeamName);
       const currentBidAmountDisplay = escapeHtmlValue(currentBidDisplayAmount);
       const arrow = biddingTeam === "us" ? "←" : "→";
-      const teamColor = biddingTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
+      const teamColor = biddingTeam === "us" ? 'var(--primary-text, var(--primary-color))' : 'var(--accent-text, var(--accent-color))';
       if (isUsableBid(currentBidDisplayAmount)) { // Only display if valid
           lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
       }
@@ -82,7 +82,7 @@ function renderApp() {
       const teamDisplay = escapeHtmlValue(teamName);
       const lastBidAmountDisplay = escapeHtmlValue(lastBidAmount);
       const arrow = lastBidTeam === "us" ? "←" : "→";
-      const teamColor = lastBidTeam === "us" ? 'var(--primary-color)' : 'var(--accent-color)';
+      const teamColor = lastBidTeam === "us" ? 'var(--primary-text, var(--primary-color))' : 'var(--accent-text, var(--accent-color))';
       lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmountDisplay} <span>${arrow}</span></span></div>`;
   }
 
@@ -93,7 +93,7 @@ function renderApp() {
     const currentDealer = getCurrentDealer(state);
     const escapedDealer = escapeHtml(currentDealer);
     dealerRow = `<div class="mt-2 flex flex-row items-center justify-center gap-2">
-      <span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-color);">Dealer: ${escapedDealer}</span>
+      <span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-text, var(--primary-color));">Dealer: ${escapedDealer}</span>
     </div>`;
   }
 
@@ -183,11 +183,12 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
   if (winProb) {
     const prob = teamKey === "us" ? winProb.us : winProb.dem;
     const teamColorVar = teamKey === "us" ? "var(--primary-color)" : "var(--accent-color)";
+    const teamInkVar = teamKey === "us" ? "var(--primary-ink, #FFF)" : "var(--accent-ink, #FFF)";
     const brightness = isSelected ? "brightness(0.7)" : "brightness(0.85)"; // Darken more when selected
     // Inner div for probability text to ensure z-index works with sunken-selected's ::after
     winProbDisplay = `
       <div class="mt-1 text-xs rounded-full px-2 py-1 relative" style="background-color: ${teamColorVar}; filter: ${brightness};">
-        <span class="relative font-medium" style="color: #FFF; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
+        <span class="relative font-medium" style="color: ${teamInkVar}; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
       </div>`;
   }
   const animDelay = teamKey === "us" ? "0s" : "0.1s";
@@ -252,7 +253,7 @@ function renderInAppNumericKeypad(target, label) {
     <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" role="dialog" aria-label="${safeLabel}">
       <div class="score-keypad-sheet__header">
         <span>${escapeHtmlValue(label)}</span>
-        <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Hide ${safeLabel}">Done</button>
+        <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Done, hide ${safeLabel}">Done</button>
       </div>
       ${keypadMessageHtml}
       <input id="scoreKeypadDisplay" type="text" inputmode="none" readonly tabindex="-1" class="score-keypad-sheet__display" value="${displayValueAttr}" placeholder="${displayPlaceholder}" aria-label="${safeLabel} value" aria-readonly="true" aria-live="polite" />
