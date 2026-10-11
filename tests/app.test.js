@@ -27,6 +27,7 @@ const {
   sanitizeHexColor,
   loadCurrentGameState,
   getStateForTests,
+  renderApp,
   getPendingConfirmationForTests,
   openBugReportModal,
   cancelBugReport,
@@ -6652,4 +6653,85 @@ test('the launch script and the app derive the same readable colours', () => {
   }
   assert.deepEqual(boot({}), {}, 'nothing is painted without a saved colour');
   assert.equal(boot({ customDemColor: '"#ffeb3b"' })['--primary-ink'], undefined, 'an untouched side keeps the stylesheet defaults');
+});
+
+// --- Scoreboard layout ---
+function renderScoreboardWith(overrides) {
+  const live = installLiveDocument();
+  try {
+    updateState({
+      ...DEFAULT_STATE,
+      rounds: [{ biddingTeam: 'us', bidAmount: '130', usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } }],
+      undoneRounds: [],
+      ...overrides,
+    });
+    renderApp();
+    return { html: live.get('app').innerHTML, live };
+  } finally {
+    live.restore();
+    updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+  }
+}
+
+test('a long unbroken team name is clipped or wrapped everywhere it appears on the scoreboard', () => {
+  const name = 'W'.repeat(60);
+  const { html } = renderScoreboardWith({ usTeamName: name, demTeamName: 'Dem', biddingTeam: 'us', bidAmount: '130' });
+  assert.match(html, new RegExp(`font-semibold name-clip"[^>]*>${name}<`), 'the Round card clips the bidder');
+  assert.match(html, new RegExp(`name-clip" style="max-width: 9rem;">${name}</span> \\+100`), 'Point Difference clips the leader');
+  assert.match(html, new RegExp(`Enter Bid for <span class="name-clip">${name}</span>`), 'the bid header clips the bidder');
+  assert.match(html, new RegExp(`min-w-0 truncate[^>]*aria-pressed="false">${name}</button>|min-w-0 truncate[^>]*aria-pressed="true">${name}</button>`), 'the points toggle truncates');
+  assert.match(html, /<h2 class="[^"]*truncate max-w-full[^"]*"[^>]*>W+<\/h2>/, 'the team card truncates at the card width');
+  assert.doesNotMatch(html, /max-w-\[100px\]/, 'no fixed width wider than a 320px phone card');
+});
+
+test('the Misdeal button text is dark, since white on yellow cannot be read', () => {
+  const live = installLiveDocument();
+  try {
+    setLocalStorage('misdealHandlingEnabled', true);
+    updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [], dealers: ['A', 'B', 'C', 'D'] });
+    renderApp();
+    assert.match(live.get('app').innerHTML, /bg-yellow-500[^"]*text-gray-900[^"]*">Misdeal<\/button>/);
+  } finally {
+    setLocalStorage('misdealHandlingEnabled', false);
+    live.restore();
+    updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+  }
+});
+
+test('re-rendering keeps a scrolled-back History list where it was, unless a round was added or removed', () => {
+  const live = installLiveDocument();
+  const originalQuery = document.querySelector;
+  try {
+    updateState({
+      ...DEFAULT_STATE,
+      rounds: [{ biddingTeam: 'us', bidAmount: '130', usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } }],
+      undoneRounds: [],
+    });
+    let calls = 0;
+    const before = { scrollTop: 420, dataset: { historyScroll: '1' } };
+    const after = { scrollTop: 0, dataset: {} };
+    document.querySelector = selector => {
+      if (!/data-history-scroll/.test(selector)) return null;
+      calls += 1;
+      return calls === 1 ? before : after;
+    };
+    renderApp();
+    assert.equal(after.scrollTop, 420, 'same number of rounds: the list keeps its place');
+
+    calls = 0;
+    after.scrollTop = 0;
+    before.dataset.historyScroll = '5'; // rounds changed since the last render
+    renderApp();
+    assert.equal(after.scrollTop, 0, 'a new or removed round shows the newest row again');
+
+    calls = 0;
+    before.scrollTop = 0;
+    before.dataset.historyScroll = '1';
+    renderApp();
+    assert.equal(after.scrollTop, 0, 'a list at the top stays there');
+  } finally {
+    document.querySelector = originalQuery;
+    live.restore();
+    updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+  }
 });

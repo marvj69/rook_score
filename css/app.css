@@ -59,6 +59,19 @@ html.app-boot *::after {
   transition: none !important;
 }
 
+/* viewport-fit=cover draws under the notch when a phone is held sideways: keep the scoreboard clear of it.
+   (p-2 / sm:p-4 on the element are the floors.) */
+main#app {
+  padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+}
+@media (min-width: 640px) {
+  main#app {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+}
+
 body.app-content-overflows main#app {
   max-height: calc(100dvh - var(--safe-area-inset-top-effective));
   overflow-y: auto;
@@ -217,6 +230,7 @@ body.liquid-glass :is(.bg-white, .bg-gray-50, .bg-gray-100, .dark\:bg-gray-800, 
 .history-game-timer {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   gap: 0.28rem;
   margin-top: 0.12rem;
   color: rgba(71, 85, 105, 0.72);
@@ -279,6 +293,11 @@ html.dark .history-game-timer__value {
   transform: translateY(-6px);
   pointer-events: none;
   transition: opacity 0.2s var(--smooth), filter 0.2s var(--smooth), transform 0.2s var(--smooth);
+}
+.version-badge::after { /* a 36px-tall badge is a small target; the halo makes it 44px */
+  content: "";
+  position: absolute;
+  inset: -4px;
 }
 .version-badge:focus-visible {
   outline: 3px solid var(--primary-color);
@@ -377,6 +396,12 @@ body.liquid-glass .voice-score-button {
    answer their prompts by voice. It sits below the save toast. */
 .modal-open .voice-score-control {
   z-index: 10010;
+}
+
+/* The mic floats over the bottom-right corner; leave room under the last card so the page can scroll clear of it. */
+body:has(#voiceScoreHost .voice-score-control) main#app,
+body.app-content-overflows:has(#voiceScoreHost .voice-score-control) main#app {
+  padding-bottom: calc(5.5rem + var(--safe-area-inset-bottom-effective));
 }
 
 @media (max-width: 640px) {
@@ -595,6 +620,12 @@ input[type="color"]:focus {
   outline: 3px solid var(--primary-color);
   outline-offset: 3px;
 }
+/* The bars are 32x26; an invisible halo brings the tap target to 52x46. */
+.hamburger-menu::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
 .bar {
   position: absolute;
   width: 32px;
@@ -633,6 +664,7 @@ nav {
   border-bottom-right-radius: var(--radius-lg);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding-left: env(safe-area-inset-left, 0px); /* sideways on a notched phone the drawer starts under the notch */
 }
 nav.show { transform: translateX(0); }
 html.dark nav { background-color: #1a1f3a; }
@@ -805,8 +837,9 @@ body.liquid-glass .settings-switch__input:checked + .settings-switch__track {
 /* Dealer Order Modal */
 .dealer-order-dialog { --seat-a: #a78bfa; --seat-b: #2dd4bf; }
 .dealer-order-header { padding-bottom: 1rem; }
-.dealer-seats { display: grid; gap: 0.5rem; padding: 0 1.125rem 1rem; text-align: left; }
-.dealer-seat { position: relative; }
+/* minmax(0, 1fr): an auto column grows to the inputs' intrinsic width and pushed the whole dialog off a 320px screen. */
+.dealer-seats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; padding: 0 1.125rem 1rem; text-align: left; }
+.dealer-seat { position: relative; min-width: 0; }
 .dealer-seat--a { --seat-color: var(--seat-a); }
 .dealer-seat--b { --seat-color: var(--seat-b); }
 .dealer-seat__row {
@@ -1032,6 +1065,11 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
 .text-primary { color: var(--primary-text, var(--primary-color)) !important; }
 .text-accent  { color: var(--accent-text, var(--accent-color)) !important; }
 
+/* Team and player names are free text: a long single word has to clip or wrap inside its card,
+   not push the card (or the page) wider. */
+.name-fit { min-width: 0; overflow-wrap: anywhere; }
+.name-clip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+
 /* ── Input Focus ── */
 input[type="text"]:focus,
 input[type="number"]:focus,
@@ -1085,6 +1123,11 @@ button:focus-visible {
   box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.32);
   transform: translateX(-50%);
   will-change: transform;
+  /* On a phone held sideways the full keypad is taller than the screen; scroll it, never clip it. */
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .dark .score-keypad-sheet {
   border-color: rgba(148, 163, 184, 0.28);
@@ -1208,6 +1251,21 @@ button:focus-visible {
 .dark .score-keypad-sheet__submit {
   background: #3b82f6;
 }
+/* Short screens (a phone in landscape): tighter keys so the whole keypad, Done and Submit included, fits. */
+@media (max-height: 520px) {
+  .score-keypad-sheet { padding-top: 0.4rem; }
+  .score-keypad-sheet__header { min-height: 1.75rem; padding-bottom: 0.25rem; }
+  .score-keypad-sheet__display { min-height: 2.5rem; margin-bottom: 0.4rem; font-size: 1.25rem; }
+  .score-keypad { gap: 0.35rem; }
+  .score-keypad__key { min-height: 2.25rem; }
+  .score-keypad-sheet__submit { min-height: 2.5rem; margin-top: 0.4rem; }
+}
+/* A small phone held sideways: the sheet reaches the corners where the menu button and version badge sit. */
+@media (max-height: 520px) and (max-width: 640px) {
+  body:has(#scoreKeypadSheet) .hamburger-menu,
+  body:has(#scoreKeypadSheet) #versionBadge,
+  body:has(#scoreKeypadSheet) .voice-score-control { visibility: hidden; }
+}
 @keyframes scoreKeypadSlideUp {
   from { transform: translateX(-50%) translateY(110%); }
   to { transform: translateX(-50%) translateY(0); }
@@ -1248,9 +1306,14 @@ h1 {
   text-shadow: 0 3px 0 rgba(0,0,0,0.2), 0 6px 20px rgba(0,0,0,0.3);
 }
 #app.modal-active {
-  filter: blur(4px) grayscale(0.25) brightness(0.65);
   pointer-events: none;
   user-select: none;
+}
+/* The dimming goes on #app's children, not on #app: a filter turns its element into the containing
+   block for fixed descendants, so the keypad and the game-over card (both rendered inside #app)
+   would jump by the page's scroll offset every time a dialog opened over them. */
+#app.modal-active > * {
+  filter: blur(4px) grayscale(0.25) brightness(0.65);
   transition: filter 0.3s;
 }
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
@@ -1646,6 +1709,16 @@ body.liquid-glass .stats-segmented__option[aria-pressed="true"] { color: #f8fafc
   -webkit-appearance: none; appearance: none; touch-action: manipulation;
 }
 .library-sort__select option { color: #0f172a; }
+
+/* A phone held sideways leaves about 300px: the header alone was two thirds of it, so the list got a sliver. */
+@media (max-height: 520px) {
+  .library-header { padding-bottom: 0.5rem; }
+  .library-header__row { min-height: 40px; margin-bottom: 0.375rem; }
+  .library-segmented { margin-bottom: 0.375rem; }
+  .library-segmented .stats-segmented__option { min-height: 38px; }
+  .library-search, .library-sort { height: 38px; }
+  .library-modal .stats-sheet-grip { display: none; }
+}
 
 /* Scroll area + list */
 .library-scroll {
@@ -2731,7 +2804,7 @@ html.dark body.liquid-glass .theme-swatch .theme-swatch__input,
   .animate-card-pop, .animate-fadeIn, .probability-modal-content { animation: none; }
   .animate-fadeOut { animation: none; opacity: 0; }
   nav { transition: none; }
-  #app.modal-active { transition: none; }
+  #app.modal-active > * { transition: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2983,13 +3056,21 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 .home-score__side { display: flex; flex-direction: column; min-width: 0; }
 .home-score__side--dem { text-align: right; }
 .home-score__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
   font-size: 0.85rem;
   line-height: 1.3;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.85);
+}
+.home-score__side--dem .home-score__name { justify-content: flex-end; }
+/* The name clips with an ellipsis; the winner's trophy sits outside it so a long name cannot swallow it. */
+.home-score__name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .home-score__value {
   font-size: 1.55rem;
@@ -3001,7 +3082,7 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 .home-score__side--us .home-score__value { color: color-mix(in srgb, var(--primary-text, var(--primary-color)) 70%, #ffffff); }
 .home-score__side--dem .home-score__value { color: color-mix(in srgb, var(--accent-text, var(--accent-color)) 70%, #ffffff); }
 .home-card--recent .home-score__value { font-size: 1.2rem; }
-.home-score__side.is-winner .home-score__name::after { content: " \1F3C6"; }
+.home-score__side.is-winner .home-score__name::after { content: "\1F3C6"; flex: none; margin-left: 0.3em; }
 .home-score__vs {
   font-size: 0.72rem;
   font-weight: 800;
@@ -3135,7 +3216,7 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
   .home-tile { column-gap: 0.5rem; padding-inline: 0.55rem; }
   .home-tile__icon { width: 2rem; height: 2rem; border-radius: 0.65rem; }
 }
-@media (max-width: 340px) {
+@media (max-width: 340px), (orientation: landscape) and (max-height: 540px) and (max-width: 720px) {
   .home-tile { grid-template-columns: minmax(0, 1fr); padding-inline: 0.75rem; }
   .home-tile__icon { display: none; }
 }
@@ -3146,6 +3227,7 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
   justify-content: center;
   flex-wrap: wrap;
   column-gap: 0.25rem;
+  container-type: inline-size; /* so the dots can ask whether the links still fit on one row */
 }
 .home-link {
   min-height: 2.75rem;
@@ -3164,10 +3246,14 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 .home-link:focus { outline: none; }
 .home-link:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 0.5rem; }
 .home-footer__dot {
+  display: none; /* a dot left dangling at the end of a wrapped row looks like a typo */
   width: 0.25rem;
   height: 0.25rem;
   border-radius: var(--radius-full);
   background: rgba(148, 163, 184, 0.45);
+}
+@container (min-width: 20.5rem) {
+  .home-footer__dot { display: block; }
 }
 
 /* Short screens (small phones with the browser toolbars showing): tighten the
@@ -3276,12 +3362,19 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   padding: 1rem 1.75rem;
   text-align: center;
   scroll-snap-align: center;
   scroll-snap-stop: always;
+  /* Centred when it fits, scrollable from the top when it does not (justify-content: center would
+     push the overflow above the first line, where it cannot be reached). */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+.onboarding__slide::-webkit-scrollbar { display: none; }
+.onboarding__slide > :first-child { margin-top: auto; }
+.onboarding__slide > :last-child { margin-bottom: auto; }
 .onboarding__art {
   display: flex;
   align-items: center;
@@ -3443,4 +3536,29 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 @media (max-height: 600px) {
   .onboarding__art { height: 7rem; margin-bottom: 1rem; transform: scale(0.8); }
   .onboarding__title { font-size: 1.45rem; }
+}
+/* A phone held sideways: art on the left, words on the right, and the controls on one row. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .onboarding__top { position: absolute; top: calc(var(--safe-area-inset-top-effective) + 0.25rem); right: calc(0.75rem + env(safe-area-inset-right, 0px)); z-index: 2; padding: 0; }
+  .onboarding__slide {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-rows: 1fr auto auto auto 1fr;
+    column-gap: 1.5rem;
+    align-items: center;
+    justify-items: start;
+    padding: 0.5rem max(1.5rem, 5vw);
+    text-align: left;
+  }
+  .onboarding__slide > :first-child,
+  .onboarding__slide > :last-child { margin-block: 0; }
+  .onboarding__art { grid-column: 1; grid-row: 1 / -1; justify-self: center; height: auto; margin: 0; transform: none; }
+  .onboarding__eyebrow { grid-column: 2; grid-row: 2; }
+  .onboarding__title { grid-column: 2; grid-row: 3; font-size: 1.4rem; }
+  .onboarding__body { grid-column: 2; grid-row: 4; margin-top: 0.4rem; font-size: 0.95rem; line-height: 1.4; }
+  .onboarding__bottom { flex-direction: row; justify-content: center; gap: 1.25rem; padding: 0.25rem 1.25rem 0.6rem; }
+  .onboarding__next { width: auto; min-width: 12rem; min-height: 2.75rem; }
+}
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 700px) {
+  .onboarding__art { zoom: 0.85; } /* the art is wider than its half of a 568px-wide screen */
 }

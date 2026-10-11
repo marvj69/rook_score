@@ -617,6 +617,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getTeamColorTokens,
     getTeamAvatarInk,
     syncTeamColorTokens,
+    renderApp,
     closePresetEditorModal,
     canShowProbabilityExplanation,
     describeRequestFailure,

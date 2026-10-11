@@ -70,7 +70,7 @@ function renderApp() {
       const arrow = biddingTeam === "us" ? "←" : "→";
       const teamColor = biddingTeam === "us" ? 'var(--primary-text, var(--primary-color))' : 'var(--accent-text, var(--accent-color))';
       if (isUsableBid(currentBidDisplayAmount)) { // Only display if valid
-          lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
+          lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold name-clip\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
       }
   }
   // If not, show "Last Bid" from the last completed round
@@ -83,7 +83,7 @@ function renderApp() {
       const lastBidAmountDisplay = escapeHtmlValue(lastBidAmount);
       const arrow = lastBidTeam === "us" ? "←" : "→";
       const teamColor = lastBidTeam === "us" ? 'var(--primary-text, var(--primary-color))' : 'var(--accent-text, var(--accent-color))';
-      lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold\" style=\"color: ${teamColor};\">${teamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmountDisplay} <span>${arrow}</span></span></div>`;
+      lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Last Bid: <span class=\"font-semibold name-clip\" style=\"color: ${teamColor};\">${teamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${lastBidAmountDisplay} <span>${arrow}</span></span></div>`;
   }
 
 
@@ -93,7 +93,7 @@ function renderApp() {
     const currentDealer = getCurrentDealer(state);
     const escapedDealer = escapeHtml(currentDealer);
     dealerRow = `<div class="mt-2 flex flex-row items-center justify-center gap-2">
-      <span class="inline-block px-3 py-1 text-xs font-medium rounded-full" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-text, var(--primary-color));">Dealer: ${escapedDealer}</span>
+      <span class="inline-block px-3 py-1 text-xs font-medium rounded-full max-w-full truncate" style="background-color: color-mix(in srgb, var(--primary-color) 20%, transparent); border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent); color: var(--primary-text, var(--primary-color));">Dealer: ${escapedDealer}</span>
     </div>`;
   }
 
@@ -107,16 +107,23 @@ function renderApp() {
   // Show "Misdeal" button if dealers exist, setting is enabled, and game hasn't started bidding yet
   const misdealHandlingEnabled = !!getLocalStorage(MISDEAL_HANDLING_KEY, false);
   const misdealButton = (hasDealers && misdealHandlingEnabled && !biddingTeam && !gameOver)
-    ? `<button onclick="handleMisdeal()" class="px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-white rounded-md text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm whitespace-nowrap">Misdeal</button>`
+    ? `<button onclick="handleMisdeal()" class="px-2.5 py-1 bg-yellow-500 dark:bg-yellow-600 text-gray-900 rounded-md text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-sm whitespace-nowrap">Misdeal</button>`
     : "";
   if (dealerRow && misdealButton) {
     dealerRow = dealerRow.replace("</div>", `${misdealButton}</div>`);
   }
 
+  // Rebuilding the page would send a scrolled-back History list to the top on every tap. Keep its place
+  // unless the number of rounds changed, when the newest round (the first row) is what should show.
+  const historyList = document.querySelector?.("#app [data-history-scroll]");
+  const keptHistoryScroll = historyList && historyList.scrollTop > 0
+    ? { top: historyList.scrollTop, rounds: Number(historyList.dataset?.historyScroll) }
+    : null;
+
   document.getElementById("app").innerHTML = `
     <div class="text-center space-y-2">
       <h1 class="font-extrabold text-5xl sm:text-6xl text-gray-800 dark:text-white" style="text-shadow: 0 4px 0 rgba(0,0,0,0.2), 0 6px 20px rgba(0,0,0,0.3);">Rook!</h1>
-      <p class="text-md sm:text-lg text-gray-600 dark:text-white font-semibold">Tap a team to start a bid!</p>
+      <p class="sm:text-lg text-gray-600 dark:text-white font-semibold">Tap a team to start a bid!</p>
       ${dealerEntryButton}
       ${dealerRow}
     </div>
@@ -135,6 +142,10 @@ function renderApp() {
         ? renderInAppNumericKeypad("points", "Points keypad")
         : ""}
   `;
+  if (keptHistoryScroll && keptHistoryScroll.rounds === rounds.length) {
+    const nextList = document.querySelector("#app [data-history-scroll]");
+    if (nextList) nextList.scrollTop = keptHistoryScroll.top;
+  }
   updateCurrentGameTimerDisplay();
   scheduleViewportCompatibilitySync();
   syncHomeScreenWithGame();
@@ -187,7 +198,7 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
     const brightness = isSelected ? "brightness(0.7)" : "brightness(0.85)"; // Darken more when selected
     // Inner div for probability text to ensure z-index works with sunken-selected's ::after
     winProbDisplay = `
-      <div class="mt-1 text-xs rounded-full px-2 py-1 relative" style="background-color: ${teamColorVar}; filter: ${brightness};">
+      <div class="mt-1 text-xs rounded-full px-2 py-1 relative whitespace-nowrap w-fit mx-auto" style="background-color: ${teamColorVar}; filter: ${brightness};">
         <span class="relative font-medium" style="color: ${teamInkVar}; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
       </div>`;
   }
@@ -198,8 +209,8 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
     class="${colorClass} ${selectedEffect} threed text-white cursor-pointer transition-all flex flex-col items-center justify-center flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32 p-2${scorePreviewClass}${animation.className}"${animation.attrs}
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
-    <div class="text-center">
-<h2 class="text-base sm:text-xl font-bold truncate max-w-[100px] sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
+    <div class="text-center w-full min-w-0">
+<h2 class="text-base sm:text-xl font-bold truncate max-w-full mx-auto sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
 <p id="teamScore-${teamKey}" class="team-score-value text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);" aria-live="polite" aria-atomic="true">${score}</p>
 ${winProbDisplay}
     </div>
@@ -209,7 +220,7 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
   const animation = getOneShotCardPopAnimation(`round-card:${roundNumber}`, { delay: "0.05s" });
   return `
     <div class="bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-600 shadow-md threed flex flex-col items-center justify-center p-3 flex-1 min-w-[calc(33%-1rem)] sm:min-w-0 w-auto h-32${animation.className}"${animation.attrs}>
-      <div class="text-center space-y-1">
+      <div class="text-center space-y-1 w-full min-w-0">
         <h2 class="text-lg font-extrabold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Round</h2>
         <p class="text-3xl font-black text-gray-900 dark:text-white" style="text-shadow: 0 3px 0 rgba(0,0,0,0.15);">${roundNumber}</p>
         ${lastBidDisplayHtml}
@@ -285,9 +296,9 @@ function renderScoreInputCard() {
   const penaltyBtnOnClick = penaltyActive ? 'undoPenaltyFlag()' : 'handleCheatFlag()';
   return `
     <div class="${fadeClass}bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
-      <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex justify-between items-center">
-        <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">Enter Bid for ${biddingTeamDisplayText}</h2>
-        <div class="flex space-x-2">
+      <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex flex-wrap justify-between items-center gap-x-2 gap-y-2">
+        <h2 class="text-lg font-extrabold text-gray-800 dark:text-white name-fit" style="flex: 1 1 6.5rem;">Enter Bid for <span class="name-clip">${biddingTeamDisplayText}</span></h2>
+        <div class="flex space-x-2 shrink-0">
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>
           <button type="button"
@@ -347,12 +358,12 @@ function renderPointsInput() {
       <div>
         <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">Enter Points For</label>
         <div class="flex gap-3">
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
-          <button type="button" class="flex-1 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
+          <button type="button" class="flex-1 min-w-0 truncate rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
+          <button type="button" class="flex-1 min-w-0 truncate rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
         </div>
       </div>
       <div>
-        <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">${labelDisplay}</label>
+        <label for="pointsInput" class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white name-fit">${labelDisplay}</label>
         <input id="pointsInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "points"}" value="${ephemeralPointsAttr}" placeholder="Tap to enter points" onclick="openScoreKeypad('points')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('points'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
         <button type="submit" class="mt-3 w-full bg-blue-600 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:focus:ring-blue-400 threed">Submit Round</button>
       </div>
@@ -547,11 +558,8 @@ function renderHistoryCard() {
   const showProbabilityButton = state.showWinProbability && !state.gameOver && rounds.length > 0;
   const currentTotals = getLastRunningTotals();
   const pointDiffRaw = currentTotals.us - currentTotals.dem;
-  const pointDiffDisplay = pointDiffRaw > 0
-    ? `${labelUsDisplay} +${pointDiffRaw}`
-    : pointDiffRaw < 0
-      ? `${labelDemDisplay} +${Math.abs(pointDiffRaw)}`
-      : "Tied";
+  const pointDiffLeader = `<span class="name-clip" style="max-width: 9rem;">${pointDiffRaw > 0 ? labelUsDisplay : labelDemDisplay}</span>`;
+  const pointDiffDisplay = pointDiffRaw === 0 ? "Tied" : `${pointDiffLeader} +${Math.abs(pointDiffRaw)}`;
   const pointDiffColorClass = pointDiffRaw > 0
     ? "text-primary"
     : pointDiffRaw < 0
@@ -583,11 +591,11 @@ function renderHistoryCard() {
     <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-start justify-between gap-3">
-          <div>
+          <div class="shrink-0">
             <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>
             ${renderCurrentGameTimer()}
           </div>
-          <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+          <p class="text-sm font-medium text-gray-600 dark:text-gray-300 text-right name-fit">
             Point Difference:
             <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>
           </p>
@@ -598,7 +606,7 @@ function renderHistoryCard() {
           <div class="text-right truncate">${labelDemDisplay}</div>
         </div>
       </div>
-      <div class="p-4 max-h-60 overflow-y-auto no-scrollbar">
+      <div class="p-4 max-h-60 overflow-y-auto no-scrollbar" data-history-scroll="${rounds.length}">
         <div class="space-y-2">
           ${getHistoryRoundsForDisplay(rounds).map(({ round, idx }) => {
             const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);

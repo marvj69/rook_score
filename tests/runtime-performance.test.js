@@ -671,7 +671,7 @@ test('analytics replays early local-play events through its existing privacy fil
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 266000, 70500], // Home/onboarding, early initialization, Delete All Game Data, and the UI audit fixes; statistics load on demand
+    ['js/app.bundle.js', 270000, 71000], // Home/onboarding, early initialization, Delete All Game Data, and the UI audit fixes; statistics load on demand
     ['js/voice-score.bundle.js', 60000, 17000],
     ['js/probability-explanation.bundle.js', 26000, 8800],
     ['css/probability-explanation.css', 12000, 2800],
@@ -771,3 +771,32 @@ test('Pages ships every local precache asset and the runtime model requested by 
     assert.equal(copiedFiles.includes(file), true, `${file} is deployed`);
   }
 });
+
+// The body of the first rule whose selector list is exactly `selector`.
+function cssRuleBody(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = css.match(new RegExp(`(?:^|[}/])\\s*${escaped}\\s*\\{([^}]*)\\}`));
+  assert.ok(match, `rule ${selector} exists`);
+  return match[1].replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+test('layout guards: nothing filters #app itself, and short or narrow screens cannot clip a dialog', () => {
+  const css = read('css/app.css');
+  // A filter makes #app the containing block of fixed descendants (the keypad, the game-over card),
+  // which then jump by the page's scroll offset whenever a dialog opens over them.
+  assert.doesNotMatch(cssRuleBody(css, '#app.modal-active'), /filter/);
+  assert.match(cssRuleBody(css, '#app.modal-active > *'), /filter:\s*blur/);
+  // An auto grid column grows to the inputs' intrinsic width and pushes the dialog off a 320px screen.
+  assert.match(cssRuleBody(css, '.dealer-seats'), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  // The full keypad is taller than a phone held sideways.
+  const sheet = cssRuleBody(css, '.score-keypad-sheet');
+  assert.match(sheet, /max-height:\s*100dvh/);
+  assert.match(sheet, /overflow-y:\s*auto/);
+  // Onboarding slides used to clip their content, top and bottom, on a short screen.
+  assert.match(cssRuleBody(css, '.onboarding__slide'), /overflow-y:\s*auto/);
+  assert.doesNotMatch(cssRuleBody(css, '.onboarding__slide'), /justify-content:\s*center/);
+  // Long single-word names clip or wrap instead of widening their card.
+  assert.match(cssRuleBody(css, '.name-fit'), /overflow-wrap:\s*anywhere/);
+  assert.match(cssRuleBody(css, '.name-clip'), /text-overflow:\s*ellipsis/);
+});
+

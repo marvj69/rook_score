@@ -134,7 +134,7 @@ function getLatestFrozenGameEntry() {
 function buildHomeScoreLine(usName, usScore, demName, demScore, { winner = null } = {}) {
   const side = (key, name, score) => `
     <span class="home-score__side home-score__side--${key}${winner === key ? " is-winner" : ""}">
-      <span class="home-score__name">${escapeHtmlValue(name)}</span>
+      <span class="home-score__name"><span class="home-score__name-text">${escapeHtmlValue(name)}</span></span>
       <span class="home-score__value">${escapeHtmlValue(score)}</span>
     </span>`;
   return `<span class="home-score">${side("us", usName, usScore)}<span class="home-score__vs" aria-hidden="true">vs</span>${side("dem", demName, demScore)}</span>`;
