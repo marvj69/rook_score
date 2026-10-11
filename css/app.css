@@ -28,6 +28,10 @@ html {
   background-color: var(--app-status-bar-color);
   color-scheme: dark;
 }
+/* initializeRookApp waits for this: it proves the full stylesheet is in effect. It must stay out of the
+   inline startup CSS, which the build fills from the shared selectors (:root, html, ...) and Home rules,
+   so it hangs off a selector those never list. */
+html[lang] { --rook-styles: 1; }
 
 body {
   padding-top: var(--safe-area-inset-top-effective);

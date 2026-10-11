@@ -24,6 +24,8 @@ function createRuntime(bundled, readyState = 'loading') {
   let now = 100000;
   let nextTimer = 0;
   let measurements = 0;
+  let stylesApplied = true; // what getComputedStyle reports for the --rook-styles marker
+  const timeouts = [];
   function element() {
     const classes = new Set();
     return {
@@ -74,11 +76,11 @@ function createRuntime(bundled, readyState = 'loading') {
     matchMedia: () => ({ matches: false, addEventListener: noop }),
     getComputedStyle: () => {
       measurements += 1;
-      return { paddingTop: '0', getPropertyValue: () => '0' };
+      return { paddingTop: '0', getPropertyValue: name => (name === '--rook-styles' ? (stylesApplied ? '1' : '') : '0') };
     },
     Date: class extends Date { static now() { return now; } },
     requestAnimationFrame: callback => frames.push(callback),
-    setTimeout: () => ++nextTimer, clearTimeout: noop,
+    setTimeout: (callback, ms) => { timeouts.push({ callback, ms }); return ++nextTimer; }, clearTimeout: noop,
     setInterval: callback => { intervals.set(++nextTimer, callback); return nextTimer; },
     clearInterval: id => intervals.delete(id),
   });
@@ -88,8 +90,9 @@ function createRuntime(bundled, readyState = 'loading') {
     run(read(file));
   }
   return {
-    run, document, elements, frames, intervals, localStorage,
+    run, document, elements, frames, intervals, localStorage, timeouts,
     get measurements() { return measurements; },
+    setStylesApplied(value) { stylesApplied = value; },
     advance(ms) { now += ms; },
     event(target, name) {
       for (const { callback } of listeners[target].get(name) || []) callback({});
@@ -492,6 +495,50 @@ for (const bundled of [false, true]) {
     assert.equal(app.run('state.biddingTeam'), 'us');
   });
 
+  test(`${label}: the app waits for the stylesheet to be in effect, not merely loaded`, () => {
+    const app = createRuntime(bundled);
+    const styles = app.document.getElementById('appStyles');
+    styles.tagName = 'LINK';
+    styles.dataset.loaded = 'true'; // the load event fired, but the browser has not applied the sheet yet
+    app.setStylesApplied(false);
+    app.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    app.document.documentElement.classList.add('app-boot');
+    app.run('initializeRookApp()');
+    assert.equal(app.run('rookAppInitialized'), false);
+    assert.equal(app.timeouts.length, 1, 'it asks again shortly');
+    assert.ok(app.timeouts[0].ms <= 50);
+    app.timeouts.shift().callback();
+    assert.equal(app.run('rookAppInitialized'), false, 'still waiting');
+    assert.equal(app.document.documentElement.classList.contains('app-boot'), true, 'nothing is revealed unstyled');
+    app.setStylesApplied(true);
+    app.timeouts.shift().callback();
+    assert.equal(app.run('rookAppInitialized'), true);
+    assert.equal(app.document.documentElement.classList.contains('app-boot'), false);
+  });
+
+  test(`${label}: a stylesheet that never applies, or fails, cannot keep the app from starting`, () => {
+    const never = createRuntime(bundled);
+    const styles = never.document.getElementById('appStyles');
+    styles.tagName = 'LINK';
+    styles.dataset.loaded = 'true';
+    never.setStylesApplied(false);
+    never.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    never.run('initializeRookApp()');
+    let polls = 0;
+    while (never.timeouts.length && !never.run('rookAppInitialized')) { never.timeouts.shift().callback(); polls += 1; assert.ok(polls < 1000, 'bounded'); }
+    assert.equal(never.run('rookAppInitialized'), true, 'starts after a bounded wait');
+    assert.ok(polls >= 50, 'but only after waiting a good while');
+
+    const failed = createRuntime(bundled);
+    const failedStyles = failed.document.getElementById('appStyles');
+    failedStyles.tagName = 'LINK';
+    failedStyles.dataset.loaded = 'error';
+    failed.setStylesApplied(false);
+    failed.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    failed.run('initializeRookApp()');
+    assert.equal(failed.run('rookAppInitialized'), true, 'a failed sheet starts the app at once');
+  });
+
   test(`${label}: early authentication waits for the shared client and returns its result`, async () => {
     const app = createRuntime(bundled);
     app.run(`
@@ -682,6 +729,13 @@ test('production JavaScript stays within the download budgets', () => {
     assert.ok(Buffer.byteLength(source) < bytes, `${file} raw size`);
     assert.ok(gzipSync(source).length < gzipBytes, `${file} gzip size`);
   }
+});
+
+test('the stylesheet-in-effect marker ships in the full stylesheet only, never in the inline startup CSS', () => {
+  // Present inline, it would read as true before app.min.css applies, and the launch gate would never wait.
+  assert.match(read('css/app.min.css'), /html\[lang\]\s*\{\s*--rook-styles:\s*1/);
+  assert.doesNotMatch(read('index.html').match(/<style id="rook-startup-styles">([\s\S]*?)<\/style>/)[1], /--rook-styles/);
+  assert.match(read('js/modules/14-initialization-and-exports.js'), /getPropertyValue\("--rook-styles"\)/);
 });
 
 test('Home styling stays small and every generated asset is checked before deployment', () => {

@@ -31,6 +31,8 @@ ROOK_APP_INTERACTION_EVENTS.forEach(eventName => {
 
 let rookAppInitialized = false;
 let rookAppWaitingForStyles = false;
+let rookAppStyleChecks = 0;
+const ROOK_APP_STYLE_CHECK_LIMIT = 100; // of 16ms each: a sheet that never applies must not keep the app from starting
 let firebaseClientLoadPromise = null;
 let firebaseClientLoadRetries = 0;
 
@@ -72,6 +74,17 @@ if (typeof window.signOutUser !== "function") {
   window.signOutUser = createDeferredFirebaseAuthAction("signOutUser");
 }
 
+// True once the full stylesheet is actually in effect (app.css sets --rook-styles on <html>). A load
+// event is not enough: after the media flip in index.html the browser applies the sheet a few frames
+// later, and anything revealed in between flashes unstyled, then transitions into its styles.
+function appStylesInEffect() {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue("--rook-styles").trim() === "1";
+  } catch {
+    return true;
+  }
+}
+
 function initializeRookApp() {
   if (rookAppInitialized) return;
   const styles = document.getElementById("appStyles");
@@ -81,6 +94,11 @@ function initializeRookApp() {
       styles.addEventListener("load", initializeRookApp, { once: true });
       styles.addEventListener("error", initializeRookApp, { once: true });
     }
+    return;
+  }
+  if (styles?.tagName === "LINK" && styles.dataset.loaded === "true"
+      && !appStylesInEffect() && rookAppStyleChecks++ < ROOK_APP_STYLE_CHECK_LIMIT) {
+    setTimeout(initializeRookApp, 16); // not requestAnimationFrame: a background tab never gets frames
     return;
   }
   rookAppInitialized = true;
