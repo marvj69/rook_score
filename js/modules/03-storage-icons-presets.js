@@ -524,9 +524,8 @@ function openPresetEditorModal() {
 }
 function closePresetEditorModal() {
   const modal = document.getElementById('presetEditorModal');
-  if (modal) {
-    modal.remove();
-  }
+  if (!modal) return; // Nothing to close, and Settings must not appear out of nowhere
+  modal.remove();
   const settingsModal = document.getElementById("settingsModal");
   if (settingsModal) settingsModal.classList.remove("hidden");
   deactivateModalEnvironment();

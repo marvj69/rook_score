@@ -128,9 +128,29 @@ function refreshVoiceScoreControls() {
   if (!host) return;
   const markup = renderVoiceScoreControls();
   if (host === voiceScoreRenderedHost && markup === voiceScoreRenderedMarkup) return;
-  host.innerHTML = markup;
+  if (!(host === voiceScoreRenderedHost && patchVoiceScoreControls(host, markup))) host.innerHTML = markup;
   voiceScoreRenderedHost = host;
   voiceScoreRenderedMarkup = markup;
+}
+
+// Updates the mic button and its status line where they stand. Replacing the button node dropped
+// keyboard focus to <body> and removed the very element a finger or key was still holding down.
+function patchVoiceScoreControls(host, markup) {
+  if (!markup || typeof document.createElement !== "function") return false;
+  const probe = document.createElement("template");
+  if (!probe || !("content" in probe)) return false;
+  probe.innerHTML = markup;
+  const next = probe.content;
+  const nextButton = next.querySelector("[data-voice-score-entry]");
+  const nextStatus = next.querySelector(".voice-score-status");
+  const button = host.querySelector("[data-voice-score-entry]");
+  const status = host.querySelector(".voice-score-status");
+  if (!nextButton || !nextStatus || !button || !status) return false;
+  ["class", "aria-pressed", "aria-busy", "aria-label"].forEach(name => button.setAttribute(name, nextButton.getAttribute(name) ?? ""));
+  button.disabled = nextButton.hasAttribute("disabled");
+  status.className = nextStatus.className;
+  status.textContent = nextStatus.textContent;
+  return true;
 }
 
 // autoClear: true uses the default delay, a number sets the delay in ms, and
@@ -792,9 +812,16 @@ function getVoiceScoreModalHandlers(target) {
     dealerOrder: { open: openDealerOrderModal, close: closeDealerOrderModal },
     teamSelection: { open: openTeamSelectionModal, close: closeTeamSelectionModal },
     resumeGame: { open: openResumeGameModal, close: closeResumeGameModal },
-    theme: { open: () => openThemeModal(null), close: () => closeThemeModal(null) },
-    presets: { open: openPresetEditorModal, close: closePresetEditorModal },
-    probability: { open: openProbabilityModal, close: closeProbabilityModal },
+    // Theme and Bid Presets give Settings back when they close; closing one by voice must not leave it open.
+    theme: { open: () => openThemeModal(null), close: () => withoutSettingsSheetSideEffect(() => closeThemeModal(null)) },
+    presets: { open: openPresetEditorModal, close: () => withoutSettingsSheetSideEffect(closePresetEditorModal) },
+    probability: {
+      open: () => {
+        if (!canShowProbabilityExplanation()) throw new Error("Turn on Pro Mode and score a hand first.");
+        return openProbabilityModal();
+      },
+      close: closeProbabilityModal,
+    },
     version: { open: showVersionNum, close: closeVersionInfoModal },
     bugReport: { open: openBugReportModal, close: closeBugReportModal },
     confirmation: { open: () => {}, close: closeConfirmationModal },
@@ -1056,8 +1083,15 @@ function applyVoiceScoreEditRound(action) {
 
   updateState({ error: "" });
   for (const [field, value] of edits) {
+    // commitHistoryEdit only acts on a cell that is being edited, as when a finger opens it; without
+    // this the call returned quietly, the round never changed, and the reply still said "updated".
+    updateState({ historyEdit: { idx: roundNumber - 1, field }, error: "" });
     commitHistoryEdit(roundNumber - 1, field, value);
     if (state.error) throw new Error(state.error);
+    if (state.historyEdit) {
+      updateState({ historyEdit: null });
+      throw new Error(`Round ${roundNumber} was not changed.`);
+    }
   }
   return `Round ${roundNumber} updated.`;
 }
@@ -1578,7 +1612,7 @@ async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOpe
   } catch (error) {
     if (operationId !== voiceScoreOperationId || (error?.name === "AbortError" && !timedOut)) return false;
     reportVoiceScoreOutcome(
-      timedOut ? "That took too long. Please try again." : error.message || "Voice command planning is unavailable.",
+      timedOut ? "That took too long. Please try again." : describeRequestFailure(error, "Voice command planning is unavailable."),
       "error",
     );
     return false;
@@ -1691,7 +1725,15 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
     voiceScoreListening = false;
     voiceScoreMode = "";
     const permissionError = error && (error.name === "NotAllowedError" || error.name === "SecurityError");
-    setVoiceScoreStatus(permissionError ? "Voice entry needs microphone permission." : fallbackMessage, "error");
+    const noMicrophone = error && (error.name === "NotFoundError" || error.name === "OverconstrainedError");
+    const micBusy = error && error.name === "NotReadableError";
+    setVoiceScoreStatus(
+      permissionError ? "Voice entry needs microphone permission."
+        : noMicrophone ? "No microphone was found on this device."
+          : micBusy ? "The microphone is in use by another app."
+            : fallbackMessage,
+      "error",
+    );
     return false;
   }
 }
@@ -1779,7 +1821,7 @@ function renderVoiceScoreControls() {
         aria-label="${buttonLabel}"${isProcessing ? " disabled" : ""}>
         ${Icons.Mic}
       </button>
-      ${voiceScoreStatus ? `<p class="voice-score-status ${toneClass}" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>` : ""}
+      <p class="voice-score-status ${toneClass}" role="status" aria-live="polite">${escapeHtmlValue(voiceScoreStatus)}</p>
     </div>`;
 }
 
@@ -1865,7 +1907,7 @@ async function applyVoiceScorePlan(plan, context = null) {
   }
 
   if (!normalizedPlan.actions.length) {
-    reportVoiceScoreOutcome(reply || "Sorry, I didn't catch that. Please try again.", "error");
+    reportVoiceScoreOutcome(reply || "Sorry, I didn't catch that. Please try again.", normalizedPlan.status === "clarify" ? "info" : "error");
     const outcome = normalizedPlan.status === "clarify" || normalizedPlan.status === "unsupported"
       ? normalizedPlan.status
       : "failed";

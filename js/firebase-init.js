@@ -663,6 +663,7 @@ window.signInWithGoogle = async function() {
   if (!auth || !googleProvider) {
     console.warn("Google sign-in is unavailable because Firebase is not configured.");
     trackSyncFailure("auth", "firebase_unavailable");
+    window.showWarningToast?.("Sign-in isn't available right now.");
     return null;
   }
 
@@ -676,6 +677,9 @@ window.signInWithGoogle = async function() {
   } catch (error) {
     console.error("Google sign-in failed:", error);
     trackSyncFailure("auth", "google_sign_in_failed");
+    // Closing the popup is a choice, not a failure; anything else deserves a word.
+    const closedByUser = error?.code === "auth/popup-closed-by-user" || error?.code === "auth/cancelled-popup-request";
+    if (!closedByUser) window.showWarningToast?.("Couldn't sign in. Check your connection and try again.");
     if (window.renderApp) window.renderApp();
     return null;
   }

@@ -575,6 +575,8 @@ function handleResumeGameSubmit(event) {
     sanitizePlayerName(document.getElementById("resumeDemPlayerTwo")?.value || ""),
   ]);
 
+  const startPaperGame = () => {
+  // Taken only now: cancelling the confirmation below must leave a scanned history available.
   const importedRounds = typeof takePaperGameImportedRounds === "function"
     ? takePaperGameImportedRounds(usScore, demScore, {
       usTeamName: deriveTeamDisplay(usPlayers) || "Us",
@@ -619,6 +621,20 @@ function handleResumeGameSubmit(event) {
   closeResumeGameModal();
   closeHomeScreen();
   saveCurrentGameState();
+  };
+
+  // Starting from paper scores begins a fresh game: whatever hands are on the scoreboard go with it.
+  const handsOnScoreboard = Array.isArray(state.rounds) ? state.rounds.length : 0;
+  if (handsOnScoreboard > 0) {
+    openConfirmationModal(
+      `This replaces the game on the scoreboard, including its ${handsOnScoreboard} ${handsOnScoreboard === 1 ? "hand" : "hands"} of history. Freeze or save it first to keep it.`,
+      () => { closeConfirmationModal(); startPaperGame(); },
+      closeConfirmationModal,
+      { title: "Replace the current game?", confirmLabel: "Replace game", tone: "warning", icon: "refresh" }
+    );
+    return;
+  }
+  startPaperGame();
 }
 
 function openSettingsModal() {

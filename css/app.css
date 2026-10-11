@@ -371,6 +371,8 @@ body.liquid-glass .version-badge {
 body.liquid-glass .voice-score-button {
   box-shadow: var(--shadow-3d-sm), var(--shadow-glow-primary);
 }
+/* The status line is always in the page so screen readers hear what is written into it. */
+.voice-score-status:empty { display: none; }
 /* The mic renders outside #app, so it stays usable over open panels and can
    answer their prompts by voice. It sits below the save toast. */
 .modal-open .voice-score-control {

@@ -26,13 +26,13 @@ function loadProbabilityExplanation() {
   return probabilityExplanationLoadPromise;
 }
 
-// The explanation's chart styles ship outside the startup CSS. Plain text is
-// still readable if the stylesheet fails, so a failure never blocks the modal.
+// The explanation's chart styles ship outside the startup CSS. Without them the charts draw as solid
+// black shapes, so a failed stylesheet is a failed load: the panel offers to try again.
 let probabilityStylesLoadPromise = null;
 
 function loadProbabilityStyles() {
   if (probabilityStylesLoadPromise) return probabilityStylesLoadPromise;
-  probabilityStylesLoadPromise = new Promise(resolve => {
+  probabilityStylesLoadPromise = new Promise((resolve, reject) => {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = new URL("css/probability-explanation.css", document.baseURI).href;
@@ -40,15 +40,24 @@ function loadProbabilityStyles() {
     link.addEventListener("error", () => {
       probabilityStylesLoadPromise = null;
       link.remove();
-      resolve();
+      reject(new Error("Probability explanation styles could not load."));
     }, { once: true });
     document.head.appendChild(link);
   });
   return probabilityStylesLoadPromise;
 }
 
+// The explanation describes a live hand, so it exists only in Pro Mode, mid-game, after a hand.
+function canShowProbabilityExplanation() {
+  return Boolean(state.showWinProbability) && !state.gameOver && Array.isArray(state.rounds) && state.rounds.length > 0;
+}
+
 async function openProbabilityModal() {
   if (document.getElementById("probabilityModal")) return;
+  if (!canShowProbabilityExplanation()) {
+    showNoticeModal("Turn on Pro Mode and score a hand to see how the win probability is worked out.", { title: "No probability yet", icon: "info" });
+    return;
+  }
   probabilityReturnFocus = document.activeElement;
   emitRookEvent("probability_opened", getRookGameEventParams(state));
   const modalHtml = `
@@ -434,14 +443,14 @@ function setBugReportStatus(message, tone = "error") {
   statusElement.textContent = message;
 }
 
-function resetBugReportForm() {
+function resetBugReportForm({ keepFields = false } = {}) {
   const form = document.getElementById("bugReportForm");
-  form?.reset();
+  if (!keepFields) form?.reset();
   form?.classList.remove("hidden");
   document.getElementById("bugReportSuccess")?.classList.add("hidden");
   document.getElementById("bugReportStatus")?.classList.add("hidden");
   const diagnosticsCheckbox = document.getElementById("bugReportIncludeDiagnostics");
-  if (diagnosticsCheckbox) diagnosticsCheckbox.checked = true;
+  if (diagnosticsCheckbox && !keepFields) diagnosticsCheckbox.checked = true;
   const submitButton = document.getElementById("bugReportSubmitButton");
   if (submitButton) {
     submitButton.disabled = false;
@@ -452,8 +461,17 @@ function resetBugReportForm() {
 
 function openBugReportModal() {
   closeModal("aboutModal");
-  resetBugReportForm();
+  // A report that was typed but not sent survives an accidental dismissal (a tap beside the card,
+  // Escape); only a sent report, or one cancelled on purpose, starts over.
+  const wasSent = document.getElementById("bugReportSuccess")?.classList.contains("hidden") === false;
+  resetBugReportForm({ keepFields: !wasSent });
   openModal("bugReportModal");
+}
+
+// The Cancel button means "throw this away"; tapping outside or pressing Escape keeps the draft.
+function cancelBugReport() {
+  resetBugReportForm();
+  closeBugReportModal();
 }
 
 function closeBugReportModal() {

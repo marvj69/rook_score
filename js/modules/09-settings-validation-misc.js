@@ -46,6 +46,16 @@ function toggleProMode(checkbox) {
   emitRookEvent("pro_mode_toggled", getRookGameEventParams(state, { pro_mode: isPro }));
 }
 
+// fetch() rejects with a bare "Failed to fetch" ("Load failed" in Safari) when the server cannot be
+// reached; that is not something to show or read aloud to a player at the table.
+function describeRequestFailure(error, fallback) {
+  const text = String(error?.message || "");
+  if (error?.name === "TypeError" || /failed to fetch|load failed|networkerror|network request failed/i.test(text)) {
+    return "Couldn't reach the server. Check your connection and try again.";
+  }
+  return text || fallback;
+}
+
 function isExperimentalFeaturesEnabled() {
   return Boolean(getLocalStorage(EXPERIMENTAL_FEATURES_KEY, false));
 }
@@ -58,6 +68,9 @@ function isVoiceExperimentalOnboardingComplete() {
   return Boolean(getLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, false));
 }
 
+// What the voice runtime was last told, so it is only started or stopped when the setting changes.
+let experimentalRuntimeEnabled = null;
+
 function updateExperimentalFeaturesUI(isEnabled) {
   const experimentalFeaturesToggle = document.getElementById("experimentalFeaturesToggle");
   if (experimentalFeaturesToggle) experimentalFeaturesToggle.checked = Boolean(isEnabled);
@@ -65,6 +78,14 @@ function updateExperimentalFeaturesUI(isEnabled) {
     updatePaperGamePhotoExperimentUI(isEnabled);
   }
   updateVoiceImprovementConsentUI();
+  // The microphone follows the setting however it changed: the toggle, or a cloud merge that
+  // rewrote it (loadSettings lands here). Before, a merged "off" left a dead mic on screen and a
+  // merged "on" showed no mic until the next launch.
+  if (experimentalRuntimeEnabled !== Boolean(isEnabled)) {
+    experimentalRuntimeEnabled = Boolean(isEnabled);
+    if (isEnabled) initializeVoiceScoreModuleWhenEnabled();
+    else cancelLoadedVoiceScoreEntry();
+  }
 }
 
 function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()) {
@@ -79,13 +100,12 @@ function updateVoiceImprovementConsentUI(isEnabled = isVoiceImprovementOptedIn()
 function setExperimentalFeaturesEnabled(isEnabled) {
   setLocalStorage(EXPERIMENTAL_FEATURES_KEY, isEnabled);
   updateExperimentalFeaturesUI(isEnabled);
-  if (!isEnabled) {
-    cancelLoadedVoiceScoreEntry();
-  } else {
-    initializeVoiceScoreModuleWhenEnabled();
-  }
   return isEnabled;
 }
+
+// Each request for microphone access gets a number. Cancelling or switching off while the browser's
+// permission prompt is still open retires it, so a "yes" that arrives later cannot turn the feature on.
+let experimentalPermissionRequestId = 0;
 
 function setVoiceExperimentalOnboardingError(message = "") {
   const errorElement = document.getElementById("voiceExperimentalOnboardingError");
@@ -102,11 +122,13 @@ function openVoiceExperimentalOnboarding() {
 }
 
 function cancelVoiceExperimentalOnboarding() {
+  experimentalPermissionRequestId += 1;
   closeModal("voiceExperimentalOnboardingModal");
   setExperimentalFeaturesEnabled(false);
 }
 
 async function continueVoiceExperimentalOnboarding() {
+  const requestId = ++experimentalPermissionRequestId;
   const continueButton = document.getElementById("voiceExperimentalOnboardingContinue");
   const consentCheckbox = document.getElementById("voiceImprovementConsentCheckbox");
   if (continueButton) continueButton.disabled = true;
@@ -114,6 +136,7 @@ async function continueVoiceExperimentalOnboarding() {
 
   try {
     await requestLazyVoiceScoreMicrophonePermission();
+    if (requestId !== experimentalPermissionRequestId) return false; // Cancelled while the browser was asking
     const optedIn = Boolean(consentCheckbox?.checked);
     setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, optedIn);
     setLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, true);
@@ -122,6 +145,7 @@ async function continueVoiceExperimentalOnboarding() {
     setExperimentalFeaturesEnabled(true);
     return true;
   } catch (error) {
+    if (requestId !== experimentalPermissionRequestId) return false;
     setExperimentalFeaturesEnabled(false);
     const permissionDenied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
     setVoiceExperimentalOnboardingError(
@@ -136,12 +160,15 @@ async function continueVoiceExperimentalOnboarding() {
 }
 
 async function enableExperimentalFeaturesWithMicrophone(checkbox) {
+  const requestId = ++experimentalPermissionRequestId;
   if (checkbox) checkbox.disabled = true;
   try {
     await requestLazyVoiceScoreMicrophonePermission();
+    if (requestId !== experimentalPermissionRequestId) return false; // Switched off while the browser was asking
     setExperimentalFeaturesEnabled(true);
     return true;
   } catch (error) {
+    if (requestId !== experimentalPermissionRequestId) return false;
     setExperimentalFeaturesEnabled(false);
     const message = error?.name === "NotAllowedError" || error?.name === "SecurityError"
       ? "Microphone permission is required for Experimental Features"
@@ -156,6 +183,7 @@ async function enableExperimentalFeaturesWithMicrophone(checkbox) {
 function toggleExperimentalFeatures(checkbox) {
   const isEnabled = Boolean(checkbox?.checked);
   if (!isEnabled) {
+    experimentalPermissionRequestId += 1;
     return setExperimentalFeaturesEnabled(false);
   }
 

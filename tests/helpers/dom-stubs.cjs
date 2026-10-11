@@ -49,6 +49,8 @@ function setupDomStubs() {
       querySelectorAll: () => [],
       scrollIntoView: noop,
       contains: () => false,
+      cloneNode: () => createElementStub(),
+      parentNode: { replaceChild: noop },
     };
 
     return new Proxy(element, {

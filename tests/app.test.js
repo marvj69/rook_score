@@ -27,6 +27,16 @@ const {
   sanitizeHexColor,
   loadCurrentGameState,
   getStateForTests,
+  getPendingConfirmationForTests,
+  openBugReportModal,
+  cancelBugReport,
+  closePresetEditorModal,
+  canShowProbabilityExplanation,
+  describeRequestFailure,
+  probabilityScore,
+  patchVoiceScoreControls,
+  updateExperimentalFeaturesUI,
+  cancelVoiceExperimentalOnboarding,
   ROOK_APP_STORAGE_KEYS,
   isRookAppStorageKey,
   isCloudSyncStorageKey,
@@ -1397,6 +1407,178 @@ test('replaceLastRound swaps the most recent hand for the corrected one', async 
   updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
 });
 
+test('voice editRound changes the round instead of only saying it did', async () => {
+  resetState();
+  setLocalStorage('experimentalFeaturesEnabled', true);
+  setLocalStorage('localOnly:voiceSpokenReplies', false);
+  updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [], usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'] });
+  assert.equal(await applyVoiceScorePlan({
+    status: 'execute',
+    summary: 'Us bid 130 and made 140',
+    actions: [{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140, enterBidderPoints: true }],
+  }), true);
+
+  assert.equal(await applyVoiceScorePlan({
+    status: 'execute',
+    summary: 'Change round one to 200',
+    actions: [{ type: 'editRound', roundNumber: 1, usTotal: 200 }],
+  }), true);
+  assert.equal(state.rounds[0].runningTotals.us, 200);
+  assert.equal(state.rounds[0].usPoints, 200);
+
+  assert.equal(await applyVoiceScorePlan({
+    status: 'execute',
+    summary: 'Change the bid',
+    actions: [{ type: 'editRound', roundNumber: 1, bidAmount: 135 }],
+  }), true);
+  assert.equal(state.rounds[0].bidAmount, 135);
+
+  // A total that makes no sense is refused, not reported as done, and the round stays as it was.
+  assert.equal(await applyVoiceScorePlan({
+    status: 'execute',
+    summary: 'Change round one to 203',
+    actions: [{ type: 'editRound', roundNumber: 1, usTotal: 203 }],
+  }), false);
+  assert.equal(state.rounds[0].runningTotals.us, 200);
+  assert.equal(state.historyEdit, null);
+  updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+});
+
+test('closing the bid preset editor when it is not open leaves Settings closed', () => {
+  const live = installLiveDocument();
+  const liveGet = document.getElementById;
+  document.getElementById = id => (id === 'presetEditorModal' ? null : liveGet(id)); // no editor is open
+  try {
+    const settings = live.get('settingsModal');
+    assert.equal(settings.classList.contains('hidden'), true);
+    closePresetEditorModal();
+    assert.equal(settings.classList.contains('hidden'), true, 'a voice "close presets" with nothing open must not open Settings');
+  } finally {
+    live.restore();
+  }
+});
+
+test('the probability explanation needs Pro Mode and a hand on the board', () => {
+  updateState({ ...DEFAULT_STATE, showWinProbability: true, rounds: [{ biddingTeam: 'us' }], gameOver: false });
+  assert.equal(canShowProbabilityExplanation(), true);
+  updateState({ showWinProbability: false });
+  assert.equal(canShowProbabilityExplanation(), false, 'Pro Mode off');
+  updateState({ showWinProbability: true, rounds: [] });
+  assert.equal(canShowProbabilityExplanation(), false, 'no hands yet');
+  updateState({ rounds: [{ biddingTeam: 'us' }], gameOver: true });
+  assert.equal(canShowProbabilityExplanation(), false, 'game over');
+  updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+});
+
+test('network failures are described in plain language, other errors keep their message', () => {
+  const plain = "Couldn't reach the server. Check your connection and try again.";
+  assert.equal(describeRequestFailure(new TypeError('Failed to fetch'), 'x'), plain);
+  assert.equal(describeRequestFailure(new TypeError('Load failed'), 'x'), plain);
+  assert.equal(describeRequestFailure(new Error('NetworkError when attempting to fetch resource.'), 'x'), plain);
+  assert.equal(describeRequestFailure(new Error('The score sheet could not be read.'), 'x'), 'The score sheet could not be read.');
+  assert.equal(describeRequestFailure(new Error(''), 'Try again.'), 'Try again.');
+  assert.equal(describeRequestFailure(null, 'Try again.'), 'Try again.');
+});
+
+test('a typed bug report survives an accidental close; Cancel and a sent report start fresh', () => {
+  const live = installLiveDocument();
+  try {
+    let resets = 0;
+    live.get('bugReportForm').reset = () => { resets += 1; };
+    live.get('bugReportSuccess').classList.add('hidden');
+    openBugReportModal();
+    assert.equal(resets, 0, 'reopening keeps the draft');
+    live.get('bugReportSuccess').classList.remove('hidden');
+    openBugReportModal();
+    assert.equal(resets, 1, 'a report that was sent starts over');
+    live.get('bugReportSuccess').classList.add('hidden');
+    cancelBugReport();
+    assert.equal(resets, 2, 'Cancel throws the draft away');
+  } finally {
+    live.restore();
+  }
+});
+
+test('negative scores in the probability summary use a real minus sign', () => {
+  assert.equal(probabilityScore(220), '220');
+  assert.equal(probabilityScore(-20), '−20');
+  assert.equal(probabilityScore('abc'), '0');
+});
+
+test('the microphone button is updated in place so a press on it is never swapped out', () => {
+  const makeElement = (attrs = {}) => ({
+    attrs: { ...attrs }, className: '', textContent: '', disabled: false,
+    getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    hasAttribute(name) { return name in this.attrs; },
+  });
+  const button = makeElement({ class: 'voice-score-button', 'aria-pressed': 'false' });
+  const status = Object.assign(makeElement(), { className: 'voice-score-status text-blue-100' });
+  const host = { querySelector: selector => (selector.includes('data-voice-score-entry') ? button : status) };
+  const nextButton = makeElement({ class: 'voice-score-button voice-score-button--active', 'aria-pressed': 'true', 'aria-busy': 'false', 'aria-label': 'Recording voice command; release to send', disabled: '' });
+  const nextStatus = Object.assign(makeElement(), { className: 'voice-score-status text-red-200', textContent: 'Listening…' });
+  const originalCreate = document.createElement;
+  document.createElement = () => ({
+    set innerHTML(value) { this.html = value; },
+    content: { querySelector: selector => (selector.includes('data-voice-score-entry') ? nextButton : nextStatus) },
+  });
+  try {
+    assert.equal(patchVoiceScoreControls(host, '<div class="voice-score-control"></div>'), true);
+    assert.equal(button.attrs['aria-pressed'], 'true');
+    assert.equal(button.attrs.class, 'voice-score-button voice-score-button--active');
+    assert.equal(button.attrs['aria-label'], 'Recording voice command; release to send');
+    assert.equal(button.disabled, true);
+    assert.equal(status.className, 'voice-score-status text-red-200');
+    assert.equal(status.textContent, 'Listening…');
+    assert.equal(patchVoiceScoreControls(host, ''), false, 'with the feature off there is nothing to patch');
+    assert.equal(patchVoiceScoreControls({ querySelector: () => null }, '<div></div>'), false, 'no existing controls: draw them fresh');
+  } finally {
+    document.createElement = originalCreate;
+  }
+});
+
+test('turning Experimental Features off, even by a cloud merge, stops the voice runtime once', () => {
+  let cancelled = 0;
+  const previousRuntime = window.__rookVoiceScoreRuntime;
+  window.__rookVoiceScoreRuntime = { initializeVoiceScoreControls() {}, cancelVoiceScoreEntry() { cancelled += 1; return true; } };
+  try {
+    resetState();
+    updateExperimentalFeaturesUI(true);
+    updateExperimentalFeaturesUI(false);
+    assert.equal(cancelled, 1, 'the merged "off" reaches the runtime');
+    updateExperimentalFeaturesUI(false);
+    assert.equal(cancelled, 1, 'and only when the setting actually changes');
+    updateExperimentalFeaturesUI(true);
+    updateExperimentalFeaturesUI(false);
+    assert.equal(cancelled, 2);
+  } finally {
+    window.__rookVoiceScoreRuntime = previousRuntime;
+  }
+});
+
+test('cancelling while the microphone prompt is open keeps a late "yes" from enabling the feature', async () => {
+  resetState();
+  let allow;
+  const pendingPermission = new Promise(resolve => { allow = resolve; });
+  const previousRuntime = window.__rookVoiceScoreRuntime;
+  window.__rookVoiceScoreRuntime = {
+    initializeVoiceScoreControls() {},
+    cancelVoiceScoreEntry() { return true; },
+    requestVoiceScoreMicrophonePermission: () => pendingPermission,
+  };
+  try {
+    const attempt = continueVoiceExperimentalOnboarding();
+    cancelVoiceExperimentalOnboarding();
+    allow(true);
+    assert.equal(await attempt, false);
+    assert.equal(isExperimentalFeaturesEnabled(), false);
+    assert.equal(isVoiceExperimentalOnboardingComplete(), false);
+  } finally {
+    window.__rookVoiceScoreRuntime = previousRuntime;
+    resetState();
+  }
+});
+
 test('voice warm-up pings the planner at most once a minute', () => {
   const originalFetch = global.fetch;
   const calls = [];
@@ -1555,7 +1737,10 @@ test('resuming a paper game from a photo imports its whole round history', () =>
     document.getElementById('resumeUsScore').value = '250';
     handleResumeScoreEdited();
     assert.match(document.getElementById('resumePaperPhotoStatus').textContent, /will not be imported/);
+    // The scoreboard now holds three hands, so starting over asks first and changes nothing until confirmed.
     handleResumeGameSubmit({ preventDefault() {} });
+    assert.equal(getStateForTests().rounds.length, 3);
+    getPendingConfirmationForTests().confirm();
     assert.equal(getStateForTests().rounds.length, 0);
     assert.deepEqual(getStateForTests().startingTotals, { us: 250, dem: 190 });
   } finally {
@@ -5409,6 +5594,51 @@ test('settings toggles use shared polished switch styling', () => {
   assert.match(css, /width:\s*3rem;/);
   assert.match(css, /height:\s*1\.625rem;/);
   assert.match(css, /transform:\s*translateY\(-50%\)\s+translateX\(1\.375rem\)/);
+});
+
+test('declining to replace a game keeps both the game and a scanned paper history', () => {
+  resetState();
+  const elements = {};
+  const originalGetElementById = document.getElementById;
+  document.getElementById = id => {
+    if (!/^resume(Us|Dem)(Score|Player)|^resumePaperPhotoStatus$/.test(id)) return originalGetElementById(id);
+    elements[id] ||= { value: '', textContent: '', classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, dispatchEvent() {} };
+    return elements[id];
+  };
+  try {
+    resetGame();
+    updateState({ rounds: [{ biddingTeam: 'us', bidAmount: 120, usPoints: 130, demPoints: 50, runningTotals: { us: 130, dem: 50 } }] });
+    applyPaperGamePhotoResult({ usScore: 125, demScore: 60, confidence: 'high', rows: [{ us: 65, bid: 120, dem: 30 }, { us: 125, bid: 120, dem: 60 }] });
+    handleResumeGameSubmit({ preventDefault() {} });
+    assert.equal(getStateForTests().rounds.length, 1, 'the question comes first');
+    getPendingConfirmationForTests().cancel();
+    assert.equal(getStateForTests().rounds.length, 1, 'declining leaves the game as it was');
+    handleResumeGameSubmit({ preventDefault() {} });
+    getPendingConfirmationForTests().confirm();
+    assert.equal(getStateForTests().rounds.length, 2, 'the scanned history was still there for the second try');
+  } finally {
+    document.getElementById = originalGetElementById;
+    resetGame();
+    resetState();
+  }
+});
+
+test('a game with nothing played is started from paper scores without asking', () => {
+  resetState();
+  resetGame();
+  const elements = {
+    resumeUsScore: { value: '200' }, resumeDemScore: { value: '150' },
+  };
+  const originalGetElementById = document.getElementById;
+  document.getElementById = id => (elements[id] || originalGetElementById(id));
+  try {
+    handleResumeGameSubmit({ preventDefault() {} });
+    assert.deepEqual(getStateForTests().startingTotals, { us: 200, dem: 150 });
+  } finally {
+    document.getElementById = originalGetElementById;
+    resetGame();
+    resetState();
+  }
 });
 
 test('experimental paper game photo import is camera-ready and gated by the shared setting', () => {

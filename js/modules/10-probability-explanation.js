@@ -53,6 +53,8 @@ function buildProbabilityTimeline(games, context) {
 
 const probabilityShortName = (name, max = 16) => (String(name).length > max ? `${String(name).slice(0, max - 1)}…` : String(name));
 const probabilityFixed = (value, digits = 1) => parseFiniteNumber(value, 0).toFixed(digits);
+// A score can be negative; "220 – -20" reads as a typo, so negatives get a real minus sign.
+const probabilityScore = value => String(parseFiniteNumber(value, 0)).replace(/^-/, "−");
 const probabilitySigned = (value, digits = 1) => `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(digits)}`;
 
 function probabilityReadout(point, usName, demName) {
@@ -384,7 +386,7 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
           <div class="probability-team probability-team--dem"><span>${demName}</span><strong>${winProb.dem.toFixed(1)}%</strong>${favored === "dem" ? '<em class="probability-favored">Favored</em>' : ""}</div>
         </div>
         ${probabilitySplitBar(winProb.us, usName, demName)}
-        <p class="probability-hand-summary">After hand ${roundCount}: <strong>${scores.us} – ${scores.dem}</strong>. ${leadText}</p>
+        <p class="probability-hand-summary">After hand ${roundCount}: <strong>${probabilityScore(scores.us)} to ${probabilityScore(scores.dem)}</strong>. ${leadText}</p>
         ${probabilityRaceBars(scores, usName, demName)}
         <p class="probability-note">Based on: ${sourceText}. The percentages add up to 100%.</p>
       </section>

@@ -10,7 +10,9 @@ const {
 } = require("../lib/api-guards.js");
 
 const RESEND_EMAILS_URL = "https://api.resend.com/emails";
-const MAX_BODY_BYTES = 16 * 1024;
+// The form allows 4,000 + 3,000 characters plus diagnostics; in a script that takes three bytes a
+// character that is about 22 KB, so 16 KB turned a long, honest report into "too large".
+const MAX_BODY_BYTES = 32 * 1024;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_REPORTS = 5;
 const ALLOWED_ORIGIN_ENV_NAMES = ["BUG_REPORT_ALLOWED_ORIGINS"];

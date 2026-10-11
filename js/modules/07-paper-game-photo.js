@@ -9,6 +9,7 @@ const PAPER_GAME_PHOTO_GITHUB_PAGES_HOSTNAMES = new Set([
 const PAPER_GAME_PHOTO_MAX_SOURCE_BYTES = 20 * 1024 * 1024;
 const PAPER_GAME_PHOTO_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 const PAPER_GAME_PHOTO_MAX_DIMENSION = 1800;
+const PAPER_GAME_PHOTO_TIMEOUT_MS = 30000;
 const PAPER_GAME_PHOTO_MAX_HISTORY_ROWS = 60;
 let activePaperGamePhotoController = null;
 // Rounds rebuilt from the last successful scan, kept until the resume form is
@@ -327,6 +328,12 @@ async function handlePaperGamePhotoSelected(input) {
   activePaperGamePhotoController = controller;
   setPaperGamePhotoBusy(true);
   setPaperGamePhotoStatus("Preparing and reading the score sheet…");
+  // A reader that never answers must not leave the button stuck on "Reading…".
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, PAPER_GAME_PHOTO_TIMEOUT_MS);
 
   try {
     const preparedPhoto = await preparePaperGamePhoto(file);
@@ -335,14 +342,17 @@ async function handlePaperGamePhotoSelected(input) {
     applyPaperGamePhotoResult(result);
     return true;
   } catch (error) {
-    if (error?.name !== "AbortError" && activePaperGamePhotoController === controller) {
+    if (activePaperGamePhotoController === controller && (error?.name !== "AbortError" || timedOut)) {
       setPaperGamePhotoStatus(
-        error?.message || "The score sheet could not be read. Try a clearer photo.",
+        timedOut
+          ? "Reading the score sheet took too long. Check your connection and try again."
+          : describeRequestFailure(error, "The score sheet could not be read. Try a clearer photo."),
         "error",
       );
     }
     return false;
   } finally {
+    clearTimeout(timeoutId);
     if (activePaperGamePhotoController === controller) {
       activePaperGamePhotoController = null;
       setPaperGamePhotoBusy(false);

@@ -199,7 +199,6 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
               id="googleAuthBtn"
               onclick="(window.firebaseAuth && window.firebaseAuth.currentUser && !window.firebaseAuth.currentUser.isAnonymous) ? signOutUser() : signInWithGoogle(); toggleMenu(event)"
               class="flex items-center justify-between w-full"
-              aria-label="Toggle Authentication"
               type="button">
               <div class="flex items-center space-x-3">
                 <span class="bg-white p-1 rounded shadow-sm flex items-center justify-center">
@@ -769,8 +768,8 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
           </div>
 
           <footer class="mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 pt-5 dark:border-gray-700 sm:flex-row sm:justify-end">
-            <button type="button" onclick="closeBugReportModal()" class="rounded-xl bg-gray-200 px-5 py-2.5 font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-200">Cancel</button>
-            <button id="bugReportSubmitButton" type="submit" class="threed inline-flex items-center justify-center rounded-xl bg-yellow-500 px-5 py-2.5 font-semibold text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
+            <button type="button" onclick="cancelBugReport()" class="rounded-xl bg-gray-200 px-5 py-2.5 font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-200">Cancel</button>
+            <button id="bugReportSubmitButton" type="submit" class="threed inline-flex items-center justify-center rounded-xl bg-yellow-500 px-5 py-2.5 font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
               <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" /></svg>
               <span>Send Report</span>
             </button>
