@@ -281,7 +281,8 @@ test('ranking holds back small samples and flips with the direction', () => {
   assert.equal(newcomer.qualified, false, 'a 1-0 record cannot top the board');
   assert.equal(newcomer.rank, 0);
   assert.equal(rows.findIndex(row => row.entity.key === 'new') > rows.findIndex(row => row.qualified && row.entity.key === 'ann'), true);
-  assert.ok(rows.filter(row => row.qualified).every((row, i) => row.rank === i + 1));
+  const qualifiedRows = rows.filter(row => row.qualified);
+  assert.ok(qualifiedRows.every(row => row.rank === 1 + qualifiedRows.filter(other => other.value > row.value).length), 'a rank is one more than the number of strictly better values');
 
   const ascending = statsRankEntities(result.players.list, 'winPct', 'asc').filter(row => row.qualified);
   assert.ok(ascending[0].value <= ascending[ascending.length - 1].value);
@@ -572,6 +573,14 @@ test('how many games count as enough grows with the busiest player, within limit
   assert.deepEqual(statsGateFor(people([50, 100])), { games: 5, bids: 8 });
   assert.deepEqual(statsGateFor(people([900, 4000])), { games: 10, bids: 30 }, 'and never more than the cap');
   assert.deepEqual(statsGateFor([]), { games: 3, bids: 8 });
+});
+
+test('equal values share a rank instead of taking consecutive places', () => {
+  const entity = (name, winPercentNumber) => ({ name, key: name, gamesPlayed: 10, winPercentNumber, bidAttempts: 40, rating: 1000, wins: 0, losses: 0, netPerGame: 0, bidMakePct: 50 });
+  const rows = statsRankEntities([entity('A', 80), entity('B', 80), entity('C', 60), entity('D', 60), entity('E', 40)], 'winPct');
+  assert.deepEqual(rows.map(row => row.rank), [1, 1, 3, 3, 5]);
+  const flipped = statsRankEntities([entity('A', 80), entity('B', 80), entity('C', 60)], 'winPct', 'asc');
+  assert.deepEqual(flipped.map(row => [row.entity.name, row.rank]), [['C', 1], ['A', 2], ['B', 2]]);
 });
 
 test('a 4-0 newcomer cannot top a board where one player has played a hundred games', () => {

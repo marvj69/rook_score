@@ -132,7 +132,8 @@ function statsBarFor(metricKey, row, rows) {
 
 function statsRankBadge(row, metricKey, direction) {
   if (!row.qualified) return `<span class="st-row__rank st-rank st-rank--none" aria-hidden="true">–</span>`;
-  const medal = direction === "desc" && row.rank <= 3 && STATS_RANK_METRICS[metricKey].medals !== false ? ` st-rank--${row.rank}` : "";
+  // Nobody is third-best at zero close wins, so a zero earns no medal; tied rows share one.
+  const medal = direction === "desc" && row.rank <= 3 && row.value !== 0 && STATS_RANK_METRICS[metricKey].medals !== false ? ` st-rank--${row.rank}` : "";
   return `<span class="st-row__rank st-rank${medal}" aria-hidden="true">${row.rank}</span>`;
 }
 
@@ -227,12 +228,16 @@ function statsCalendarCard(model) {
   if (!totals.firstTime) return "";
   // At least twenty weeks, so a young library still draws small cells rather than a few huge ones.
   const weeks = Math.min(26, Math.max(20, Math.ceil((model.now - totals.firstTime) / (7 * STATS_DAY_MS)) + 1));
-  const days = Object.keys(activity.byDay).length;
+  // The grid only draws the most recent `weeks`, so count the game days it shows, not every day in the period.
+  const today = new Date(model.now);
+  const firstShown = statsDayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay() - (weeks - 1) * 7).getTime());
+  const allDays = Object.keys(activity.byDay).length;
+  const days = Object.keys(activity.byDay).filter(key => key >= firstShown).length;
   const peak = activity.weekday.reduce((best, count, day) => (count > best.count ? { day, count } : best), { day: 0, count: -1 });
   const share = totals.games ? (peak.count / totals.games) * 100 : 0;
   const sub = totals.games >= 6 && share >= 25
     ? `${statsWeekdayName(peak.day)}s are the busiest: ${Math.round(share)}% of games.`
-    : `${statsPlural(days, "game day")} in this period.`;
+    : days < allDays ? `${statsPlural(days, "game day")} in the last ${weeks} weeks.` : `${statsPlural(days, "game day")} in this period.`;
   return statsCard("When you play", statsHeatmap({ byDay: activity.byDay, weeks, now: model.now, aria: "Games played per day" }), { sub });
 }
 
@@ -262,6 +267,8 @@ function statsEndingsCard(model) {
       detail: `${ranges[i]} points`, tone: "blue",
     })).map((item, i) => ({ ...item, title: ranges[i] })),
     aria: "Games by final margin.", caption: "Games by final margin", headers: ["Final margin (points)"], valueHeader: "Games",
+    // With at most one or two games in any bin the automatic axis would read 0, 0.5, 1; counts are whole.
+    ticks: Math.max(...totals.margins) <= 2 ? Array.from({ length: Math.max(...totals.margins, 1) + 1 }, (unused, i) => i) : undefined,
   }) : "";
   return statsCard("How games end", `${stack}${histogram ? `<h4 class="st-subhead">Final margin</h4>${histogram}` : ""}`, {
     sub: totals.games >= 4 ? `Half of games finish within ${Math.round(median)} points; ${Math.round((totals.closeGames / totals.games) * 100)}% are decided by ${STATS_CLOSE_MARGIN} or fewer.` : "",
@@ -306,7 +313,9 @@ function statsLeaderRowsHtml(model, kind) {
   const key = kind === "team" ? "teams" : "players";
   const noun = kind === "team" ? "teams" : "players";
   const all = statsRankEntities(statsListOf(model, kind), state.metric, state.dir);
-  const query = statsUi.search[key].trim().toLowerCase();
+  // The box only exists for long lists. When a period shrinks the list below that, a query typed earlier
+  // would keep filtering with nowhere to see or clear it.
+  const query = statsListOf(model, kind).length > STATS_SEARCH_FROM ? statsUi.search[key].trim().toLowerCase() : "";
   const item = row => `<div role="listitem">${statsEntityRow(row, all, state.metric, state.dir)}</div>`;
   if (query) {
     const matches = all.filter(row => row.entity.name.toLowerCase().includes(query));
@@ -467,7 +476,7 @@ function statsGameRow(game) {
   const upset = statsUi.gameList === "upsets" && game.winChance !== null ? `won with only ${Math.max(1, Math.round(game.winChance * 100))}% odds after hand ${game.winChanceHand}` : "";
   const facts = [upset, statsPlural(game.hands, "hand"), game.leadChanges ? statsPlural(game.leadChanges, "lead swap") : "", game.deficit >= STATS_CLOSE_MARGIN ? `from ${game.deficit} down` : ""].filter(Boolean).join(" · ");
   return `<button type="button" class="st-game" data-open-game="${game.index}" aria-label="${statsEsc(`${topName} ${statsScore(topScore)}, ${otherName} ${statsScore(otherScore)}, ${when}. ${facts}`)}">
-    <span class="st-game__main"><span class="st-game__teams"><b>${statsEsc(topName)}</b> <i>beat</i> ${statsEsc(otherName)}</span><span class="st-game__score">${statsEsc(statsScoreLine(topScore, otherScore))}</span><span class="st-game__meta">${statsEsc(when)} · ${statsEsc(facts)}</span></span>
+    <span class="st-game__main"><span class="st-game__teams"><b>${statsEsc(topName)}</b> <i>${game.winner ? "beat" : "vs"}</i> ${statsEsc(otherName)}</span><span class="st-game__score">${statsEsc(statsScoreLine(topScore, otherScore))}</span><span class="st-game__meta">${statsEsc(when)} · ${statsEsc(facts)}</span></span>
     ${statsTrajectory(game.gaps)}
     ${statsIcon("chevron", "st-game__chev")}
   </button>`;
@@ -508,13 +517,14 @@ function statsRenderProfile(model, entity) {
   const rankText = metric => { const r = rank(metric); return r && list.length > 1 ? `#${r.rank} of ${r.of}` : ""; };
   const lastPlayed = entity.lastPlayed ? `last played ${statsRelativeDay(entity.lastPlayed, model.now)}` : "";
   const kind = entity.kind === "team" ? "Team" : "Player";
-  const subline = [kind, statsPlural(entity.gamesPlayed, "game"), lastPlayed].filter(Boolean).join(" · ");
+  const periodLabel = model.period && model.period !== "all" ? STATS_PERIODS[model.period] : "";
+  const subline = [kind, statsPlural(entity.gamesPlayed, "game"), periodLabel, lastPlayed].filter(Boolean).join(" · ");
   const streak = entity.streak.length >= 2
     ? `<span class="st-badge st-badge--${entity.streak.type === "W" ? "hot" : "cold"}">${statsIcon(entity.streak.type === "W" ? "flame" : "snow")}${entity.streak.type === "W" ? "Won" : "Lost"} ${entity.streak.length} in a row</span>` : "";
 
   const hero = `<section class="st-profile__hero">
     ${statsAvatar(entity, "lg")}
-    <div class="st-profile__who"><h3 class="st-profile__name">${statsEsc(entity.name)}</h3><p class="st-profile__sub">${statsEsc(subline)}</p></div>
+    <div class="st-profile__who"><h3 class="st-profile__name" tabindex="-1">${statsEsc(entity.name)}</h3><p class="st-profile__sub">${statsEsc(subline)}</p></div>
     <div class="st-profile__win"><strong>${statsEsc(String(Math.round(entity.winPercentNumber)))}<small>%</small></strong><span>${statsEsc(statsRecordText(entity))}</span></div>
     <div class="st-profile__meter">${statsMeter(entity.winPercentNumber, { tone: "blue", label: `Win rate ${Math.round(entity.winPercentNumber)} percent` })}</div>
     <div class="st-profile__form">${statsFormStrip(entity.form, { limit: 10, size: "md" })}${streak}</div>
@@ -687,10 +697,12 @@ function statsRestoreFocus(root, selector, caret) {
 }
 
 // `scrollTo` keeps the reader where they are; otherwise the tab's remembered spot or the top.
-function statsRender({ restoreScroll = true, scrollTo = null } = {}) {
+function statsRender({ restoreScroll = true, scrollTo = null, animate = true } = {}) {
   const content = document.getElementById("statisticsModalContent");
   const scroller = document.getElementById("statisticsModalScroll");
   if (!content) return;
+  // Showing a screen fades it in; drawing the same screen again (a toggle, a chip, new data) must not blank and refade it.
+  content.classList.toggle("is-redraw", !animate);
   const focusSelector = statsFocusSelector(document.activeElement, content);
   const caret = focusSelector.startsWith("[data-stats-search=") ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
   const model = statsModel();
@@ -717,7 +729,7 @@ function statsRedraw() {
   const scroller = document.getElementById("statisticsModalScroll");
   const rail = document.querySelector("#statisticsModalContent .st-chips");
   const railLeft = rail ? rail.scrollLeft : 0;
-  statsRender({ scrollTo: scroller ? scroller.scrollTop : 0 });
+  statsRender({ scrollTo: scroller ? scroller.scrollTop : 0, animate: false });
   const nextRail = document.querySelector("#statisticsModalContent .st-chips");
   if (nextRail) nextRail.scrollLeft = railLeft;
 }
@@ -741,7 +753,7 @@ function statsShowTab(tab, { scrollTop = false } = {}) {
   statsRender({ restoreScroll: !scrollTop });
 }
 
-function statsRenderProfileView({ keepScroll = false } = {}) {
+function statsRenderProfileView({ keepScroll = false, scrollTo = null } = {}) {
   const content = document.getElementById("entityStatisticsModalContent");
   const back = document.getElementById("entityStatisticsBack");
   const title = document.getElementById("entityStatisticsModalTitle");
@@ -749,7 +761,7 @@ function statsRenderProfileView({ keepScroll = false } = {}) {
   const current = statsUi.stack[statsUi.stack.length - 1];
   const model = statsModel();
   const entity = current && (current.kind === "team" ? model.teams.byKey.get(current.key) : model.players.byKey.get(current.key));
-  const top = keepScroll ? content.scrollTop : 0;
+  const top = scrollTo !== null ? scrollTo : keepScroll ? content.scrollTop : 0;
   if (back) back.hidden = statsUi.stack.length < 2;
   if (!entity) {
     content.innerHTML = statsEmpty("info", "Nothing to show", "This player or team has no games in the selected period.");
@@ -763,7 +775,13 @@ function statsRenderProfileView({ keepScroll = false } = {}) {
 
 function statsOpenProfile(kind, key, { push = true } = {}) {
   const normalizedKind = kind === "team" || kind === "teams" ? "team" : "player";
-  if (push) statsUi.stack.push({ kind: normalizedKind, key });
+  if (push) {
+    // Remember where the reader was in the profile being left, so Back returns there.
+    const leaving = statsUi.stack[statsUi.stack.length - 1];
+    const leavingContent = document.getElementById("entityStatisticsModalContent");
+    if (leaving && leavingContent) leaving.scroll = leavingContent.scrollTop;
+    statsUi.stack.push({ kind: normalizedKind, key });
+  }
   // Remember what opened the first profile so closing it can hand focus back.
   if (statsUi.stack.length <= 1) statsUi.returnFocus = document.activeElement;
   // Visible first: a hidden element cannot be scrolled back to the top.
@@ -771,12 +789,20 @@ function statsOpenProfile(kind, key, { push = true } = {}) {
     openSheetModal("entityStatisticsModal", closeEntityStatisticsModal);
   }
   statsRenderProfileView();
+  // Following a partner or opponent replaces the button that was tapped; keep focus in the profile.
+  if (statsUi.stack.length > 1) statsFocusProfileHeading();
+}
+
+function statsFocusProfileHeading() {
+  document.querySelector("#entityStatisticsModalContent .st-profile__name")?.focus?.({ preventScroll: true });
 }
 
 function statsProfileBack() {
   if (statsUi.stack.length > 1) {
     statsUi.stack.pop();
-    statsRenderProfileView();
+    const restored = statsUi.stack[statsUi.stack.length - 1];
+    statsRenderProfileView({ scrollTo: restored && Number.isFinite(restored.scroll) ? restored.scroll : 0 });
+    statsFocusProfileHeading();
   } else {
     closeEntityStatisticsModal();
   }
@@ -908,6 +934,7 @@ function statsHandleInput(event) {
   if (!kind) return;
   statsUi.search[kind === "team" ? "teams" : "players"] = event.target.value;
   const host = document.getElementById("statsLeaderRows");
+  document.getElementById("statisticsModalContent")?.classList.add("is-redraw"); // The bars must not regrow on every keystroke
   if (host) host.innerHTML = statsLeaderRowsHtml(statsModel(), kind);
   document.querySelector(`[data-stats-search-clear="${kind}"]`)?.classList.toggle("hidden", !event.target.value);
 }

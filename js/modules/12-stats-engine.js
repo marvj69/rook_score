@@ -701,8 +701,15 @@ function statsRankEntities(list, metricKey, direction = "desc") {
     if (a.valid && a.value !== b.value) return (a.value - b.value) * sign;
     return (b.entity.gamesPlayed - a.entity.gamesPlayed) || statsSortByName(a.entity, b.entity);
   });
-  let rank = 0;
-  rows.forEach(row => { row.rank = row.qualified ? ++rank : 0; });
+  // Equal values share a rank ("1, 1, 3"), so two sides on 100% are both first rather than first and second.
+  let position = 0;
+  let previous = null;
+  rows.forEach(row => {
+    if (!row.qualified) { row.rank = 0; return; }
+    position += 1;
+    if (previous === null || row.value !== previous.value) previous = { value: row.value, rank: position };
+    row.rank = previous.rank;
+  });
   return rows;
 }
 

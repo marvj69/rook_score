@@ -27,6 +27,9 @@ const {
   statsRenderBidding,
   statsRenderRecords,
   statsRenderProfile,
+  statsGameRow,
+  statsRankBadge,
+  statsProfileBack,
   statsApplyControls,
   renderStatisticsApp,
   statsRender,
@@ -112,7 +115,7 @@ test('charts pair every mark with a tooltip line and every figure with a table f
     assert.match(figure, /tabindex="0"/);
     assert.match(figure, /role="group"/);
     assert.match(figure, /aria-label="[^"]+Use the arrow keys/);
-    assert.match(figure, /<table class="sr-only"><caption>[^<]+<\/caption>/);
+    assert.match(figure, /<div class="sr-only"><table><caption>[^<]+<\/caption>/);
     const tips = (figure.match(/data-tip="/g) || []).length;
     const rows = (figure.match(/<tbody>[\s\S]*<\/tbody>/) || [''])[0].match(/<tr>/g) || [];
     assert.ok(tips > 0, 'marks carry tooltip text');
@@ -306,7 +309,7 @@ test('avatar initials never split an emoji or accented letter in half', () => {
 test('every chart table has one header per column and no empty column', () => {
   const m = model(sampleLibrary(36));
   const html = Object.values(allScreens(m)).join('');
-  const tables = html.match(/<table class="sr-only">[\s\S]*?<\/table>/g) || [];
+  const tables = html.match(/<div class="sr-only"><table>[\s\S]*?<\/table>/g) || [];
   assert.ok(tables.length >= 6);
   for (const table of tables) {
     const headers = [...table.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map(match => match[1]);
@@ -460,4 +463,116 @@ test('asking for a player by name steps the period filter back to all time if it
   ui.stack.length = 0;
   setLocalStorage('savedGames', [], { sync: false });
   clearStatisticsCache();
+});
+
+// --- Audit fixes ---
+
+test('chart tables sit inside a clipped box so a long one cannot stretch the sheet', () => {
+  const html = statsRenderOverview(model(sampleLibrary(120, ['Ann', 'Bob', 'Cy', 'Di', 'Eve', 'Flo'])));
+  const tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
+  assert.ok(tables.length >= 2);
+  for (const table of tables) {
+    const at = html.indexOf(table);
+    assert.equal(html.slice(at - '<div class="sr-only">'.length, at), '<div class="sr-only">', 'every table is wrapped');
+    assert.equal(html.slice(at + table.length, at + table.length + 6), '</div>');
+  }
+  assert.doesNotMatch(html, /<table class="sr-only"/);
+});
+
+test('a search typed earlier stops filtering once its box is no longer shown', () => {
+  const ui = getStatsUiForTests();
+  const small = model(sampleLibrary(3));
+  const big = model(sampleLibrary(36, ['Ann', 'Bob', 'Cy', 'Di', 'Eve', 'Flo', 'Gus', 'Hal', 'Ida', 'Jon', 'Kim', 'Lee', 'Max', 'Ned']));
+  try {
+    ui.search = { players: 'zzz', teams: '' };
+    assert.match(statsLeaderRowsHtml(big, 'player'), /No players match/, 'with the box shown the query filters');
+    assert.doesNotMatch(statsLeaderRowsHtml(small, 'player'), /No players match/, 'without the box it must not hide the list');
+    assert.match(statsLeaderRowsHtml(small, 'player'), /st-row/);
+  } finally {
+    ui.search = { players: '', teams: '' };
+  }
+});
+
+test('redrawing a screen in place keeps its entrance animation from replaying', () => {
+  const live = installLiveDocument();
+  try {
+    setLocalStorage('savedGames', sampleLibrary(12), { sync: false });
+    clearStatisticsCache();
+    live.get('statisticsModal').classList.remove('hidden');
+    live.get('statisticsModalContent').setAttribute('aria-busy', 'true');
+    renderStatisticsApp();
+    const content = live.get('statisticsModalContent');
+    assert.equal(content.classList.contains('is-redraw'), false, 'opening the sheet animates');
+    statsRedraw();
+    assert.equal(content.classList.contains('is-redraw'), true, 'a toggle or data refresh does not');
+    statsRender({ restoreScroll: false });
+    assert.equal(content.classList.contains('is-redraw'), false, 'a new view animates again');
+  } finally {
+    live.restore();
+    setLocalStorage('savedGames', [], { sync: false });
+    clearStatisticsCache();
+  }
+});
+
+test('medals go to real leaders, not to zeros', () => {
+  assert.match(statsRankBadge({ qualified: true, rank: 1, value: 4 }, 'closeWins', 'desc'), /st-rank--1/);
+  assert.doesNotMatch(statsRankBadge({ qualified: true, rank: 1, value: 0 }, 'closeWins', 'desc'), /st-rank--1/);
+  assert.doesNotMatch(statsRankBadge({ qualified: true, rank: 2, value: 4 }, 'closeWins', 'asc'), /st-rank--2/);
+  assert.match(statsRankBadge({ qualified: true, rank: 3, value: 2 }, 'closeWins', 'desc'), /st-rank--3/);
+});
+
+test('a game with no winner reads "vs", not "beat"', () => {
+  const base = { us: 'Ann & Bob', dem: 'Cy & Di', usScore: 500, demScore: 500, time: NOW, hands: 9, leadChanges: 2, deficit: 0, gaps: [0, 40, -20, 0], winChance: null, index: 0 };
+  assert.match(statsGameRow({ ...base, winner: null }), /<i>vs<\/i>/);
+  assert.match(statsGameRow({ ...base, winner: 'us', winnerName: 'Ann & Bob', loserName: 'Cy & Di' }), /<i>beat<\/i>/);
+});
+
+test('a profile opened under a period says which period it covers', () => {
+  const all = model(sampleLibrary(36));
+  const recent = model(sampleLibrary(36), { period: 'd30' });
+  assert.doesNotMatch(statsRenderProfile(all, all.players.list[0]), /Last 30 days/);
+  assert.match(statsRenderProfile(recent, recent.players.list[0]), /st-profile__sub">[^<]*Last 30 days/);
+  assert.match(statsRenderProfile(all, all.players.list[0]), /class="st-profile__name" tabindex="-1"/);
+});
+
+test('Back from a partner or opponent returns to where the reader was in the profile', () => {
+  const live = installLiveDocument();
+  const ui = getStatsUiForTests();
+  try {
+    setLocalStorage('savedGames', sampleLibrary(12), { sync: false });
+    clearStatisticsCache();
+    live.get('entityStatisticsModal').classList.remove('hidden');
+    ui.stack = [{ kind: 'player', key: 'ann', scroll: 420 }, { kind: 'player', key: 'bob' }];
+    live.get('entityStatisticsModalContent').scrollTop = 0;
+    statsProfileBack();
+    assert.equal(ui.stack.length, 1);
+    assert.equal(live.get('entityStatisticsModalContent').scrollTop, 420);
+    assert.match(live.get('entityStatisticsModalContent').innerHTML, /st-profile__name/);
+  } finally {
+    ui.stack.length = 0;
+    live.restore();
+    setLocalStorage('savedGames', [], { sync: false });
+    clearStatisticsCache();
+  }
+});
+
+test('the margin chart counts whole games, and the calendar says how much it shows', () => {
+  const few = statsRenderOverview(model(sampleLibrary(5)));
+  const figure = (few.match(/<figure class="st-chart st-chart--bars"[^>]*Games by final margin[\s\S]*?<\/figure>/) || [''])[0];
+  assert.ok(figure, 'the final margin chart is drawn');
+  const axis = [...figure.matchAll(/<text class="st-axis" x="[\d.]+" y="[\d.]+" text-anchor="end">([^<]*)<\/text>/g)].map(match => match[1]);
+  assert.ok(axis.length >= 2);
+  assert.ok(axis.every(label => /^\d+$/.test(label)), `count axis shows ${axis.join(', ')}`);
+  const long = statsRenderOverview(model(sampleLibrary(120, ['Ann', 'Bob', 'Cy', 'Di', 'Eve', 'Flo'])));
+  assert.match(long, /game days in the last 26 weeks\./);
+});
+
+test('axis labels use a real minus sign like the tooltips', () => {
+  const html = statsDivergingChart({
+    items: [{ label: '1', value: -40, display: 'Lost', detail: '', tone: 'orange' }, { label: '2', value: 25, display: 'Won', detail: '', tone: 'aqua' }],
+    aria: 'Margins.', caption: 'Margins', headers: ['Game'], valueHeader: 'Margin',
+  });
+  const axis = [...html.matchAll(/<text class="st-axis"[^>]*text-anchor="end">([^<]*)<\/text>/g)].map(match => match[1]);
+  assert.ok(axis.some(label => label.startsWith('−')), axis.join(','));
+  assert.ok(axis.every(label => !label.startsWith('-')));
 });

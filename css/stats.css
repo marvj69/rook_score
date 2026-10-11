@@ -65,6 +65,11 @@
 .st-hero__label { display: block; margin-top: 0.3rem; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.86); }
 .st-delta { display: inline-block; margin-top: 0.5rem; padding: 0.2rem 0.55rem; border-radius: 99px; font-size: 0.7rem; font-weight: 800; background: rgba(0, 0, 0, 0.26); color: #ffffff; }
 .st-hero__minis { display: grid; gap: 0.4rem; margin: 0; text-align: right; }
+@media (max-width: 359px) {
+  .st-hero { grid-template-columns: minmax(0, 1fr); }
+  .st-hero__minis { text-align: left; }
+  .st-hero__minis div { justify-content: space-between; }
+}
 .st-hero__minis div { display: flex; justify-content: flex-end; align-items: baseline; gap: 0.5rem; }
 .st-hero__minis dt { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.8); }
 .st-hero__minis dd { margin: 0; font-size: 0.95rem; font-weight: 900; }
@@ -90,7 +95,7 @@
 }
 .st-insight__icon .ui-icon { width: 1.15rem; height: 1.15rem; }
 .st-insight__text { min-width: 0; flex: 1 1 auto; }
-.st-insight__text strong { display: block; font-size: 0.9rem; font-weight: 800; line-height: 1.25; color: var(--lib-text); }
+.st-insight__text strong { display: block; font-size: 0.9rem; font-weight: 800; line-height: 1.25; color: var(--lib-text); overflow-wrap: anywhere; }
 .st-insight__text small { display: block; margin-top: 0.12rem; font-size: 0.78rem; line-height: 1.35; color: var(--lib-muted); }
 .st-insight__chev { flex: none; width: 1rem; height: 1rem; color: var(--lib-faint); }
 .st-more {
@@ -228,6 +233,7 @@
 .st-swatch { width: 0.7rem; height: 0.7rem; border-radius: 0.22rem; }
 .st-legend b { color: #ffffff; font-variant-numeric: tabular-nums; }
 .st-legend small { text-align: right; font-size: 0.75rem; color: var(--lib-muted); }
+.st-legend + .st-kpis { margin-top: 0.75rem; }
 
 /* ── Records and games ── */
 .st-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
@@ -301,7 +307,7 @@ button.st-record { border-color: var(--lib-line); touch-action: manipulation; }
 .st-axis { fill: #94a3b8; font-size: 10px; }
 .st-axis--sub { fill: #7d8ba6; font-size: 9px; }
 .st-axis--title { fill: #94a3b8; font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; }
-.st-value { fill: #f8fafc; font-size: 11px; font-weight: 800; }
+.st-value { fill: #f8fafc; font-size: 11px; font-weight: 800; paint-order: stroke; stroke: var(--st-surface); stroke-width: 3px; stroke-linejoin: round; }
 .st-ref { stroke: rgba(226, 232, 240, 0.5); stroke-width: 1; }
 .st-ref-label { fill: #94a3b8; font-size: 9px; }
 .st-bar { fill: var(--st-blue); transition: opacity 0.15s var(--smooth), filter 0.15s var(--smooth); }
@@ -372,4 +378,6 @@ body.liquid-glass .st-record:active, body.liquid-glass .st-bar-row--link:active,
   .st-bar { transform-box: fill-box; transform-origin: 50% 100%; animation: stBarGrow 0.5s var(--smooth) both; }
   .st-bar--down { transform-origin: 50% 0%; }
   .st-line { stroke-dasharray: 1; stroke-dashoffset: 0; animation: stDraw 0.9s var(--smooth) both; }
+  /* Drawing the same screen again (a toggle, a chip, new data, a search keystroke) keeps everything where it is. */
+  .is-redraw .st-page > *, .is-redraw .st-meter i, .is-redraw .st-split i, .is-redraw .st-bar, .is-redraw .st-line { animation: none; }
 }

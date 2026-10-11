@@ -83,6 +83,8 @@ function statsNiceRange(low, high, target = 3) {
 
 const statsNum = value => (Number.isFinite(value) ? Number(value.toFixed(1)) : 0);
 const statsPx = value => Number(value.toFixed(1));
+// Axis numbers use the same real minus sign as the tooltips.
+const statsAxisText = value => String(value).replace(/^-/, "−");
 
 // --- Shared bits ---
 function statsTip(title, value, detail = "") {
@@ -98,7 +100,9 @@ function statsDataTable(caption, headers, rows) {
     while (cells.length < headers.length - 1) cells.push("");
     return `<tr><th scope="row">${escapeHtmlValue(row[0])}</th>${cells.map(cell => `<td>${escapeHtmlValue(cell)}</td>`).join("")}</tr>`;
   }).join("");
-  return `<table class="sr-only"><caption>${escapeHtmlValue(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  // The wrapper does the clipping: a table box grows to its content whatever width .sr-only gives it,
+  // and a long one (a row per game day) would stretch the sheet's scrollable area by thousands of pixels.
+  return `<div class="sr-only"><table><caption>${escapeHtmlValue(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function statsFigure(kind, aria, inner, table, extraClass = "") {
@@ -131,7 +135,7 @@ function statsBarsChart({ items, max, ticks, reference = null, aria, caption, he
 
   const grid = scale.ticks.map(tick => `
     <line class="st-grid${tick === 0 ? " st-grid--base" : ""}" x1="${L}" x2="${W - R}" y1="${statsPx(y(tick))}" y2="${statsPx(y(tick))}"/>
-    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(formatTick(tick))}</text>`).join("");
+    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(statsAxisText(formatTick(tick)))}</text>`).join("");
 
   const marks = items.map((item, i) => {
     const cx = L + slot * (i + 0.5);
@@ -152,7 +156,8 @@ function statsBarsChart({ items, max, ticks, reference = null, aria, caption, he
     ? `<line class="st-ref" x1="${L}" x2="${W - R}" y1="${statsPx(y(reference.value))}" y2="${statsPx(y(reference.value))}"/><text class="st-ref-label" x="${W - R}" y="${statsPx(y(reference.value) - 4)}" text-anchor="end">${escapeHtmlValue(reference.label)}</text>` : "";
 
   const table = statsDataTable(caption, [headers[0], valueHeader, ...headers.slice(1)], items.map(item => [item.title || item.label, item.display, ...(item.detailCells || [])]));
-  return statsFigure("bars", aria, `<svg viewBox="0 0 ${W} ${H}" focusable="false" aria-hidden="true">${grid}${ref}${marks}</svg>`, table);
+  // The reference line and its label go on top so a tall bar cannot hide "all bids 49%".
+  return statsFigure("bars", aria, `<svg viewBox="0 0 ${W} ${H}" focusable="false" aria-hidden="true">${grid}${marks}${ref}</svg>`, table);
 }
 
 // Columns above and below a zero line. items: { label, value, display, detail, tone }
@@ -168,7 +173,7 @@ function statsDivergingChart({ items, aria, caption, headers, valueHeader = "Val
 
   const grid = [-scale.max, 0, scale.max].map(tick => `
     <line class="st-grid${tick === 0 ? " st-grid--base" : ""}" x1="${L}" x2="${W - R}" y1="${statsPx(y(tick))}" y2="${statsPx(y(tick))}"/>
-    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(formatTick(tick))}</text>`).join("");
+    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(statsAxisText(formatTick(tick)))}</text>`).join("");
 
   const marks = items.map((item, i) => {
     const cx = L + slot * (i + 0.5);
@@ -202,7 +207,7 @@ function statsLineChart({ points, baseline = null, baselineLabel = "", aria, cap
 
   const grid = range.ticks.map(tick => `
     <line class="st-grid${tick === range.min ? " st-grid--base" : ""}" x1="${L}" x2="${W - R}" y1="${statsPx(y(tick))}" y2="${statsPx(y(tick))}"/>
-    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(formatTick(tick))}</text>`).join("");
+    <text class="st-axis" x="${L - 6}" y="${statsPx(y(tick) + 3.5)}" text-anchor="end">${escapeHtmlValue(statsAxisText(formatTick(tick)))}</text>`).join("");
   const ref = Number.isFinite(baseline)
     ? `<line class="st-ref" x1="${L}" x2="${W - R}" y1="${statsPx(y(baseline))}" y2="${statsPx(y(baseline))}"/><text class="st-ref-label" x="${W - R}" y="${statsPx(y(baseline) - 4)}" text-anchor="end">${escapeHtmlValue(baselineLabel)}</text>` : "";
   const step = Math.max(1, Math.ceil(last / 5));
@@ -221,13 +226,18 @@ function statsLineChart({ points, baseline = null, baselineLabel = "", aria, cap
   const dots = points.map((point, i) => (showDots && i !== last ? `<circle class="st-dot" data-i="${i}" cx="${statsPx(x(i))}" cy="${statsPx(y(point.value))}" r="3"/>` : "")).join("");
 
   const table = statsDataTable(caption, [headers[0], valueHeader, ...headers.slice(1)], points.map(point => [point.label, point.display, ...(point.detailCells || [])]));
+  // The end value sits beside the end dot, on the side the line is not: below it when the last step was down.
+  const endY = y(points[last].value);
+  const endLabelY = last > 0 && points[last - 1].value > points[last].value
+    ? Math.min(T + plotH - 2, endY + 16)
+    : Math.max(T - 4, endY - 9);
   const svg = `<svg viewBox="0 0 ${W} ${H}" focusable="false" aria-hidden="true">
     ${grid}${ref}
     <path class="st-area" d="${area}"/>
     <path class="st-line" d="${line}" pathLength="1"/>
     ${dots}
     <circle class="st-dot st-dot--end" cx="${statsPx(x(last))}" cy="${statsPx(y(points[last].value))}" r="4.5"/>
-    <text class="st-value" x="${statsPx(x(last) - 8)}" y="${statsPx(Math.max(T - 4, y(points[last].value) - 9))}" text-anchor="end">${escapeHtmlValue(points[last].display)}</text>
+    <text class="st-value" x="${statsPx(x(last) - 8)}" y="${statsPx(endLabelY)}" text-anchor="end">${escapeHtmlValue(points[last].display)}</text>
     <line class="st-cross" x1="0" x2="0" y1="${T}" y2="${T + plotH}" hidden/>
     <circle class="st-cross-dot" cx="0" cy="0" r="5.5" hidden/>
     ${axis}${hits}
@@ -239,7 +249,7 @@ function statsLineChart({ points, baseline = null, baselineLabel = "", aria, cap
 // One dot per player. points: { key, label, name, x, y, detail }. The dashed-free
 // guides mark the group average on each axis so "bold" and "safe" mean something.
 function statsScatterChart({ points, refX = null, refY = null, aria, caption, headers, valueHeader, xLabel, yLabel }) {
-  const W = 340, H = 232, L = 40, R = 16, T = 14, B = 42;
+  const W = 340, H = 232, L = 46, R = 16, T = 14, B = 42;
   const plotW = W - L - R;
   const plotH = H - T - B;
   const xs = points.map(point => point.x).concat(Number.isFinite(refX) ? [refX] : []);
