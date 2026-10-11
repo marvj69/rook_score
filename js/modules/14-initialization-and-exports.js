@@ -117,6 +117,14 @@ function initializeRookApp() {
   initializeHomeScreen();
   maybePromptForVoiceExperimentalOnboarding();
 
+  // These two used to be saved only when Settings was closed, so a toggle followed by a closed app lost it.
+  [["mustWinByBidToggle", MUST_WIN_BY_BID_KEY], ["misdealHandlingToggle", MISDEAL_HANDLING_KEY]].forEach(([id, key]) => {
+    document.getElementById(id)?.addEventListener("change", event => {
+      setLocalStorage(key, event.target.checked);
+      scheduleRender();
+    });
+  });
+
   // Pro mode toggle (in settings modal, not main nav)
   const proModeToggleModal = document.getElementById("proModeToggleModal");
   if (proModeToggleModal) {
@@ -170,14 +178,24 @@ function initializeRookApp() {
 	    tableTalkModal: closeTableTalkModal,
 	    probabilityModal: closeProbabilityModal,
 	    dealerOrderModal: closeDealerOrderModal,
+	    dealerPairSelectionModal: cancelDealerPairSelection,
+	    zeroPointsModal: () => closeModal("zeroPointsModal"),
+	    rematchDealerModal: () => closeRematchDealerModal(true),
 	    voiceExperimentalOnboardingModal: cancelVoiceExperimentalOnboarding,
 	    deleteGameDataModal: closeDeleteGameDataModal,
 	  };
 
+  // Where the press began: selecting text in a field and letting go over the backdrop ends in a
+  // click on the backdrop, which must not close the sheet and throw the typed text away.
+  let pressStartedOn = null;
+  document.addEventListener("pointerdown", (e) => { pressStartedOn = e.target; }, true);
   document.addEventListener("click", (e) => {
     Object.entries(modalCloseHandlers).forEach(([id, handler]) => {
       const modalEl = document.getElementById(id);
       if (modalEl && !modalEl.classList.contains("hidden") && e.target === modalEl) {
+        if (pressStartedOn && pressStartedOn !== modalEl) return;
+        // The second tap of a double tap on whatever opened the panel lands on its backdrop.
+        if (isModalJustOpened(modalEl)) return;
         handler();
       }
     });
@@ -196,7 +214,18 @@ function initializeRookApp() {
         .sort((a, b) => stackOrder(document.getElementById(a)) - stackOrder(document.getElementById(b)))
         .pop();
     }
-    if (!dialogId) return;
+    if (!dialogId) {
+      // No panel is open: Escape closes the menu, then puts away the scoring keypad.
+      if (document.getElementById("menu")?.classList.contains("show")) {
+        e.preventDefault();
+        setMenuOpenState(false);
+        document.getElementById("hamburgerIcon")?.focus?.({ preventScroll: true });
+      } else if (activeScoreKeypadTarget) {
+        e.preventDefault();
+        closeScoreKeypad();
+      }
+      return;
+    }
     e.preventDefault();
     modalCloseHandlers[dialogId]();
   });
@@ -299,9 +328,13 @@ function handleTeamSelectionCancel() {
     let currentX = 0;
     let isDragging = false;
     let isOpening = false;
-    const menuWidth = menu.offsetWidth;
+    // Measured when a drag starts: at script load the stylesheet has not applied yet and the
+    // unstyled drawer is as wide as the screen, which made the drag lag the finger and the
+    // open/close threshold far too long.
+    let menuWidth = 280;
 
     function onTouchStart(e) {
+        menuWidth = menu.offsetWidth || 280;
         startX = e.touches[0].clientX;
         currentX = startX;
         const menuOpen = menu.classList.contains("show");
@@ -353,18 +386,7 @@ function handleTeamSelectionCancel() {
             shouldOpen = deltaX > -threshold;
         }
         menu.style.transition = "";
-        if ("inert" in menu) menu.inert = !shouldOpen;
-        if (shouldOpen) {
-            menu.classList.add("show");
-            icon.classList.add("open");
-            overlay.classList.add("show");
-            document.body.classList.add("overflow-hidden");
-        } else {
-            menu.classList.remove("show");
-            icon.classList.remove("open");
-            overlay.classList.remove("show");
-            document.body.classList.remove("overflow-hidden");
-        }
+        setMenuOpenState(shouldOpen);
         menu.style.transform = "";
         overlay.style.opacity = "";
     }
@@ -584,6 +606,14 @@ if (typeof module !== 'undefined' && module.exports) {
     getBugReportDiagnostics,
     openBugReportModal,
     cancelBugReport,
+    cancelDealerPairSelection,
+    rememberModalFocus,
+    restoreModalFocus,
+    isModalJustOpened,
+    syncModalStackInertness,
+    swallowLeakedModalTap,
+    deactivateModalEnvironment,
+    activateModalEnvironment,
     closePresetEditorModal,
     canShowProbabilityExplanation,
     describeRequestFailure,

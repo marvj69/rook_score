@@ -223,27 +223,101 @@ function setupDealerNameSuggestions() {
   });
 }
 
+// The one place that opens or closes the drawer, so its classes, the dim overlay, what Tab can
+// reach, and what a screen reader announces always agree (the swipe gesture uses it too).
+function setMenuOpenState(isOpen) {
+  const menu = document.getElementById("menu");
+  if (!menu) return false;
+  const icon = document.getElementById("hamburgerIcon");
+  menu.classList.toggle("show", isOpen);
+  if ("inert" in menu) menu.inert = !isOpen;
+  if (icon) {
+    icon.classList.toggle("open", isOpen);
+    icon.setAttribute("aria-expanded", String(isOpen));
+    icon.setAttribute("aria-label", isOpen ? "Close Menu" : "Open Menu");
+  }
+  document.getElementById("menuOverlay")?.classList.toggle("show", isOpen);
+  document.body.classList.toggle("overflow-hidden", isOpen);
+  // With the drawer open nothing behind it may take Tab; it goes back to normal when the drawer
+  // closes unless a sheet or Home is covering the page anyway.
+  const behindStaysInert = isOpen || document.body.classList.contains("modal-open") || isHomeScreenOpen();
+  ["app", "versionBadge"].forEach(id => {
+    const behind = document.getElementById(id);
+    if (behind && "inert" in behind) behind.inert = behindStaysInert;
+  });
+  return isOpen;
+}
 function toggleMenu(e) {
   if (e) e.stopPropagation();
   const menu = document.getElementById("menu");
-  const icon = document.getElementById("hamburgerIcon");
-  const overlay = document.getElementById("menuOverlay");
-  const isOpen = menu.classList.toggle("show");
-  if ("inert" in menu) menu.inert = !isOpen;
-  icon.classList.toggle("open", isOpen);
-  overlay.classList.toggle("show", isOpen);
-  document.body.classList.toggle("overflow-hidden", isOpen);
+  setMenuOpenState(!menu.classList.contains("show"));
 }
 function closeMenuOverlay() {
-  const menu = document.getElementById("menu");
-  menu?.classList.remove("show");
-  if (menu && "inert" in menu) menu.inert = true;
-  document.getElementById("hamburgerIcon")?.classList.remove("open");
-  document.getElementById("menuOverlay")?.classList.remove("show");
-  document.body.classList.remove("overflow-hidden");
+  setMenuOpenState(false);
+}
+
+// --- Modal stack: what is interactive, where focus goes back to, and stray taps ---
+// A dialog's "Confirm" (or a panel's opener) is often tapped twice. The second tap must not land on
+// the panel that has just opened (a switch inside it, or its backdrop) nor on the page a closed
+// dialog was covering, so for a moment after a panel opens or closes real taps are held back.
+const MODAL_TAP_SHIELD_MS = 320;
+let lastModalClosedAt = 0;
+let lastModalOpenedAt = 0;
+const modalReturnFocus = new Map();
+
+// Remember what had focus before a modal opened (call before the page behind is made inert).
+function rememberModalFocus(modalId) {
+  modalReturnFocus.delete(modalId);
+  const active = document.activeElement;
+  const modal = document.getElementById(modalId);
+  if (!active || active === document.body || active === document.documentElement) return;
+  if (modal && typeof modal.contains === "function" && modal.contains(active)) return;
+  modalReturnFocus.set(modalId, active);
+}
+
+// Give focus back when the modal closes, so keyboard and screen-reader users are not dropped on the page.
+function restoreModalFocus(modalId) {
+  const target = modalReturnFocus.get(modalId);
+  modalReturnFocus.delete(modalId);
+  if (!target || !target.isConnected || typeof target.focus !== "function") return;
+  if (typeof target.closest === "function" && target.closest("[inert]")) return;
+  target.focus({ preventScroll: true });
+}
+
+function isModalJustOpened(modal) {
+  const openedAt = Number(modal?.dataset?.openedAt || 0);
+  return openedAt > 0 && Date.now() - openedAt < MODAL_TAP_SHIELD_MS;
+}
+
+// With two panels open (a profile over Statistics, a confirmation over the Library) only the top one
+// may be reached by Tab or a screen reader.
+function syncModalStackInertness() {
+  const open = Array.from(document.querySelectorAll(".modal")).filter(modal => !modal.classList.contains("hidden"));
+  if (!open.length) return;
+  const layer = el => (typeof getComputedStyle === "function" ? Number(getComputedStyle(el).zIndex) || 0 : 0);
+  // Equal z-index: the later one in the page is painted on top.
+  const top = open.reduce((best, el) => (layer(el) >= layer(best) ? el : best), open[0]);
+  open.forEach(modal => { if ("inert" in modal) modal.inert = modal !== top; });
+}
+
+// A tap that arrives right after a panel opened or closed belongs to that panel's own gesture, not to
+// what happens to be under the finger now: the page or sheet a dialog uncovered, or a switch inside
+// the sheet that just slid in. Nobody means a second action within a third of a second.
+function swallowLeakedModalTap(event) {
+  if (!event.isTrusted) return;
+  const sinceChange = Date.now() - Math.max(lastModalClosedAt, lastModalOpenedAt);
+  if (sinceChange > MODAL_TAP_SHIELD_MS) return;
+  const target = event.target;
+  if (target && typeof target.closest === "function" && target.closest("#voiceScoreHost, #onboarding")) return;
+  event.stopPropagation();
+  event.preventDefault();
+}
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  document.addEventListener("click", swallowLeakedModalTap, true);
 }
 
 function activateModalEnvironment() {
+  lastModalOpenedAt = Date.now();
   document.body.classList.add("modal-open");
   const app = document.getElementById("app");
   app?.classList.add("modal-active");
@@ -251,9 +325,21 @@ function activateModalEnvironment() {
   if (app && "inert" in app) app.inert = true;
   const home = document.getElementById("homeScreen");
   if (home && "inert" in home) home.inert = true;
+  // The menu button and version badge sit outside #app; their buttons would still take Tab
+  // (the badge is invisible, yet Enter on it opened Version Info over the open sheet).
+  ["hamburgerIcon", "versionBadge"].forEach(id => {
+    const chrome = document.getElementById(id);
+    if (chrome && "inert" in chrome) chrome.inert = true;
+  });
+  // Panels built on the fly (confirmations of table talk, rematch, probability) have no openModal call.
+  document.querySelectorAll(".modal").forEach(modal => {
+    if (!modal.classList.contains("hidden") && modal.dataset && !modal.dataset.openedAt) modal.dataset.openedAt = String(Date.now());
+  });
+  syncModalStackInertness();
 }
 
 function deactivateModalEnvironment() {
+  lastModalClosedAt = Date.now();
   const anyOpenModal = Array.from(document.querySelectorAll(".modal"))
     .some(modal => !modal.classList.contains("hidden"));
   if (!anyOpenModal) {
@@ -265,18 +351,29 @@ function deactivateModalEnvironment() {
     if (app && "inert" in app) app.inert = homeOpen;
     const home = document.getElementById("homeScreen");
     if (home && "inert" in home) home.inert = !homeOpen || document.body.classList.contains("onboarding-open");
+    ["hamburgerIcon", "versionBadge"].forEach(id => {
+      const chrome = document.getElementById(id);
+      if (chrome && "inert" in chrome) chrome.inert = homeOpen;
+    });
+  } else {
+    syncModalStackInertness(); // The panel underneath becomes the live one again
   }
 }
 
 function openModal(modalId) {
   const modal = document.getElementById(modalId);
+  rememberModalFocus(modalId);
   modal?.classList.remove("hidden");
+  if (modal?.dataset) modal.dataset.openedAt = String(Date.now());
   activateModalEnvironment();
   modal?.focus(); // For accessibility
 }
 function closeModal(modalId) {
-  document.getElementById(modalId)?.classList.add("hidden");
+  const modal = document.getElementById(modalId);
+  modal?.classList.add("hidden");
+  if (modal && "inert" in modal) modal.inert = false;
   deactivateModalEnvironment();
+  restoreModalFocus(modalId);
 }
 // Bottom sheets slide down on phones before hiding; everywhere else they close immediately.
 function closeSheetModal(modalId) {
@@ -420,6 +517,11 @@ function openDealerPairSelectionModal() {
 function closeDealerPairSelectionModal() {
   closeModal("dealerPairSelectionModal");
   if (state.gameOver) scheduleRender();
+}
+// Dismissing the question (Cancel, Escape, a tap beside it) abandons whatever asked it, like the team prompt does.
+function cancelDealerPairSelection() {
+  pendingGameAction = null;
+  closeDealerPairSelectionModal();
 }
 function handleDealerPairSelection(pair) {
   closeDealerPairSelectionModal();

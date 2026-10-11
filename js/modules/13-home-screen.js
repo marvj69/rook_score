@@ -10,6 +10,8 @@ let homeScreenOpen = false;
 let homeScreenGameSignature = "";
 let onboardingSlideIndex = 0;
 let onboardingScrollFrame = null;
+let onboardingScrollTarget = null; // The slide a smooth scroll is still travelling to
+let onboardingScrollTargetTimer = null;
 
 function hasActiveGame(gameState = state) {
   if (!gameState || typeof gameState !== "object") return false;
@@ -306,7 +308,14 @@ function setOnboardingSlide(index, { scroll = true, smooth = true } = {}) {
   if (scroll && track) {
     const reduceMotion = typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    track.scrollTo({ left: slides[nextIndex].offsetLeft, behavior: smooth && !reduceMotion ? "smooth" : "auto" });
+    const animated = smooth && !reduceMotion;
+    track.scrollTo({ left: slides[nextIndex].offsetLeft, behavior: animated ? "smooth" : "auto" });
+    // While the scroll is under way the track is between slides; reading its position then would put the
+    // dots and slide back on the one being left, so scroll events are ignored until it arrives (or a
+    // moment passes, in case the reader grabs the track).
+    clearTimeout(onboardingScrollTargetTimer);
+    onboardingScrollTarget = animated ? nextIndex : null;
+    if (animated) onboardingScrollTargetTimer = setTimeout(() => { onboardingScrollTarget = null; }, 800);
   }
   slides.forEach((slide, i) => {
     slide.classList.toggle("is-active", i === nextIndex);
@@ -330,6 +339,10 @@ function handleOnboardingScroll() {
     const track = document.getElementById("onboardingTrack");
     if (!track || !track.clientWidth) return;
     const index = Math.round(track.scrollLeft / track.clientWidth);
+    if (onboardingScrollTarget !== null) {
+      if (index === onboardingScrollTarget) onboardingScrollTarget = null;
+      return;
+    }
     if (index !== onboardingSlideIndex) setOnboardingSlide(index, { scroll: false });
   });
 }

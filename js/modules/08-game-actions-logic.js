@@ -9,6 +9,8 @@ function handleCheatFlag() {
 }
 
 function openTableTalkModal() {
+  if (document.getElementById("tableTalkModal")) return; // already asking
+  rememberModalFocus("tableTalkModal");
   const usTeamName = state.usTeamName || "Us";
   const demTeamName = state.demTeamName || "Dem";
   const usTeamDisplay = escapeHtml(usTeamName);
@@ -47,6 +49,7 @@ function closeTableTalkModal() {
   if (modal) {
     modal.remove();
     deactivateModalEnvironment();
+    restoreModalFocus("tableTalkModal");
   }
 }
 
@@ -764,6 +767,7 @@ function closeRematchDealerModal(restoreGameOverOverlay = false) {
     if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
   }
   deactivateModalEnvironment();
+  restoreModalFocus("rematchDealerModal");
 }
 
 async function startRematchWithFirstDealer(firstDealer) {
@@ -810,6 +814,7 @@ function openRematchDealerModal() {
 
   hideGameOverOverlay();
   closeRematchDealerModal(false);
+  rememberModalFocus("rematchDealerModal");
 
   const buttonsHtml = dealerCandidates.map((dealer, index) => `
     <button type="button" class="dialog-choice" data-rematch-dealer-index="${index}">
@@ -843,7 +848,7 @@ function openRematchDealerModal() {
   });
   document.getElementById("cancelRematchDealerBtn")?.addEventListener("click", () => closeRematchDealerModal(true));
   modal?.addEventListener("click", (event) => {
-    if (event.target === modal) closeRematchDealerModal(true);
+    if (event.target === modal && !isModalJustOpened(modal)) closeRematchDealerModal(true);
   });
   activateModalEnvironment();
   modal?.focus();

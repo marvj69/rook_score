@@ -30,6 +30,14 @@ const {
   getPendingConfirmationForTests,
   openBugReportModal,
   cancelBugReport,
+  cancelDealerPairSelection,
+  rememberModalFocus,
+  restoreModalFocus,
+  isModalJustOpened,
+  syncModalStackInertness,
+  swallowLeakedModalTap,
+  deactivateModalEnvironment,
+  activateModalEnvironment,
   closePresetEditorModal,
   canShowProbabilityExplanation,
   describeRequestFailure,
@@ -1577,6 +1585,146 @@ test('cancelling while the microphone prompt is open keeps a late "yes" from ena
     window.__rookVoiceScoreRuntime = previousRuntime;
     resetState();
   }
+});
+
+test('with two panels open only the top one stays reachable, and the one below comes back', () => {
+  const makeModal = (id, layer) => ({ id, layer, inert: false, dataset: {}, classList: { contains: () => false } });
+  const lower = makeModal('lower', 9990);
+  const upper = makeModal('upper', 9996);
+  const originalQuery = document.querySelectorAll;
+  const originalStyle = global.getComputedStyle;
+  let open = [lower, upper];
+  document.querySelectorAll = selector => (selector === '.modal' ? open : []);
+  global.getComputedStyle = element => ({ zIndex: String(element.layer), getPropertyValue: () => '' });
+  try {
+    syncModalStackInertness();
+    assert.equal(lower.inert, true);
+    assert.equal(upper.inert, false);
+    // The upper panel closes: the lower one is the only one left and must be usable again.
+    open = [lower];
+    syncModalStackInertness();
+    assert.equal(lower.inert, false);
+    // Equal layers: whichever comes later in the page is painted on top.
+    lower.layer = 2000;
+    upper.layer = 2000;
+    open = [lower, upper];
+    syncModalStackInertness();
+    assert.equal(lower.inert, true);
+    assert.equal(upper.inert, false);
+  } finally {
+    document.querySelectorAll = originalQuery;
+    global.getComputedStyle = originalStyle;
+  }
+});
+
+test('closing a panel hands focus back to what opened it, unless that is gone or unreachable', () => {
+  const originalGetById = document.getElementById;
+  const makeOpener = (extra = {}) => ({ isConnected: true, focused: null, closest: () => null, focus(options) { this.focused = options; }, ...extra });
+  const setActive = element => Object.defineProperty(document, 'activeElement', { value: element, configurable: true });
+  document.getElementById = () => ({ contains: () => false });
+  try {
+    const opener = makeOpener();
+    setActive(opener);
+    rememberModalFocus('panel');
+    setActive(document.body);
+    restoreModalFocus('panel');
+    assert.deepEqual(opener.focused, { preventScroll: true });
+
+    // Nothing worth restoring: an element that left the page, or one behind inert content.
+    for (const active of [makeOpener({ isConnected: false }), makeOpener({ closest: () => ({}) })]) {
+      setActive(active);
+      rememberModalFocus('panel');
+      restoreModalFocus('panel');
+      assert.equal(active.focused, null);
+    }
+    // The page body itself is never remembered.
+    setActive(document.body);
+    rememberModalFocus('panel');
+    restoreModalFocus('panel');
+    // Restoring twice does nothing the second time.
+    const again = makeOpener();
+    setActive(again);
+    rememberModalFocus('panel');
+    restoreModalFocus('panel');
+    again.focused = null;
+    restoreModalFocus('panel');
+    assert.equal(again.focused, null);
+  } finally {
+    document.getElementById = originalGetById;
+    delete document.activeElement;
+  }
+});
+
+test('a tap right after a panel opens or closes does not reach what is under the finger', () => {
+  const makeTap = (target, isTrusted = true) => ({ isTrusted, target, stopped: false, prevented: false, stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; } });
+  const onPage = () => makeTap({ closest: () => null });
+  const inside = selectorMatch => makeTap({ closest: selector => (selector.includes(selectorMatch) ? {} : null) });
+  const realNow = Date.now;
+  const changedAt = realNow();
+  Date.now = () => changedAt;
+  deactivateModalEnvironment(); // a dialog has just closed
+  try {
+    const page = onPage();
+    swallowLeakedModalTap(page);
+    assert.equal(page.stopped && page.prevented, true, 'the page the dialog covered does not get the second tap');
+
+    const voice = inside('voiceScoreHost');
+    swallowLeakedModalTap(voice);
+    assert.equal(voice.stopped, false, 'the microphone is always usable');
+    const onboarding = inside('onboarding');
+    swallowLeakedModalTap(onboarding);
+    assert.equal(onboarding.stopped, false);
+
+    const scripted = onPage();
+    scripted.isTrusted = false;
+    swallowLeakedModalTap(scripted);
+    assert.equal(scripted.stopped, false, 'only real taps are held back');
+
+    Date.now = () => changedAt + 400;
+    const later = onPage();
+    swallowLeakedModalTap(later);
+    assert.equal(later.stopped, false, 'a deliberate tap a moment later works');
+
+    // A panel that has just opened is held back the same way (a double tap on its opener).
+    Date.now = () => changedAt + 1000;
+    activateModalEnvironment();
+    const insideNewPanel = onPage();
+    swallowLeakedModalTap(insideNewPanel);
+    assert.equal(insideNewPanel.stopped, true, 'the second tap of a double tap does not hit a switch inside the new sheet');
+    Date.now = () => changedAt + 1400;
+    const afterwards = onPage();
+    swallowLeakedModalTap(afterwards);
+    assert.equal(afterwards.stopped, false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('the second tap of a double tap does not close a panel that just opened', () => {
+  const realNow = Date.now;
+  try {
+    const panel = { dataset: { openedAt: String(realNow()) } };
+    assert.equal(isModalJustOpened(panel), true);
+    Date.now = () => realNow() + 1000;
+    assert.equal(isModalJustOpened(panel), false);
+    assert.equal(isModalJustOpened({ dataset: {} }), false);
+    assert.equal(isModalJustOpened(null), false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('Escape and Cancel can dismiss the zero-points, rematch, and dealer-pair dialogs', () => {
+  const initSource = readFileSync(path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'), 'utf8');
+  assert.match(initSource, /zeroPointsModal: \(\) => closeModal\("zeroPointsModal"\)/);
+  assert.match(initSource, /rematchDealerModal: \(\) => closeRematchDealerModal\(true\)/);
+  assert.match(initSource, /dealerPairSelectionModal: cancelDealerPairSelection/);
+  assert.match(initSource, /if \(activeScoreKeypadTarget\) \{\s*e\.preventDefault\(\);\s*closeScoreKeypad\(\);/);
+  const menuSource = readFileSync(path.join(repoRoot, 'js/modules/07-menu-modal.js'), 'utf8');
+  assert.match(menuSource, /function cancelDealerPairSelection\(\) \{\s*pendingGameAction = null;\s*closeDealerPairSelectionModal\(\);/);
+  const htmlSource = readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+  assert.match(htmlSource, /id="dealerPairSelectionModal"[\s\S]*?onclick="cancelDealerPairSelection\(\)"[^>]*>Cancel<\/button>/);
+  assert.equal(typeof cancelDealerPairSelection, 'function');
 });
 
 test('voice warm-up pings the planner at most once a minute', () => {

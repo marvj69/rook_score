@@ -18,16 +18,8 @@ function saveSettings() {
 
   const penaltyPointsInput = document.getElementById("penaltyPointsInput");
   if (penaltyPointsInput) {
-    let points = parseInt(penaltyPointsInput.value) || 180;
-
-    // Validate and round to nearest multiple of 5
-    if (points < 5) points = 5;
-    if (points > 500) points = 500;
-    if (points % 5 !== 0) {
-      points = Math.round(points / 5) * 5;
-      penaltyPointsInput.value = points; // Update the input to show corrected value
-    }
-
+    const points = normalizePenaltyPoints(penaltyPointsInput.value);
+    penaltyPointsInput.value = points; // Show the corrected value
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points);
   }
 
@@ -227,24 +219,19 @@ function handleTableTalkPenaltyChange() {
   }
 }
 
+// 5 to 500 in steps of 5; anything else goes back to the standard 180.
+function normalizePenaltyPoints(raw) {
+  let points = parseInt(raw, 10);
+  if (isNaN(points) || points < 5 || points > 500) points = 180;
+  if (points % 5 !== 0) points = Math.round(points / 5) * 5;
+  return points;
+}
+
 function handlePenaltyPointsChange() {
   const penaltyPointsInput = document.getElementById("penaltyPointsInput");
   if (penaltyPointsInput) {
-    let points = parseInt(penaltyPointsInput.value);
-
-    // Validate the points
-    if (isNaN(points) || points < 5 || points > 500) {
-      points = 180; // Default value
-      penaltyPointsInput.value = points;
-    }
-
-    // Ensure it's a multiple of 5
-    if (points % 5 !== 0) {
-      points = Math.round(points / 5) * 5;
-      penaltyPointsInput.value = points;
-    }
-
-    // Save the penalty points setting
+    const points = normalizePenaltyPoints(penaltyPointsInput.value);
+    penaltyPointsInput.value = points;
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points.toString());
   }
 }

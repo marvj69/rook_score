@@ -480,13 +480,14 @@ function openPresetEditorModal() {
 
   const existingModal = document.getElementById("presetEditorModal");
   if (existingModal) existingModal.remove();
+  rememberModalFocus("presetEditorModal");
 
   const modalHtml = `
-      <div id="presetEditorModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="presetEditorTitle">
-          <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all">
+      <div id="presetEditorModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 modal" role="dialog" aria-modal="true" aria-labelledby="presetEditorTitle" tabindex="-1">
+          <div class="bg-white w-full max-w-md rounded-xl shadow-lg dark:bg-gray-800 p-6 transform transition-all overflow-y-auto">
               <div class="flex items-center justify-between mb-4">
                   <h2 id="presetEditorTitle" class="text-2xl font-bold text-gray-800 dark:text-white">Edit Bid Presets</h2>
-                  <button type="button" onclick="closePresetEditorModal()" class="text-gray-500 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
+                  <button type="button" onclick="closePresetEditorModal()" aria-label="Close bid presets" class="text-gray-500 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full p-1">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
               </div>
@@ -495,10 +496,10 @@ function openPresetEditorModal() {
                   ${presetBids.filter(b => b !== "other").map((bid, index) => `
                       <div class="flex items-center space-x-3 preset-input-row">
                           <div class="flex-grow relative">
-                              <input type="number" value="${bid}" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${index}" onchange="validatePresetInput(this)">
+                              <input type="number" value="${bid}" min="5" max="360" step="5" aria-label="Bid preset ${index + 1}" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${index}" oninput="hidePresetError()" onchange="validatePresetInput(this)">
                               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
                           </div>
-                          <button type="button" onclick="removePreset(${index})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+                          <button type="button" onclick="removePreset(${index})" aria-label="Remove preset ${index + 1}" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
                       </div>`).join('')}
               </div>
               <div class="flex gap-2 flex-wrap mb-6">
@@ -515,12 +516,17 @@ function openPresetEditorModal() {
   const modalEl = document.getElementById("presetEditorModal");
   if (modalEl) {
     modalEl.addEventListener("click", (event) => {
-      if (event.target === modalEl) closePresetEditorModal();
+      if (event.target === modalEl && !isModalJustOpened(modalEl)) closePresetEditorModal();
     });
     const content = modalEl.querySelector(".bg-white, .dark\\:bg-gray-800");
     if (content) content.addEventListener("click", (event) => event.stopPropagation());
   }
   activateModalEnvironment();
+  modalEl?.focus();
+}
+// The "Fix errors before saving." line is about values the player is now editing.
+function hidePresetError() {
+  document.getElementById('presetErrorMsg')?.classList.add('hidden');
 }
 function closePresetEditorModal() {
   const modal = document.getElementById('presetEditorModal');
@@ -529,6 +535,7 @@ function closePresetEditorModal() {
   const settingsModal = document.getElementById("settingsModal");
   if (settingsModal) settingsModal.classList.remove("hidden");
   deactivateModalEnvironment();
+  restoreModalFocus("presetEditorModal");
 }
 
 function validatePresetInput(inputEl) {
@@ -550,10 +557,10 @@ function addPreset() {
   container.insertAdjacentHTML('beforeend', `
       <div class="flex items-center space-x-3 preset-input-row animate-fadeIn">
           <div class="flex-grow relative">
-              <input type="number" value="120" min="5" max="360" step="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${newIdx}" onchange="validatePresetInput(this)">
+              <input type="number" value="120" min="5" max="360" step="5" aria-label="Bid preset ${newIdx + 1}" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" data-index="${newIdx}" oninput="hidePresetError()" onchange="validatePresetInput(this)">
               <div class="preset-error text-xs text-red-500 mt-1 hidden"></div>
           </div>
-          <button type="button" onclick="removePreset(${newIdx})" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
+          <button type="button" onclick="removePreset(${newIdx})" aria-label="Remove preset ${newIdx + 1}" class="bg-gray-100 dark:bg-gray-700 text-red-600 dark:text-red-400 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">${Icons.Trash}</button>
       </div>`);
   container.scrollTop = container.scrollHeight;
 }
@@ -574,7 +581,9 @@ function removePreset(index) {
           // Re-index remaining rows
           document.querySelectorAll('#presetInputs .preset-input-row').forEach((r, i) => {
               r.querySelector('input').dataset.index = i;
+              r.querySelector('input').setAttribute('aria-label', `Bid preset ${i + 1}`);
               r.querySelector('button').setAttribute('onclick', `removePreset(${i})`);
+              r.querySelector('button').setAttribute('aria-label', `Remove preset ${i + 1}`);
           });
       }, 150);
   }
