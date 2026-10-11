@@ -266,8 +266,9 @@ let lastModalOpenedAt = 0;
 const modalReturnFocus = new Map();
 
 // Remember what had focus before a modal opened (call before the page behind is made inert).
+// Opening a panel that is already open (focus is on the page body, or inside that panel) keeps the
+// opener remembered earlier rather than forgetting it.
 function rememberModalFocus(modalId) {
-  modalReturnFocus.delete(modalId);
   const active = document.activeElement;
   const modal = document.getElementById(modalId);
   if (!active || active === document.body || active === document.documentElement) return;
@@ -275,18 +276,43 @@ function rememberModalFocus(modalId) {
   modalReturnFocus.set(modalId, active);
 }
 
+// When the control that opened a panel is gone (hidden by what the panel did, or re-rendered) or sits
+// under another panel, put focus on something live. Left on the page body, the next Tab would walk out of the app.
+function focusAfterPanelClosed() {
+  const live = Array.from(document.querySelectorAll(".modal")).filter(modal => !modal.classList.contains("hidden") && !modal.inert);
+  const fallback = live[live.length - 1] || document.getElementById(isHomeScreenOpen() ? "homeNewGameBtn" : "hamburgerIcon");
+  if (fallback && typeof fallback.focus === "function") fallback.focus({ preventScroll: true });
+}
+
 // Give focus back when the modal closes, so keyboard and screen-reader users are not dropped on the page.
 function restoreModalFocus(modalId) {
   const target = modalReturnFocus.get(modalId);
   modalReturnFocus.delete(modalId);
-  if (!target || !target.isConnected || typeof target.focus !== "function") return;
-  if (typeof target.closest === "function" && target.closest("[inert]")) return;
-  target.focus({ preventScroll: true });
+  if (!target) return;
+  const reachable = target.isConnected && typeof target.focus === "function"
+    && !(typeof target.closest === "function" && target.closest("[inert]"));
+  if (reachable) {
+    target.focus({ preventScroll: true });
+    if (document.activeElement === target) return;
+  }
+  focusAfterPanelClosed();
+}
+
+// A backwards step of the clock (it is the user's to set) must not leave a shield up for good.
+function msSince(timestamp) {
+  const elapsed = Date.now() - timestamp;
+  return elapsed >= 0 ? elapsed : Infinity;
 }
 
 function isModalJustOpened(modal) {
   const openedAt = Number(modal?.dataset?.openedAt || 0);
-  return openedAt > 0 && Date.now() - openedAt < MODAL_TAP_SHIELD_MS;
+  return openedAt > 0 && msSince(openedAt) < MODAL_TAP_SHIELD_MS;
+}
+
+// A sheet that slides away only hides 240ms after the tap that closed it, but the tap shield belongs to
+// that tap: counted from the end of the slide it swallowed real taps for most of another half second.
+function backdateModalCloseShield(requestedAt) {
+  if (Number.isFinite(requestedAt) && requestedAt < lastModalClosedAt) lastModalClosedAt = requestedAt;
 }
 
 // With two panels open (a profile over Statistics, a confirmation over the Library) only the top one
@@ -305,8 +331,7 @@ function syncModalStackInertness() {
 // the sheet that just slid in. Nobody means a second action within a third of a second.
 function swallowLeakedModalTap(event) {
   if (!event.isTrusted) return;
-  const sinceChange = Date.now() - Math.max(lastModalClosedAt, lastModalOpenedAt);
-  if (sinceChange > MODAL_TAP_SHIELD_MS) return;
+  if (msSince(Math.max(lastModalClosedAt, lastModalOpenedAt)) > MODAL_TAP_SHIELD_MS) return;
   const target = event.target;
   if (target && typeof target.closest === "function" && target.closest("#voiceScoreHost, #onboarding")) return;
   event.stopPropagation();
@@ -327,7 +352,7 @@ function activateModalEnvironment() {
   if (home && "inert" in home) home.inert = true;
   // The menu button and version badge sit outside #app; their buttons would still take Tab
   // (the badge is invisible, yet Enter on it opened Version Info over the open sheet).
-  ["hamburgerIcon", "versionBadge"].forEach(id => {
+  ["hamburgerIcon", "versionBadge", "menu"].forEach(id => {
     const chrome = document.getElementById(id);
     if (chrome && "inert" in chrome) chrome.inert = true;
   });
@@ -347,14 +372,18 @@ function deactivateModalEnvironment() {
     const app = document.getElementById("app");
     app?.classList.remove("modal-active");
     // Home, when showing, stays the only interactive screen; the scoreboard behind it stays inert.
+    // So does the page behind a drawer that is still open (the mic can open a panel over it).
     const homeOpen = isHomeScreenOpen();
-    if (app && "inert" in app) app.inert = homeOpen;
+    const menu = document.getElementById("menu");
+    const drawerOpen = Boolean(menu?.classList.contains("show"));
+    if (app && "inert" in app) app.inert = homeOpen || drawerOpen;
     const home = document.getElementById("homeScreen");
     if (home && "inert" in home) home.inert = !homeOpen || document.body.classList.contains("onboarding-open");
-    ["hamburgerIcon", "versionBadge"].forEach(id => {
-      const chrome = document.getElementById(id);
-      if (chrome && "inert" in chrome) chrome.inert = homeOpen;
-    });
+    const hamburger = document.getElementById("hamburgerIcon");
+    if (hamburger && "inert" in hamburger) hamburger.inert = homeOpen;
+    const badge = document.getElementById("versionBadge");
+    if (badge && "inert" in badge) badge.inert = homeOpen || drawerOpen;
+    if (menu && "inert" in menu) menu.inert = !drawerOpen;
   } else {
     syncModalStackInertness(); // The panel underneath becomes the live one again
   }
@@ -389,10 +418,12 @@ function closeSheetModal(modalId) {
     return;
   }
   if (modal.sheetCloseTimer) return;
+  const requestedAt = Date.now();
   modal.classList.add("is-closing");
   modal.sheetCloseTimer = setTimeout(() => {
     cancelSheetClose(modalId);
     closeModal(modalId);
+    backdateModalCloseShield(requestedAt);
   }, 240);
 }
 function cancelSheetClose(modalId) {

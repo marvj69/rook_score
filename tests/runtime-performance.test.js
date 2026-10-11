@@ -94,8 +94,8 @@ function createRuntime(bundled, readyState = 'loading') {
     get measurements() { return measurements; },
     setStylesApplied(value) { stylesApplied = value; },
     advance(ms) { now += ms; },
-    event(target, name) {
-      for (const { callback } of listeners[target].get(name) || []) callback({});
+    event(target, name, payload = {}) {
+      for (const { callback } of listeners[target].get(name) || []) callback(payload);
     },
     listeners,
     loadVoice() { for (const file of bundled ? ['js/voice-score.bundle.js'] : voiceModules) run(read(file)); },
@@ -537,6 +537,190 @@ for (const bundled of [false, true]) {
     failed.localStorage.setItem('localOnly:onboardingCompleted', 'true');
     failed.run('initializeRookApp()');
     assert.equal(failed.run('rookAppInitialized'), true, 'a failed sheet starts the app at once');
+  });
+
+  // Every panel the shared Escape / backdrop handlers know starts hidden, as in the real page.
+  const MODAL_IDS = ['noticeModal', 'confirmationModal', 'savedGamesModal', 'viewSavedGameModal', 'aboutModal', 'bugReportModal', 'versionInfoModal',
+    'statisticsModal', 'entityStatisticsModal', 'teamSelectionModal', 'resumeGameModal', 'settingsModal', 'themeModal', 'presetEditorModal', 'tableTalkModal',
+    'probabilityModal', 'dealerOrderModal', 'dealerPairSelectionModal', 'zeroPointsModal', 'rematchDealerModal', 'voiceExperimentalOnboardingModal', 'deleteGameDataModal'];
+  function startedApp({ onboarded = true } = {}) {
+    const app = createRuntime(bundled);
+    if (onboarded) app.localStorage.setItem('localOnly:onboardingCompleted', 'true');
+    for (const id of [...MODAL_IDS, 'onboarding']) app.document.getElementById(id).classList.add('hidden');
+    app.run('initializeRookApp()');
+    const keydown = key => {
+      const event = { key, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+      app.event('document', 'keydown', event);
+      return event;
+    };
+    const isOpen = id => !app.elements.get(id).classList.contains('hidden');
+    return { app, keydown, isOpen };
+  }
+
+  test(`${label}: Escape closes a notice before a confirmation, a confirmation before the menu, the menu before the keypad`, () => {
+    const { app, keydown, isOpen } = startedApp();
+    const sheet = app.document.getElementById('scoreKeypadSheet');
+    // Nothing open: Escape does nothing at all.
+    assert.equal(keydown('Escape').defaultPrevented, false);
+
+    app.run("activeScoreKeypadTarget = 'points'");
+    app.run('setMenuOpenState(true)');
+    app.elements.get('confirmationModal').classList.remove('hidden');
+    app.elements.get('noticeModal').classList.remove('hidden');
+
+    assert.equal(keydown('Escape').defaultPrevented, true);
+    assert.equal(isOpen('noticeModal'), false, 'the notice sits above everything');
+    assert.equal(isOpen('confirmationModal'), true);
+    keydown('Escape');
+    assert.equal(isOpen('confirmationModal'), false);
+    assert.equal(app.elements.get('menu').classList.contains('show'), true, 'the menu waits for the dialogs above it');
+
+    keydown('Escape');
+    assert.equal(app.elements.get('menu').classList.contains('show'), false);
+    assert.equal(sheet.classList.contains('score-keypad-sheet--closing'), false, 'the keypad is still up');
+
+    assert.equal(keydown('Escape').defaultPrevented, true);
+    assert.equal(sheet.classList.contains('score-keypad-sheet--closing'), true, 'then the keypad goes');
+    assert.equal(keydown('a').defaultPrevented, false, 'other keys are left alone');
+  });
+
+  test(`${label}: the drawer reports its state and keeps the page behind it out of reach`, () => {
+    const { app } = startedApp();
+    const el = id => app.elements.get(id);
+    const announced = {};
+    el('hamburgerIcon').setAttribute = (name, value) => { announced[name] = value; };
+    app.run('closeHomeScreen()');
+    app.run('toggleMenu()');
+    assert.equal(el('menu').classList.contains('show'), true);
+    assert.equal(el('menu').inert, false);
+    assert.deepEqual(announced, { 'aria-expanded': 'true', 'aria-label': 'Close Menu' }, 'a screen reader hears the state');
+    assert.equal(el('menuOverlay').classList.contains('show'), true);
+    assert.equal(app.document.body.classList.contains('overflow-hidden'), true);
+    assert.equal(el('app').inert, true);
+    assert.equal(el('versionBadge').inert, true);
+    assert.equal(el('hamburgerIcon').inert, false, 'the button that closes the drawer stays usable');
+
+    // A panel opened over the drawer (the microphone can) and closed again: the drawer is still open,
+    // so the page behind it must stay out of reach, and the drawer itself is out of reach while the panel is up.
+    app.run('activateModalEnvironment()');
+    assert.equal(el('menu').inert, true);
+    assert.equal(el('hamburgerIcon').inert, true);
+    assert.equal(el('versionBadge').inert, true);
+    app.run('deactivateModalEnvironment()');
+    assert.equal(el('menu').classList.contains('show'), true);
+    assert.equal(el('menu').inert, false);
+    assert.equal(el('app').inert, true);
+    assert.equal(el('versionBadge').inert, true);
+    assert.equal(el('hamburgerIcon').inert, false);
+
+    app.run('toggleMenu()');
+    assert.equal(el('menu').inert, true);
+    assert.equal(el('app').inert, false);
+    assert.equal(el('versionBadge').inert, false);
+    assert.deepEqual(announced, { 'aria-expanded': 'false', 'aria-label': 'Open Menu' });
+    assert.equal(el('menuOverlay').classList.contains('show'), false);
+    assert.equal(app.document.body.classList.contains('overflow-hidden'), false);
+  });
+
+  test(`${label}: opening and closing panels keeps only the top one live and gives focus back`, () => {
+    const { app } = startedApp();
+    const el = id => app.elements.get(id);
+    const lower = el('settingsModal');
+    const upper = el('confirmationModal');
+    const order = [lower, upper]; // the later one is painted on top (equal layers)
+    app.document.querySelectorAll = selector => (selector === '.modal' ? order.filter(modal => !modal.classList.contains('hidden')) : []);
+
+    let focused = null;
+    const opener = { isConnected: true, closest: () => null, focus() { focused = this; app.document.activeElement = this; } };
+    app.document.activeElement = opener;
+    app.run("openModal('settingsModal')"); // remembers what had focus, before the page goes inert
+    app.document.activeElement = lower;
+    assert.equal(lower.inert, false, 'the only panel is live');
+
+    app.run("openModal('confirmationModal')");
+    assert.equal(lower.inert, true, 'the panel under another is out of reach');
+    assert.equal(upper.inert, false);
+
+    // Closing the top one brings the one below back, and leaves the closed one usable for its next opening.
+    upper.inert = true;
+    app.run("closeModal('confirmationModal')");
+    assert.equal(upper.inert, false, 'a closed panel is not left inert');
+    assert.equal(lower.inert, false, 'the panel underneath comes back');
+
+    app.run("closeModal('settingsModal')");
+    assert.equal(focused, opener, 'focus goes back to what had it when the first panel opened');
+  });
+
+  test(`${label}: a game landing under an open sheet does not make the page behind it reachable`, () => {
+    const { app } = startedApp();
+    const el = id => app.elements.get(id);
+    assert.equal(app.run('isHomeScreenOpen()'), true);
+    app.document.body.classList.add('modal-open'); // a sheet is open over Home
+    app.run('closeHomeScreen()');
+    for (const id of ['app', 'hamburgerIcon', 'versionBadge']) assert.equal(el(id).inert, true, `${id} stays out of reach`);
+    app.document.body.classList.remove('modal-open');
+    app.run('deactivateModalEnvironment()');
+    for (const id of ['app', 'hamburgerIcon', 'versionBadge']) assert.equal(el(id).inert, false, `${id} is back once the sheet closes`);
+  });
+
+  test(`${label}: a panel opening over the walkthrough, not Home, is what the keys and focus follow`, () => {
+    const { app, keydown, isOpen } = startedApp({ onboarded: false });
+    const el = id => app.elements.get(id);
+    assert.equal(app.document.body.classList.contains('onboarding-open'), true);
+    let focusedHome = false;
+    el('homeNewGameBtn').focus = () => { focusedHome = true; };
+    app.document.body.classList.add('modal-open'); // the voice consent dialog opens over the walkthrough
+    el('voiceExperimentalOnboardingModal').classList.remove('hidden');
+
+    assert.equal(keydown('Escape').defaultPrevented, true);
+    assert.equal(isOpen('voiceExperimentalOnboardingModal'), false, 'Escape closes the dialog on top');
+    assert.equal(app.document.body.classList.contains('onboarding-open'), true, 'and leaves the walkthrough running');
+
+    // Finishing the walkthrough while a panel is still open must not hand Home the keys or the focus.
+    app.document.body.classList.add('modal-open');
+    app.run("finishOnboarding('skipped')");
+    assert.equal(el('homeScreen').inert, true);
+    assert.equal(focusedHome, false);
+  });
+
+  test(`${label}: backdrop taps close a panel, but not one that just opened or a drag that began on a field`, () => {
+    const { app, isOpen } = startedApp();
+    const modal = app.elements.get('settingsModal');
+    const field = { id: 'a field inside the panel' };
+    const press = (target) => app.event('document', 'pointerdown', { target });
+    const click = (target) => app.event('document', 'click', { target });
+
+    modal.classList.remove('hidden');
+    modal.dataset.openedAt = String(app.run('Date.now()')); // it has just opened
+    press(modal);
+    click(modal);
+    assert.equal(isOpen('settingsModal'), true, 'the second tap of a double tap on its opener lands on the backdrop');
+
+    app.advance(1000);
+    press(field); // selecting text in a field and letting go over the backdrop
+    click(modal);
+    assert.equal(isOpen('settingsModal'), true, 'a drag that began elsewhere is not a backdrop tap');
+
+    press(modal);
+    click(modal);
+    assert.equal(isOpen('settingsModal'), false, 'a plain tap on the backdrop closes it');
+  });
+
+  test(`${label}: the bid preset editor and the rematch dialog leave backdrop dismissal to the shared handler`, () => {
+    const { app } = startedApp();
+    const clickListeners = id => {
+      const added = [];
+      const modal = app.elements.get(id);
+      modal.addEventListener = (type) => added.push(type);
+      return added;
+    };
+    const editor = clickListeners('presetEditorModal');
+    app.run('openPresetEditorModal()');
+    assert.equal(editor.includes('click'), false, 'a private handler would not see where the press began');
+
+    const rematch = clickListeners('rematchDealerModal');
+    app.run("updateState({ usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'] }); openRematchDealerModal()");
+    assert.equal(rematch.includes('click'), false);
   });
 
   test(`${label}: early authentication waits for the shared client and returns its result`, async () => {

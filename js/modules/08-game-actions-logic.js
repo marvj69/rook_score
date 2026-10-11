@@ -42,6 +42,7 @@ function openTableTalkModal() {
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
   activateModalEnvironment();
+  document.getElementById("tableTalkModal")?.focus();
 }
 
 function closeTableTalkModal() {
@@ -847,9 +848,7 @@ function openRematchDealerModal() {
     });
   });
   document.getElementById("cancelRematchDealerBtn")?.addEventListener("click", () => closeRematchDealerModal(true));
-  modal?.addEventListener("click", (event) => {
-    if (event.target === modal && !isModalJustOpened(modal)) closeRematchDealerModal(true);
-  });
+  // Backdrop dismissal is the shared handler's (modalCloseHandlers).
   activateModalEnvironment();
   modal?.focus();
 }

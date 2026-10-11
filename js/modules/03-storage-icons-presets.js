@@ -515,9 +515,7 @@ function openPresetEditorModal() {
   document.body.insertAdjacentHTML('beforeend', modalHtml);
   const modalEl = document.getElementById("presetEditorModal");
   if (modalEl) {
-    modalEl.addEventListener("click", (event) => {
-      if (event.target === modalEl && !isModalJustOpened(modalEl)) closePresetEditorModal();
-    });
+    // Backdrop dismissal is the shared handler's (modalCloseHandlers): it also ignores a drag that began on a field.
     const content = modalEl.querySelector(".bg-white, .dark\\:bg-gray-800");
     if (content) content.addEventListener("click", (event) => event.stopPropagation());
   }

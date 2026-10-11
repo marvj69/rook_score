@@ -377,7 +377,8 @@ function isHistoryCellEditing(idx, field) {
 const HISTORY_EDIT_TAP_SHIELD_MS = 450;
 const HISTORY_EDIT_MAX_SCORE = 2000;
 function startHistoryEdit(idx, field) {
-  if (Date.now() - lastRoundCommittedAt < HISTORY_EDIT_TAP_SHIELD_MS) return;
+  const sinceCommit = Date.now() - lastRoundCommittedAt;
+  if (sinceCommit >= 0 && sinceCommit < HISTORY_EDIT_TAP_SHIELD_MS) return; // (a clock stepped back is not "just now")
   updateState({ historyEdit: { idx, field }, error: "" });
   // The input only exists after the render frame queued by updateState.
   scheduleFrame(() => {

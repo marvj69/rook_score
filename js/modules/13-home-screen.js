@@ -83,13 +83,9 @@ function closeHomeScreen() {
   document.documentElement.classList.remove(HOME_BOOT_CLASS);
   document.body.classList.remove("home-open");
   if (home && "inert" in home) home.inert = true;
-  // Leave the scoreboard inert if a sheet is still open over it.
-  const app = document.getElementById("app");
-  if (app && "inert" in app) app.inert = document.body.classList.contains("modal-open");
-  ["hamburgerIcon", "versionBadge"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el && "inert" in el) el.inert = false;
-  });
+  // A sheet or the walkthrough still open over the page keeps its controls out of reach.
+  const covered = document.body.classList.contains("modal-open") || document.body.classList.contains("onboarding-open");
+  setHomeScreenChromeInert(covered);
   scheduleViewportCompatibilitySync();
 }
 
@@ -369,12 +365,14 @@ function finishOnboarding(outcome = "completed") {
   overlay.classList.add("hidden");
   document.body.classList.remove("onboarding-open");
   emitRookEvent(`onboarding_${outcome}`, { step: onboardingSlideIndex + 1 });
+  // A panel can open over the walkthrough (the voice consent dialog does): it, not Home, is what is live then.
+  const panelOpen = document.body.classList.contains("modal-open");
   if (homeScreenOpen) {
     const home = document.getElementById("homeScreen");
-    if (home && "inert" in home) home.inert = false;
-    document.getElementById("homeNewGameBtn")?.focus({ preventScroll: true });
+    if (home && "inert" in home) home.inert = panelOpen;
+    if (!panelOpen) document.getElementById("homeNewGameBtn")?.focus({ preventScroll: true });
   } else {
-    setHomeScreenChromeInert(false);
+    setHomeScreenChromeInert(panelOpen);
   }
 }
 
@@ -405,6 +403,7 @@ function initializeHomeScreen() {
 
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented) return;
+    if (document.body.classList.contains("modal-open")) return; // the panel on top owns the keys (Escape closes it)
     const overlay = document.getElementById("onboarding");
     if (overlay && !overlay.classList.contains("hidden")) {
       if (event.key === "Escape") { event.preventDefault(); finishOnboarding("skipped"); }

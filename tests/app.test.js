@@ -1620,53 +1620,89 @@ test('with two panels open only the top one stays reachable, and the one below c
   }
 });
 
-test('closing a panel hands focus back to what opened it, unless that is gone or unreachable', () => {
+test('closing a panel hands focus back to what opened it, and to something live when that is gone', () => {
   const originalGetById = document.getElementById;
-  const makeOpener = (extra = {}) => ({ isConnected: true, focused: null, closest: () => null, focus(options) { this.focused = options; }, ...extra });
+  const originalQuery = document.querySelectorAll;
   const setActive = element => Object.defineProperty(document, 'activeElement', { value: element, configurable: true });
-  document.getElementById = () => ({ contains: () => false });
+  const makeOpener = (extra = {}) => ({ isConnected: true, focused: null, closest: () => null, focus(options) { this.focused = options; setActive(this); }, ...extra });
+  let modalElement = { contains: () => false };
+  const livePanel = { inert: false, focused: null, classList: { contains: () => false }, focus(options) { this.focused = options; setActive(this); } };
+  document.getElementById = () => modalElement;
+  document.querySelectorAll = selector => (selector === '.modal' ? [livePanel] : []);
+  const remember = element => { setActive(element); rememberModalFocus('panel'); setActive(document.body); };
   try {
     const opener = makeOpener();
-    setActive(opener);
-    rememberModalFocus('panel');
-    setActive(document.body);
+    remember(opener);
     restoreModalFocus('panel');
     assert.deepEqual(opener.focused, { preventScroll: true });
+    assert.equal(livePanel.focused, null, 'nothing else is disturbed');
 
-    // Nothing worth restoring: an element that left the page, or one behind inert content.
-    for (const active of [makeOpener({ isConnected: false }), makeOpener({ closest: () => ({}) })]) {
-      setActive(active);
-      rememberModalFocus('panel');
+    // The opener left the page, sits behind inert content, or cannot take focus (hidden by what the panel did):
+    // focus goes to the panel that is live instead of the page body.
+    for (const gone of [makeOpener({ isConnected: false }), makeOpener({ closest: () => ({}) }), makeOpener({ focus() { this.focused = 'tried'; } })]) {
+      livePanel.focused = null;
+      remember(gone);
       restoreModalFocus('panel');
-      assert.equal(active.focused, null);
+      assert.notDeepEqual(gone.focused, { preventScroll: true });
+      assert.deepEqual(livePanel.focused, { preventScroll: true });
     }
-    // The page body itself is never remembered.
-    setActive(document.body);
-    rememberModalFocus('panel');
+
+    // The page body itself is never remembered, so nothing is restored or moved.
+    livePanel.focused = null;
+    remember(document.body);
     restoreModalFocus('panel');
+    assert.equal(livePanel.focused, null);
+
+    // Focus that was inside the panel is not an opener either.
+    const inside = makeOpener();
+    modalElement = { contains: element => element === inside };
+    remember(inside);
+    restoreModalFocus('panel');
+    assert.equal(inside.focused, null);
+    assert.equal(livePanel.focused, null);
+
+    // Opening a panel that is already open (focus on the page body or inside it) keeps the first opener.
+    modalElement = { contains: () => false };
+    const first = makeOpener();
+    remember(first);
+    remember(document.body); // opened again with focus on the page body
+    modalElement = { contains: element => element === inside };
+    remember(inside); // opened again with focus inside the open panel
+    restoreModalFocus('panel');
+    assert.deepEqual(first.focused, { preventScroll: true });
+
     // Restoring twice does nothing the second time.
+    modalElement = { contains: () => false };
     const again = makeOpener();
-    setActive(again);
-    rememberModalFocus('panel');
+    remember(again);
     restoreModalFocus('panel');
     again.focused = null;
+    livePanel.focused = null;
     restoreModalFocus('panel');
     assert.equal(again.focused, null);
+    assert.equal(livePanel.focused, null);
   } finally {
     document.getElementById = originalGetById;
+    document.querySelectorAll = originalQuery;
     delete document.activeElement;
   }
 });
 
+const makeShieldTap = (target = { closest: () => null }, isTrusted = true) => ({ isTrusted, target, stopped: false, prevented: false, stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; } });
+
 test('a tap right after a panel opens or closes does not reach what is under the finger', () => {
-  const makeTap = (target, isTrusted = true) => ({ isTrusted, target, stopped: false, prevented: false, stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; } });
-  const onPage = () => makeTap({ closest: () => null });
-  const inside = selectorMatch => makeTap({ closest: selector => (selector.includes(selectorMatch) ? {} : null) });
+  const onPage = () => makeShieldTap();
+  const inside = selectorMatch => makeShieldTap({ closest: selector => (selector.includes(selectorMatch) ? {} : null) });
   const realNow = Date.now;
-  const changedAt = realNow();
+  // An hour on: whatever earlier tests left behind has long expired, so only this test's own changes count.
+  const changedAt = realNow() + 3_600_000;
   Date.now = () => changedAt;
-  deactivateModalEnvironment(); // a dialog has just closed
   try {
+    const before = onPage();
+    swallowLeakedModalTap(before);
+    assert.equal(before.stopped, false, 'nothing has changed yet');
+
+    deactivateModalEnvironment(); // a dialog has just closed
     const page = onPage();
     swallowLeakedModalTap(page);
     assert.equal(page.stopped && page.prevented, true, 'the page the dialog covered does not get the second tap');
@@ -1678,8 +1714,8 @@ test('a tap right after a panel opens or closes does not reach what is under the
     swallowLeakedModalTap(onboarding);
     assert.equal(onboarding.stopped, false);
 
-    const scripted = onPage();
-    scripted.isTrusted = false;
+    const scripted = makeShieldTap(undefined, false);
+    scripted.target = { closest: () => null };
     swallowLeakedModalTap(scripted);
     assert.equal(scripted.stopped, false, 'only real taps are held back');
 
@@ -1698,6 +1734,68 @@ test('a tap right after a panel opens or closes does not reach what is under the
     const afterwards = onPage();
     swallowLeakedModalTap(afterwards);
     assert.equal(afterwards.stopped, false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('a sheet that slides away keeps the tap shield counted from the tap that closed it', () => {
+  const live = installLiveDocument();
+  const realNow = Date.now;
+  const realSetTimeout = global.setTimeout;
+  const realMatchMedia = window.matchMedia;
+  const timers = [];
+  global.setTimeout = (callback, ms) => { timers.push({ callback, ms }); return timers.length; };
+  window.matchMedia = query => ({ matches: query === '(max-width: 640px)' }); // a phone, no reduced motion
+  const tappedAt = realNow() + 7_200_000;
+  try {
+    const sheet = live.get('slidingSheet');
+    sheet.classList.remove('hidden');
+    sheet.querySelector = () => ({}); // it has a shell to slide
+    Date.now = () => tappedAt;
+    closeSheetModal('slidingSheet');
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].ms, 240, 'the slide takes 240ms');
+
+    Date.now = () => tappedAt + 240; // the slide ends and the sheet hides
+    timers[0].callback();
+    assert.equal(sheet.classList.contains('hidden'), true);
+
+    Date.now = () => tappedAt + 300; // 60ms after it hid, but 300ms after the tap: still the same gesture
+    const stillTheTap = makeShieldTap();
+    swallowLeakedModalTap(stillTheTap);
+    assert.equal(stillTheTap.stopped, true);
+
+    Date.now = () => tappedAt + 340; // a deliberate follow-up, 100ms after the sheet hid
+    const deliberate = makeShieldTap();
+    swallowLeakedModalTap(deliberate);
+    assert.equal(deliberate.stopped, false, 'counted from the end of the slide this tap was swallowed');
+  } finally {
+    Date.now = realNow;
+    global.setTimeout = realSetTimeout;
+    window.matchMedia = realMatchMedia;
+    live.restore();
+  }
+});
+
+test('a clock stepped backwards does not leave real taps swallowed or a backdrop ignored', () => {
+  const realNow = Date.now;
+  const openedAt = realNow() + 10_800_000;
+  try {
+    Date.now = () => openedAt;
+    activateModalEnvironment();
+    deactivateModalEnvironment();
+    const panel = { dataset: { openedAt: String(openedAt) } };
+    assert.equal(isModalJustOpened(panel), true);
+    const tap = makeShieldTap();
+    swallowLeakedModalTap(tap);
+    assert.equal(tap.stopped, true);
+
+    Date.now = () => openedAt - 10 * 60 * 1000; // an automatic time correction
+    assert.equal(isModalJustOpened(panel), false);
+    const afterCorrection = makeShieldTap();
+    swallowLeakedModalTap(afterCorrection);
+    assert.equal(afterCorrection.stopped, false);
   } finally {
     Date.now = realNow;
   }

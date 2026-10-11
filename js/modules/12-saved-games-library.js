@@ -536,12 +536,14 @@ function ensureStatsSheetGesture(modalId, closeFn) {
       return;
     }
     // Finish the swipe from where the finger let go instead of snapping back first.
+    const releasedAt = Date.now();
     modal.dataset.sheetDismissed = 'true';
     shell.style.transition = 'transform 0.22s cubic-bezier(0.4, 0, 1, 1)';
     shell.style.transform = 'translateY(105%)';
     modal.classList.add('is-dismissing');
     setTimeout(() => {
       closeFn();
+      backdateModalCloseShield(releasedAt); // the tap shield counts from the gesture, not from the slide's end
       delete modal.dataset.sheetDismissed;
       modal.classList.remove('is-dismissing');
       shell.style.transition = '';
