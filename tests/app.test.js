@@ -61,6 +61,10 @@ const {
   renderReadOnlyGameDetails,
   buildSavedGameCard,
   buildFreezerGameCard,
+  findStoredGameIndex,
+  getLibraryTimestamp,
+  foldLibrarySearchText,
+  formatLibraryAgo,
   getStatistics,
   sortStatisticsData,
   bucketScore,
@@ -602,6 +606,105 @@ test('game data import rejects malformed, duplicate, and protected storage entri
     })),
     /protected sign-in data/,
   );
+});
+
+test('game data import refuses a backup whose game lists are damaged', () => {
+  const backup = storage => JSON.stringify({ format: 'rook-score-game-data', version: 1, storage });
+  assert.throws(
+    () => parseGameDataImport(backup([{ key: 'savedGames', value: 'oops, not json' }])),
+    /saved games in this file are damaged/,
+  );
+  assert.throws(
+    () => parseGameDataImport(backup([{ key: 'savedGames', value: '{"a":1}' }])),
+    /saved games in this file are damaged/,
+  );
+  assert.throws(
+    () => parseGameDataImport(backup([{ key: 'freezerGames', value: '[1,2,3,null]' }])),
+    /frozen games in this file are damaged/,
+  );
+  const fine = parseGameDataImport(backup([
+    { key: 'savedGames', value: '[{"winner":"us"}]' },
+    { key: 'freezerGames', value: '[]' },
+    { key: 'proModeEnabled', value: 'true' },
+  ]));
+  assert.equal(fine.storage.length, 3);
+});
+
+test('a game list that is not JSON reads as an empty list, never as text', () => {
+  resetState();
+  localStorage.setItem('savedGames', 'oops, not json');
+  localStorage.setItem('freezerGames', 'still not json');
+  assert.deepEqual(getLocalStorage('savedGames'), []);
+  assert.deepEqual(getLocalStorage('freezerGames'), []);
+  localStorage.setItem('plainText', 'not json');
+  assert.equal(getLocalStorage('plainText'), 'not json');
+});
+
+test('deleting a game finds the very game that was chosen, even when others share its timestamp', () => {
+  const first = { timestamp: '2026-05-18T14:00:00.000Z', winner: 'us' };
+  const second = { timestamp: '2026-05-18T14:00:00.000Z', winner: 'dem' };
+  assert.equal(findStoredGameIndex([first, second], second), 1);
+  assert.equal(findStoredGameIndex([first, second], first), 0);
+  // After a re-read the object is new; the id decides, then (for games without one) the timestamp.
+  assert.equal(findStoredGameIndex([{ id: 'a' }, { id: 'b' }], { id: 'b' }), 1);
+  assert.equal(findStoredGameIndex([{ timestamp: 'x' }, { timestamp: 'y' }], { timestamp: 'y' }), 1);
+  assert.equal(findStoredGameIndex([{ id: 'a' }], { id: 'z' }), -1);
+});
+
+test('library dates accept epoch milliseconds, and search ignores accents', () => {
+  const when = Date.UTC(2026, 4, 18, 14, 0, 0);
+  assert.equal(getLibraryTimestamp(when).getTime(), when);
+  assert.equal(getLibraryTimestamp('2026-05-18T14:00:00.000Z').getTime(), when);
+  assert.equal(getLibraryTimestamp('not a date'), null);
+  assert.equal(getLibraryTimestamp(Number.NaN), null);
+  assert.equal(getLibraryTimestamp(1e20), null);
+  assert.equal(getLibraryTimestamp(''), null);
+  assert.equal(foldLibrarySearchText('José & Zoë'), 'jose & zoe');
+  assert.equal(foldLibrarySearchText('jose'), foldLibrarySearchText('JOSÉ'));
+});
+
+test('"time ago" never says 0 days for a game from earlier the same day', () => {
+  const now = new Date(2026, 4, 18, 23, 59, 0);
+  const earlier = new Date(2026, 4, 18, 0, 10, 0); // 23h49m ago, same calendar day
+  assert.equal(formatLibraryAgo(earlier.toISOString(), now), '23h ago');
+  assert.equal(formatLibraryAgo(new Date(2026, 4, 17, 12, 0, 0).toISOString(), now), 'yesterday');
+  assert.equal(formatLibraryAgo(new Date(2026, 4, 18, 23, 20, 0).toISOString(), now), '39m ago');
+});
+
+test('a table-talk penalty shows as a penalty in a saved game, not as a set bid', () => {
+  const game = {
+    usName: 'Ann & Bob', demName: 'Cy & Di', usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'],
+    winner: 'us', timestamp: '2026-05-18T14:00:00.000Z', durationMs: 600000, finalScore: { us: 240, dem: -140 },
+    rounds: [
+      { biddingTeam: 'us', bidAmount: 130, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } },
+      { biddingTeam: 'us', bidAmount: 130, usPoints: 0, demPoints: -180, runningTotals: { us: 140, dem: -140 }, penalty: 'cheat' },
+      { biddingTeam: 'us', bidAmount: 100, usPoints: 100, demPoints: 80, runningTotals: { us: 240, dem: -60 } },
+    ],
+  };
+  const html = renderReadOnlyGameDetails(game);
+  const rows = html.split('<li class="gd-round').slice(1);
+  assert.equal(rows.length, 3);
+  assert.doesNotMatch(rows[0], /is-penalty|is-set|Penalty/);
+  assert.match(rows[1], /^ is-penalty"/);
+  assert.match(rows[1], /gd-round__penalty">Penalty</);
+  assert.doesNotMatch(rows[1], /gd-round__set/);
+  assert.match(rows[1], /Cy &amp; Di was penalized for table talk/);
+  // Only the flagged side's total is marked, and the penalty is not counted as a bid or a set.
+  assert.match(rows[1], /gd-round__total--dem is-set/);
+  assert.doesNotMatch(rows[1], /gd-round__total--us is-set/);
+  assert.match(html, /Bids made<\/dt>\s*<dd class="gd-stat__value">2\/2<\/dd>/);
+  assert.match(html, /Sets<\/dt>\s*<dd class="gd-stat__value">0<\/dd>/);
+});
+
+test('round labels in a saved game are escaped once', () => {
+  const game = {
+    usName: 'Ann & Bob', demName: 'Cy & Di', usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'],
+    winner: 'us', timestamp: '2026-05-18T14:00:00.000Z', finalScore: { us: 140, dem: 40 },
+    rounds: [{ biddingTeam: 'us', bidAmount: 130, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } }],
+  };
+  const html = renderReadOnlyGameDetails(game);
+  assert.match(html, /aria-label="Round 1: Ann &amp; Bob bid 130 and made it\./);
+  assert.doesNotMatch(html, /&amp;amp;/);
 });
 
 test('installed iOS safe-area fallback is limited to standalone zero-inset launches', () => {

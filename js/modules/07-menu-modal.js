@@ -312,9 +312,10 @@ function openSheetModal(modalId, closeFn) {
 }
 function openSavedGamesModal() {
   cancelSheetClose("savedGamesModal");
+  // Open first: the list's scroll position can only be reset while the sheet is displayed.
+  openModal("savedGamesModal");
   updateGamesCount();
   switchGamesTab('completed'); // Default to completed games
-  openModal("savedGamesModal");
   ensureStatsSheetGesture("savedGamesModal", closeSavedGamesModal);
 }
 function closeSavedGamesModal() { closeSheetModal("savedGamesModal"); }
@@ -629,6 +630,7 @@ function openSettingsModal() {
   // Load all settings using the common function
   loadSettings();
   renderGameDataControls();
+  setGameDataTransferStatus(""); // The last export/import result belongs to that visit, not this one
 
   openSheetModal("settingsModal", closeSettingsModal);
 }

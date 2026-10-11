@@ -77,12 +77,12 @@ function getLibraryGameGroup(game) {
 function getLibrarySearchText(game) {
   const meta = getLibraryGameMeta(game);
   if (meta.searchText === null) {
-    meta.searchText = [
+    meta.searchText = foldLibrarySearchText([
       getGameTeamDisplay(game, 'us'),
       getGameTeamDisplay(game, 'dem'),
       meta.date ? formatLibraryDate(meta.date, 'full') : '',
       meta.date ? getLibraryGameGroup(game).label : '',
-    ].join('\n').toLowerCase();
+    ].join('\n'));
   }
   return meta.searchText;
 }
@@ -130,7 +130,7 @@ function sortGames() { renderGamesWithFilter(); }
 // keepPosition re-renders in place (after a delete) instead of jumping back to the top.
 function renderGamesWithFilter({ animate = false, keepPosition = false } = {}) {
   const rawSearchValue = document.getElementById('gameSearchInput').value || '';
-  const searchTerm = rawSearchValue.trim().toLowerCase();
+  const searchTerm = foldLibrarySearchText(rawSearchValue.trim());
   const displaySearch = rawSearchValue.trim();
   const sortOption = document.getElementById('gameSortSelect').value;
   const completedTabActive = !document.getElementById('completedGamesSection').classList.contains('hidden');
@@ -255,8 +255,15 @@ function ensureLibraryScrollPaging() {
 }
 
 function getLibraryTimestamp(value) {
-  const parsed = value ? Date.parse(value) : NaN;
-  return Number.isNaN(parsed) ? null : new Date(parsed);
+  // Statistics accepts epoch milliseconds as well as ISO text, so the library must too.
+  const parsed = typeof value === 'number' ? value : (value ? Date.parse(value) : NaN);
+  const date = Number.isFinite(parsed) ? new Date(parsed) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+// "José" is found by typing "jose": names and the search box are compared without accents.
+function foldLibrarySearchText(text) {
+  return String(text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function getLibraryDayDiff(date, now = new Date()) {
@@ -303,6 +310,7 @@ function formatLibraryAgo(timestamp, now = new Date()) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const dayDiff = getLibraryDayDiff(date, now);
+  if (dayDiff <= 0) return `${Math.min(hours, 23)}h ago`; // 23.5 hours earlier on the same calendar day is not "0 days"
   if (dayDiff === 1) return 'yesterday';
   if (dayDiff < 7) return `${dayDiff} days ago`;
   return `on ${formatLibraryWhen(timestamp, { now })}`;

@@ -397,7 +397,7 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
               <span class="stats-empty__icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 21h8m-4-4v4m-6-9a6 6 0 0012 0V4H6v8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6H4a2 2 0 002 4m12-4h2a2 2 0 01-2 4"/></svg></span>
               <h4 class="stats-empty__title">No finished games yet</h4>
               <p class="stats-empty__body">Save a game when it ends and it will show up here with its full round history.</p>
-              <button type="button" onclick="handleNewGame(); closeMenuOverlay(); closeSavedGamesModal();" class="library-empty-cta">
+              <button type="button" onclick="closeMenuOverlay(); closeSavedGamesModal(); homeStartNewGame();" class="library-empty-cta">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
                 Start a New Game
               </button>

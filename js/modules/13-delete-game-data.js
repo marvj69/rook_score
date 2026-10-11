@@ -290,7 +290,8 @@ function renderGameDataControls(now = Date.now()) {
   if (record && restoreDesc) {
     const recoveredItems = describeGameDataSummary(summarizeGameDataEntries(record.entries))
       .map(item => item.replace(/^The game in progress$/, "The game that was in progress"));
-    restoreDesc.textContent = `${recoveredItems.join(", ")}. Deleted ${formatGameDataDate(record.deletedAt)}; restorable until ${formatGameDataDate(record.expiresAt)}.`;
+    const recoveredText = joinGameDataItems(recoveredItems); // "36 completed games, 3 frozen games, and the game that was in progress"
+    restoreDesc.textContent = `${recoveredText.charAt(0).toUpperCase()}${recoveredText.slice(1)}. Deleted ${formatGameDataDate(record.deletedAt)}; restorable until ${formatGameDataDate(record.expiresAt)}.`;
   }
 }
 

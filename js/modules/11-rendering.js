@@ -688,6 +688,7 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
   const margin = Math.abs(usScore - demScore);
 
   const bidSummary = roundList.reduce((summary, round) => {
+    if (round.penalty) return summary; // A table-talk penalty is not a bid that was made or set (Statistics skips it too).
     const bidSide = typeof round.biddingTeam === "string" ? round.biddingTeam.trim().toLowerCase() : "";
     const bidAmount = Number(round.bidAmount);
     if ((bidSide !== "us" && bidSide !== "dem") || !Number.isFinite(bidAmount) || bidAmount <= 0) return summary;
@@ -724,14 +725,21 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
     const bidSide = typeof r.biddingTeam === "string" ? r.biddingTeam.trim().toLowerCase() : "";
     const bidAmount = Number(r.bidAmount);
     const hasBid = (bidSide === "us" || bidSide === "dem") && Number.isFinite(bidAmount) && bidAmount > 0;
+    const isPenalty = Boolean(r.penalty);
+    // The flagged side is the one whose points went negative, not the side that held the bid.
+    const penalizedSide = isPenalty ? (Number(r.usPoints) < 0 ? "us" : Number(r.demPoints) < 0 ? "dem" : "") : "";
     const bidderPoints = Number(bidSide === "us" ? r.usPoints : r.demPoints);
-    const wasSet = hasBid && !(Number.isFinite(bidderPoints) && bidderPoints >= bidAmount);
+    const wasSet = hasBid && !isPenalty && !(Number.isFinite(bidderPoints) && bidderPoints >= bidAmount);
     const bidTeamName = bidSide === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
-    const bidLabel = hasBid
-      ? `${escapeHtmlValue(bidTeamName)} bid ${escapeHtmlValue(String(bidAmount))}${wasSet ? " and were set" : " and made it"}`
-      : "No bid recorded";
+    const penalizedName = penalizedSide === "us" ? (r.usTeamNameOnRound || usDisp) : (r.demTeamNameOnRound || demDisp);
+    // Plain text: it only goes into the row's aria-label, which is escaped once, where it is written.
+    const bidLabel = isPenalty
+      ? `${penalizedSide ? penalizedName : "A team"} was penalized for table talk`
+      : hasBid
+        ? `${bidTeamName} bid ${bidAmount}${wasSet ? " and were set" : " and made it"}`
+        : "No bid recorded";
     const totalCell = (side, total, delta) => {
-      const isSetSide = wasSet && bidSide === side;
+      const isSetSide = (wasSet && bidSide === side) || (isPenalty && penalizedSide === side);
       return `
         <span class="gd-round__total gd-round__total--${side}${isSetSide ? " is-set" : ""}">
           <span class="gd-round__running">${escapeHtmlValue(String(total))}</span>
@@ -739,7 +747,7 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
         </span>`;
     };
     return `
-      <li class="gd-round${wasSet ? " is-set" : ""}" aria-label="${escapeAttribute(`Round ${i + 1}: ${bidLabel}. ${usDisp} ${runningTotals.us}, ${demDisp} ${runningTotals.dem}`)}">
+      <li class="gd-round${wasSet ? " is-set" : ""}${isPenalty ? " is-penalty" : ""}" aria-label="${escapeAttribute(`Round ${i + 1}: ${bidLabel}. ${usDisp} ${runningTotals.us}, ${demDisp} ${runningTotals.dem}`)}">
         ${totalCell("us", runningTotals.us, usDelta)}
         <span class="gd-round__mid">
           <span class="gd-round__num">R${i + 1}</span>
@@ -747,7 +755,7 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
             <span class="gd-round__bid gd-round__bid--${bidSide}">
               ${bidSide === "us" ? '<span class="gd-round__arrow" aria-hidden="true">&larr;</span>' : ""}
               <span>${escapeHtmlValue(String(bidAmount))}</span>
-              ${wasSet ? '<span class="gd-round__set">Set</span>' : '<span class="gd-round__made" aria-hidden="true">&#10003;</span>'}
+              ${isPenalty ? '<span class="gd-round__penalty">Penalty</span>' : wasSet ? '<span class="gd-round__set">Set</span>' : '<span class="gd-round__made" aria-hidden="true">&#10003;</span>'}
               ${bidSide === "dem" ? '<span class="gd-round__arrow" aria-hidden="true">&rarr;</span>' : ""}
             </span>` : '<span class="gd-round__bid gd-round__bid--none">&mdash;</span>'}
         </span>

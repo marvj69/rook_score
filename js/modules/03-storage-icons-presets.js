@@ -80,8 +80,11 @@ function getLocalStorage(key, defaultValue = null) {
   const cached = LOCAL_STORAGE_CACHE.get(key);
   if (cached && cached.raw === raw) return cached.parsed;
   if (!shouldAttemptJsonParse(raw)) {
-    LOCAL_STORAGE_CACHE.set(key, { raw, parsed: raw });
-    return raw;
+    // Text that is not JSON is still a bad value for a game list (a hand-edited or damaged
+    // backup); the library must see an empty list rather than a string.
+    const parsed = normalizeStoredCollection(key, raw);
+    LOCAL_STORAGE_CACHE.set(key, { raw, parsed });
+    return parsed;
   }
   try {
     const parsed = normalizeStoredCollection(key, JSON.parse(raw));
@@ -227,6 +230,22 @@ function getCurrentGameExportSnapshot(gameState = state, now = Date.now()) {
   };
 }
 
+// A backup that carries a game list must carry a real one: the import replaces everything, so a
+// damaged list would otherwise wipe the library and still report success.
+function assertImportedGameListIsValid(key, value) {
+  if (key !== "savedGames" && key !== "freezerGames") return;
+  let list;
+  try {
+    list = JSON.parse(value);
+  } catch {
+    list = null;
+  }
+  const isGame = item => item && typeof item === "object" && !Array.isArray(item);
+  if (!Array.isArray(list) || !list.every(isGame)) {
+    throw new Error(`The saved ${key === "savedGames" ? "games" : "frozen games"} in this file are damaged, so nothing was imported.`);
+  }
+}
+
 function normalizeImportedStorageEntries(entries) {
   if (!Array.isArray(entries)) {
     throw new Error("This file does not contain Rook Score game data.");
@@ -256,6 +275,7 @@ function normalizeImportedStorageEntries(entries) {
       throw new Error(`The saved value for "${key}" is invalid.`);
     }
     seenKeys.add(key);
+    assertImportedGameListIsValid(key, value);
     totalCharacters += key.length + value.length;
     if (totalCharacters > MAX_GAME_DATA_IMPORT_BYTES) {
       throw new Error("This game data file is too large.");
@@ -393,7 +413,8 @@ function exportGameData() {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    // Safari starts the download after the click returns; revoking the link right away can cancel it.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
     setGameDataTransferStatus(`Exported ${payload.storage.length} saved data items.`);
     return payload;
   } catch (error) {

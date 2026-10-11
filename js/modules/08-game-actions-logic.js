@@ -1069,14 +1069,23 @@ async function freezeCurrentGame() {
   pendingGameAction = null;
   openHomeScreen();
 }
-function loadFreezerGame(index, { confirm = true } = {}) {
+// Where a game now sits in a freshly read list: the very same object first, then its id, then (only for
+// games saved without an id) its timestamp. Two games can share a timestamp, so that comes last.
+function findStoredGameIndex(items, chosen) {
+  const sameObject = items.indexOf(chosen);
+  if (sameObject >= 0) return sameObject;
+  return items.findIndex(game => game && ((game.id && game.id === chosen.id)
+    || (!game.id && game.timestamp && game.timestamp === chosen.timestamp)));
+}
+
+// Resuming replaces whatever is on the scoreboard, so it asks first only when a game is there to lose.
+function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
   const chosen = getLocalStorage("freezerGames")[index];
   if (!chosen) return;
-  const matchesChosen = game => game === chosen
-    || (game && ((game.id && game.id === chosen.id) || (!game.id && game.timestamp && game.timestamp === chosen.timestamp)));
   const chosenTotals = sanitizeTotals(chosen.finalScore);
-  const chosenLabel = chosen.name
-    || `${getGameTeamDisplay(chosen, "us")} vs ${getGameTeamDisplay(chosen, "dem")} (${chosenTotals.us}–${chosenTotals.dem})`;
+  // Frozen games are named after their dealers or "FROZEN-<time>", which says nothing to a person who
+  // is deciding; the teams and score do.
+  const chosenLabel = `${getGameTeamDisplay(chosen, "us")} ${chosenTotals.us}–${chosenTotals.dem} ${getGameTeamDisplay(chosen, "dem")}`;
   const resumeChosenGame = () => {
     closeConfirmationModal();
     const chosenUsPlayers = ensurePlayersArray(chosen.usPlayers || parseLegacyTeamName(chosen.usName));
@@ -1117,10 +1126,14 @@ function loadFreezerGame(index, { confirm = true } = {}) {
     });
     // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
     const freezerGames = getLocalStorage("freezerGames");
-    const currentIndex = freezerGames.findIndex(matchesChosen);
+    const currentIndex = findStoredGameIndex(freezerGames, chosen);
     if (currentIndex >= 0) {
       freezerGames.splice(currentIndex, 1); // Remove from freezer
-      setLocalStorage("freezerGames", freezerGames);
+      if (!setLocalStorage("freezerGames", freezerGames)) {
+        // The copy in the freezer survived (storage is full), so it would come back after a reload.
+        LOCAL_STORAGE_CACHE.delete("freezerGames");
+        showWarningToast("Not saved: storage full");
+      }
     }
     closeSavedGamesModal();
     closeHomeScreen();
@@ -1139,7 +1152,7 @@ function loadFreezerGame(index, { confirm = true } = {}) {
     return;
   }
   openConfirmationModal(
-    `${chosenLabel} will replace the game on the scoreboard now.`,
+    `${chosenLabel} will replace the game on the scoreboard, and that game will not be saved.`,
     resumeChosenGame,
     closeConfirmationModal,
     { title: "Resume this game?", confirmLabel: "Resume", icon: "play" }
@@ -1157,21 +1170,23 @@ function viewSavedGame(originalIndex, { returnToLibrary = true } = {}) { // orig
   if (!chosen) return;
   const details = document.getElementById("viewSavedGameDetails");
   details.innerHTML = renderReadOnlyGameDetails(chosen, originalIndex);
-  details.scrollTop = 0;
   openViewSavedGameModal({ returnToLibrary });
+  details.scrollTop = 0; // Only takes effect once the sheet is displayed, so it comes after opening
 }
 function deleteGame(storageKey, index, descriptor, onDeleted) {
   const chosen = getLocalStorage(storageKey)[index];
   if (!chosen) return;
-  const matchesChosen = game => game === chosen
-    || (game && ((game.id && game.id === chosen.id) || (!game.id && game.timestamp && game.timestamp === chosen.timestamp)));
   openConfirmationModal("This can't be undone.", () => {
     // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
     const items = getLocalStorage(storageKey);
-    const currentIndex = items.findIndex(matchesChosen);
+    const currentIndex = findStoredGameIndex(items, chosen);
     if (currentIndex >= 0) {
       items.splice(currentIndex, 1);
-      setLocalStorage(storageKey, items);
+      if (!setLocalStorage(storageKey, items)) {
+        // Storage refused the write: the game is still stored, so show it again instead of pretending.
+        LOCAL_STORAGE_CACHE.delete(storageKey);
+        showWarningToast("Not deleted: storage is full");
+      }
     }
     if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game
     closeConfirmationModal();
@@ -1181,6 +1196,9 @@ function deleteGame(storageKey, index, descriptor, onDeleted) {
       updateGamesCount();
       renderGamesWithFilter({ keepPosition: true });
     }
+    // Home's counts and its Resume / Last game cards carry list positions; redraw them so a tap
+    // cannot open a different game than the one shown.
+    if (isHomeScreenOpen()) renderHomeScreen();
   }, closeConfirmationModal, { title: `Delete this ${descriptor}?`, confirmLabel: "Delete", tone: "danger" });
 }
 function deleteSavedGame(index) { deleteGame("savedGames", index, "completed game"); }
