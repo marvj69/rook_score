@@ -41,6 +41,7 @@ const {
   activateModalEnvironment,
   getTeamColorTokens,
   getTeamAvatarInk,
+  resetThemeColors,
   closePresetEditorModal,
   canShowProbabilityExplanation,
   describeRequestFailure,
@@ -120,6 +121,12 @@ const {
   handleTeamClick,
   submitStructuredRound,
   submitRoundFromCurrentInputs,
+  handleBidSelect,
+  handleScoreKeypadInput,
+  openScoreKeypad,
+  getTransientScoreInputsForTests,
+  getHistoryScrollKey,
+  resetRenderAnimationState,
   startHistoryEdit,
   commitHistoryEdit,
   clampDurationMs,
@@ -728,6 +735,17 @@ test('round labels in a saved game are escaped once', () => {
   assert.doesNotMatch(html, /&amp;amp;/);
 });
 
+test('a saved game with a null among its rounds still opens, showing the rounds that are there', () => {
+  const game = {
+    usName: 'Ann & Bob', demName: 'Cy & Di', usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'],
+    winner: 'us', timestamp: '2026-05-18T14:00:00.000Z', finalScore: { us: 140, dem: 40 },
+    rounds: [null, { biddingTeam: 'us', bidAmount: 130, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } }, 'junk', []],
+  };
+  const html = renderReadOnlyGameDetails(game);
+  assert.equal(html.split('<li class="gd-round').length - 1, 1);
+  assert.match(html, /Bids made<\/dt>\s*<dd class="gd-stat__value">1\/1<\/dd>/);
+});
+
 test('installed iOS safe-area fallback is limited to standalone zero-inset launches', () => {
   assert.equal(shouldApplyStandaloneSafeAreaFallback({
     isIOS: true,
@@ -879,6 +897,30 @@ test('a bid that was remembered for a deselected team does not survive a reload'
   assert.deepEqual(getStateForTests().savedScoreInputStates, { us: null, dem: null });
 });
 
+test('a bid or total typed on the keypad and never submitted does not follow the player into another game', () => {
+  const nothingLeft = { customBid: '', points: '', keypad: '' };
+  const typeSomething = () => {
+    handleTeamClick('us');
+    handleBidSelect('other');
+    openScoreKeypad('bid');
+    for (const key of '130') handleScoreKeypadInput('bid', key);
+    openScoreKeypad('points');
+    handleScoreKeypadInput('points', '4');
+    assert.deepEqual(getTransientScoreInputsForTests(), { customBid: '130', points: '4', keypad: 'points' });
+  };
+
+  resetGame();
+  typeSomething();
+  resetGame();
+  assert.deepEqual(getTransientScoreInputsForTests(), nothingLeft, 'New Game');
+
+  typeSomething();
+  localStorage.setItem('activeGameState', JSON.stringify({ rounds: [], usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'] }));
+  loadCurrentGameState(); // what a cloud merge or an import does to the scoreboard
+  assert.deepEqual(getTransientScoreInputsForTests(), nothingLeft, 'a game loaded from storage');
+  resetGame();
+});
+
 test('custom bids of 5, 10, and 15 are refused everywhere with a reason', () => {
   for (const refused of ['5', '10', '15']) {
     assert.equal(isUsableBid(refused), false, refused);
@@ -932,13 +974,61 @@ test('History edits only accept bids and totals that make sense', () => {
   assert.equal(edit('us', '10.5').error, 'Scores must be multiples of 5.');
   assert.equal(edit('dem', '1000000000').error, 'Scores stay between -2000 and 2000.');
   assert.equal(getStateForTests().gameOver, false);
-  assert.equal(edit('bid', '15').error, 'Bids start at 20.');
+  assert.equal(edit('bid', '0').error, 'Bid must be > 0.');
+  assert.equal(edit('bid', '122').error, 'Bid must be multiple of 5.');
   assert.equal(edit('bid', '185').error, 'Bids between 180 and 360 are not allowed.');
   assert.equal(getStateForTests().rounds[0].bidAmount, 120);
   assert.equal(edit('us', '130').error, '');
   assert.equal(getStateForTests().rounds[0].runningTotals.us, 130);
   assert.equal(edit('bid', '125').error, '');
   assert.equal(getStateForTests().rounds[0].bidAmount, 125);
+});
+
+test('History takes a typed bid as a finished one, and a cell left as it was is not an edit', () => {
+  resetGame();
+  // A preset chip can be 5, 10 or 15; the keypad only holds those back while a longer bid may still be typed.
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '10', points: 15 }), true);
+  const undone = { ...getStateForTests().rounds[0] };
+  const open = field => updateState({ historyEdit: { idx: 0, field }, error: '', undoneRounds: [undone] });
+
+  open('bid');
+  commitHistoryEdit(0, 'bid', '10');
+  let after = getStateForTests();
+  assert.equal(after.error, '', 'pressing Enter on a bid of 10 is not a mistake');
+  assert.equal(after.historyEdit, null);
+  assert.equal(after.undoneRounds.length, 1, 'and it does not wipe Redo');
+
+  open('us');
+  commitHistoryEdit(0, 'us', '15');
+  after = getStateForTests();
+  assert.equal(after.undoneRounds.length, 1, 'the same goes for a total');
+  assert.equal(after.rounds[0].usPoints, 15);
+
+  open('bid');
+  commitHistoryEdit(0, 'bid', '15');
+  after = getStateForTests();
+  assert.equal(after.error, '');
+  assert.equal(after.rounds[0].bidAmount, 15, 'a changed bid is applied');
+  assert.deepEqual(after.undoneRounds, [], 'and Redo no longer applies after a real edit');
+});
+
+test('a refused History edit is also announced in a toast, since the alert can be scrolled out of view', () => {
+  resetGame();
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '120', points: 125 }), true);
+  const live = installLiveDocument();
+  try {
+    updateState({ historyEdit: { idx: 0, field: 'us' }, error: '' });
+    commitHistoryEdit(0, 'us', '103');
+    const toast = live.get('saveIndicator');
+    clearTimeout(toast.hideTimer);
+    clearTimeout(toast.removeTimer);
+    assert.equal(toast.textContent, 'Scores must be multiples of 5.');
+    assert.equal(toast.classList.contains('hidden'), false);
+    assert.equal(getStateForTests().error, 'Scores must be multiples of 5.');
+  } finally {
+    live.restore();
+    resetGame();
+  }
 });
 
 test('calculateSafeTimeAccumulation preserves full active play time and rejects invalid clocks', () => {
@@ -1554,6 +1644,7 @@ test('turning Experimental Features off, even by a cloud merge, stops the voice 
   window.__rookVoiceScoreRuntime = { initializeVoiceScoreControls() {}, cancelVoiceScoreEntry() { cancelled += 1; return true; } };
   try {
     resetState();
+    localStorage.setItem('localOnly:voiceExperimentalOnboardingCompleted', 'true');
     updateExperimentalFeaturesUI(true);
     updateExperimentalFeaturesUI(false);
     assert.equal(cancelled, 1, 'the merged "off" reaches the runtime');
@@ -1564,6 +1655,39 @@ test('turning Experimental Features off, even by a cloud merge, stops the voice 
     assert.equal(cancelled, 2);
   } finally {
     window.__rookVoiceScoreRuntime = previousRuntime;
+    resetState();
+  }
+});
+
+test('Experimental Features that were already on before the voice walkthrough get the microphone when it is finished', async () => {
+  let initialised = 0;
+  const previousRuntime = window.__rookVoiceScoreRuntime;
+  window.__rookVoiceScoreRuntime = {
+    initializeVoiceScoreControls() { initialised += 1; },
+    cancelVoiceScoreEntry() { return true; },
+    requestVoiceScoreMicrophonePermission: async () => true,
+  };
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  try {
+    resetState();
+    updateExperimentalFeaturesUI(false);
+    // Launch for the people who switched it on before the walkthrough existed: on, but never walked through.
+    localStorage.setItem('experimentalFeaturesEnabled', 'true');
+    updateExperimentalFeaturesUI(isExperimentalFeaturesEnabled());
+    await settle();
+    assert.equal(initialised, 0, 'the runtime refuses to start before the walkthrough, so nothing was started');
+
+    assert.equal(await continueVoiceExperimentalOnboarding(), true);
+    await settle();
+    assert.equal(initialised, 1, 'finishing the walkthrough starts it');
+
+    updateExperimentalFeaturesUI(true);
+    await settle();
+    assert.equal(initialised, 1, 'and a repeat of the same setting does not start it again');
+  } finally {
+    window.__rookVoiceScoreRuntime = previousRuntime;
+    updateExperimentalFeaturesUI(false);
+    resetState();
   }
 });
 
@@ -6753,6 +6877,55 @@ test('the launch script and the app derive the same readable colours', () => {
   assert.equal(boot({ customDemColor: '"#ffeb3b"' })['--primary-ink'], undefined, 'an untouched side keeps the stylesheet defaults');
 });
 
+test('Reset in the colour sheet only moves the pickers; nothing is saved until Apply', () => {
+  const makeElement = () => ({
+    value: '', textContent: '', style: { setProperty() {} }, setAttribute() {}, querySelectorAll: () => [],
+    classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+  });
+  const elements = {};
+  const originalGetElementById = document.getElementById;
+  const originalComputedStyle = global.getComputedStyle;
+  document.getElementById = id => (elements[id] ||= makeElement());
+  global.getComputedStyle = () => ({ getPropertyValue: name => ({ '--primary-color': '#4f8cff', '--accent-color': '#ff5c5c' })[name] || '' });
+  try {
+    resetState();
+    setLocalStorage('customUsColor', '#112233', { sync: false });
+    setLocalStorage('customDemColor', '#445566', { sync: false });
+    document.getElementById('usColorPicker').value = '#112233';
+    document.getElementById('demColorPicker').value = '#445566';
+    resetThemeColors();
+    assert.equal(elements.usColorPicker.value, '#4f8cff', 'the pickers show the colours the app ships with');
+    assert.equal(elements.demColorPicker.value, '#ff5c5c');
+    assert.equal(getLocalStorage('customUsColor', ''), '#112233', 'the saved colours are still what Apply wrote');
+    assert.equal(getLocalStorage('customDemColor', ''), '#445566');
+  } finally {
+    document.getElementById = originalGetElementById;
+    global.getComputedStyle = originalComputedStyle;
+    resetState();
+  }
+});
+
+test('the selected team card keeps white text on its darkened face, whatever the team colour', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  const position = text => {
+    const index = css.indexOf(text);
+    assert.notEqual(index, -1, `${text} is in the stylesheet`);
+    return index;
+  };
+  const selected = position('body.liquid-glass .sunken-selected {');
+  assert.match(css.slice(selected, css.indexOf('}', selected)), /color:\s*#ffffff/);
+  assert.ok(selected > position('body.liquid-glass .bg-primary {'), 'it has to come after the dark ink it overrides on a light team colour');
+  assert.ok(selected > position('body.liquid-glass .bg-accent {'));
+});
+
+test('surfaces that were hard to read on an extreme team colour use the readable tokens', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  assert.match(css, /--card-text:\s*var\(--primary-text, var\(--primary-color\)\)/, 'the live Home card lightens a dark team colour for its text');
+  assert.match(css, /\.home-card__eyebrow \{[^}]*color:\s*color-mix\(in srgb, var\(--card-text\) 75%, #ffffff\)/);
+  assert.doesNotMatch(css, /\.voice-score-status:empty\s*\{[^}]*display:\s*none/, 'an empty live region stays in the accessibility tree');
+  assert.match(css, /\.voice-score-status:empty\s*\{[^}]*padding:\s*0/);
+});
+
 // --- Scoreboard layout ---
 function renderScoreboardWith(overrides) {
   const live = installLiveDocument();
@@ -6775,11 +6948,30 @@ test('a long unbroken team name is clipped or wrapped everywhere it appears on t
   const name = 'W'.repeat(60);
   const { html } = renderScoreboardWith({ usTeamName: name, demTeamName: 'Dem', biddingTeam: 'us', bidAmount: '130' });
   assert.match(html, new RegExp(`font-semibold name-clip"[^>]*>${name}<`), 'the Round card clips the bidder');
-  assert.match(html, new RegExp(`name-clip" style="max-width: 9rem;">${name}</span> \\+100`), 'Point Difference clips the leader');
+  assert.match(html, new RegExp(`name-clip" style="max-width: min\\(9rem, 100%\\);">${name}</span> \\+100`), 'Point Difference clips the leader, and never at more than its own line');
   assert.match(html, new RegExp(`Enter Bid for <span class="name-clip">${name}</span>`), 'the bid header clips the bidder');
-  assert.match(html, new RegExp(`min-w-0 truncate[^>]*aria-pressed="false">${name}</button>|min-w-0 truncate[^>]*aria-pressed="true">${name}</button>`), 'the points toggle truncates');
-  assert.match(html, /<h2 class="[^"]*truncate max-w-full[^"]*"[^>]*>W+<\/h2>/, 'the team card truncates at the card width');
-  assert.doesNotMatch(html, /max-w-\[100px\]/, 'no fixed width wider than a 320px phone card');
+  assert.match(html, new RegExp(`aria-pressed="(?:true|false)"><span class="name-lines">${name}</span></button>`), 'the points toggle wraps to two lines, then clips');
+  assert.doesNotMatch(html, /min-w-0 truncate[^>]*aria-pressed/, 'a one-line ellipsis would hide most of a name in a button');
+  assert.match(html, /<h2 class="[^"]*truncate team-card-name[^"]*"[^>]*>W+<\/h2>/, 'the team card truncates at the card width');
+  assert.doesNotMatch(html, /max-w-\[100px\]|sm:max-w-\[120px\]/, 'no fixed width wider than a 320px phone card');
+  assert.match(html, /flex flex-wrap gap-2 max-w-full shrink-0/, 'Undo, Redo and the flag button wrap rather than push past the card at large text');
+});
+
+test('the layout helpers behind long names, the Win pill and the walkthrough stay in the stylesheet', () => {
+  const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
+  const rule = selector => {
+    const found = css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`));
+    assert.ok(found, `${selector} is defined`);
+    return found[1];
+  };
+  assert.match(rule('.name-lines'), /-webkit-line-clamp:\s*2/);
+  assert.match(rule('.name-lines'), /overflow-wrap:\s*anywhere/);
+  assert.match(rule('.team-card-name'), /max-width:\s*calc\(100% \+ 1rem\)/, 'a name borrows the card padding');
+  assert.match(rule('.win-pill'), /max-width:\s*100%/, 'the Win pill can never be wider than the card');
+  assert.match(rule('.win-pill'), /width:\s*fit-content/);
+  assert.match(rule('.onboarding__slide'), /overflow-x:\s*hidden/, 'a slide never scrolls sideways under the swipe to the next one');
+  assert.doesNotMatch(rule('.onboarding__slide'), /overscroll-behavior:\s*contain/, 'overscroll-behavior: contain on both axes traps the swipe');
+  assert.match(css, /@media \(max-height: 340px\)\s*\{[^}]*:has\(\.score-keypad-sheet__message\)/, 'with a message showing, the keypad squeezes once more on a 320px-tall screen');
 });
 
 test('the Misdeal button text is dark, since white on yellow cannot be read', () => {
@@ -6796,7 +6988,7 @@ test('the Misdeal button text is dark, since white on yellow cannot be read', ()
   }
 });
 
-test('re-rendering keeps a scrolled-back History list where it was, unless a round was added or removed', () => {
+test('re-rendering keeps a scrolled-back History list where it was, unless a round was added or removed or another game arrived', () => {
   const live = installLiveDocument();
   const originalQuery = document.querySelector;
   try {
@@ -6806,7 +6998,7 @@ test('re-rendering keeps a scrolled-back History list where it was, unless a rou
       undoneRounds: [],
     });
     let calls = 0;
-    const before = { scrollTop: 420, dataset: { historyScroll: '1' } };
+    const before = { scrollTop: 420, dataset: { historyScroll: getHistoryScrollKey(1) } };
     const after = { scrollTop: 0, dataset: {} };
     document.querySelector = selector => {
       if (!/data-history-scroll/.test(selector)) return null;
@@ -6818,13 +7010,21 @@ test('re-rendering keeps a scrolled-back History list where it was, unless a rou
 
     calls = 0;
     after.scrollTop = 0;
-    before.dataset.historyScroll = '5'; // rounds changed since the last render
+    before.dataset.historyScroll = getHistoryScrollKey(5); // rounds changed since the last render
     renderApp();
     assert.equal(after.scrollTop, 0, 'a new or removed round shows the newest row again');
 
+    // A different game with just as many rounds (resume, rematch, paper, import) is not the list that was scrolled.
+    calls = 0;
+    after.scrollTop = 0;
+    before.dataset.historyScroll = getHistoryScrollKey(1);
+    resetRenderAnimationState();
+    renderApp();
+    assert.equal(after.scrollTop, 0, 'another game starts at its newest row');
+
     calls = 0;
     before.scrollTop = 0;
-    before.dataset.historyScroll = '1';
+    before.dataset.historyScroll = getHistoryScrollKey(1);
     renderApp();
     assert.equal(after.scrollTop, 0, 'a list at the top stays there');
   } finally {

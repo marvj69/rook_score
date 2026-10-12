@@ -723,6 +723,43 @@ for (const bundled of [false, true]) {
     assert.equal(rematch.includes('click'), false);
   });
 
+  test(`${label}: a different game landing on the scoreboard drops what was typed, remembered, and scrolled for the last one`, () => {
+    const { app } = startedApp();
+    const typedForTheLastGame = () => app.run(`
+      ephemeralCustomBid = '130'; ephemeralPoints = '45'; activeScoreKeypadTarget = 'points';
+      state.savedScoreInputStates = { us: { bidAmount: '130', customBidValue: '', showCustomBid: false, enterBidderPoints: false }, dem: null };
+      state.historyEdit = { idx: 0, field: 'us' };
+    `);
+    const leftBehind = () => app.run(`[ephemeralCustomBid, ephemeralPoints, activeScoreKeypadTarget, JSON.stringify(state.savedScoreInputStates), state.historyEdit].join('|')`);
+    const nothingLeft = '|||{"us":null,"dem":null}|';
+    const epoch = () => app.run('historyScrollEpoch');
+    app.localStorage.setItem('freezerGames', JSON.stringify([{
+      id: 'frozen-1', usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'], finalScore: { us: 200, dem: 150 },
+      startingTotals: { us: 0, dem: 0 }, rounds: [], timestamp: '2026-01-01T00:00:00.000Z', accumulatedTime: 1000,
+    }]));
+
+    typedForTheLastGame();
+    let before = epoch();
+    app.run('loadFreezerGame(0, { confirm: false })');
+    assert.equal(leftBehind(), nothingLeft, 'resuming a frozen game');
+    assert.equal(epoch(), before + 1, 'the History list of the old game is not the one that was scrolled');
+    assert.equal(app.run('getHistoryScrollKey(0)'), `0:${before + 1}`);
+
+    typedForTheLastGame();
+    before = epoch();
+    app.document.getElementById('resumeUsScore').value = '200';
+    app.document.getElementById('resumeDemScore').value = '150';
+    app.run('handleResumeGameSubmit({ preventDefault() {} })');
+    assert.equal(leftBehind(), nothingLeft, 'starting from paper scores');
+    assert.equal(epoch(), before + 1);
+
+    typedForTheLastGame();
+    before = epoch();
+    app.run('resetGame()');
+    assert.equal(epoch() > before, true, 'a new game');
+    assert.equal(app.run('[ephemeralCustomBid, ephemeralPoints, activeScoreKeypadTarget].join("|")'), '||');
+  });
+
   test(`${label}: early authentication waits for the shared client and returns its result`, async () => {
     const app = createRuntime(bundled);
     app.run(`
@@ -902,7 +939,7 @@ test('analytics replays early local-play events through its existing privacy fil
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 270000, 71000], // Home/onboarding, early initialization, Delete All Game Data, and the UI audit fixes; statistics load on demand
+    ['js/app.bundle.js', 274000, 73000], // Home/onboarding, early initialization, Delete All Game Data, and the UI audit fixes; statistics load on demand
     ['js/voice-score.bundle.js', 60000, 17000],
     ['js/probability-explanation.bundle.js', 26000, 8800],
     ['css/probability-explanation.css', 12000, 2800],

@@ -69,7 +69,8 @@ function renderApp() {
       const currentBidAmountDisplay = escapeHtmlValue(currentBidDisplayAmount);
       const arrow = biddingTeam === "us" ? "←" : "→";
       const teamColor = biddingTeam === "us" ? 'var(--primary-text, var(--primary-color))' : 'var(--accent-text, var(--accent-color))';
-      if (isUsableBid(currentBidDisplayAmount)) { // Only display if valid
+      // A selected bid (a preset chip, or a finished custom bid) always shows; one still being typed only once it is a bid.
+      if (bidAmount || isUsableBid(currentBidDisplayAmount)) {
           lastBidDisplayHtml = `<div class=\"mt-1 text-xs text-white\">Current Bid: <span class=\"font-semibold name-clip\" style=\"color: ${teamColor};\">${currentBiddingTeamDisplay}</span><br><span class=\"inline-block mt-0.5 font-bold\">${currentBidAmountDisplay} <span>${arrow}</span></span></div>`;
       }
   }
@@ -117,7 +118,7 @@ function renderApp() {
   // unless the number of rounds changed, when the newest round (the first row) is what should show.
   const historyList = document.querySelector?.("#app [data-history-scroll]");
   const keptHistoryScroll = historyList && historyList.scrollTop > 0
-    ? { top: historyList.scrollTop, rounds: Number(historyList.dataset?.historyScroll) }
+    ? { top: historyList.scrollTop, key: String(historyList.dataset?.historyScroll) }
     : null;
 
   document.getElementById("app").innerHTML = `
@@ -142,7 +143,7 @@ function renderApp() {
         ? renderInAppNumericKeypad("points", "Points keypad")
         : ""}
   `;
-  if (keptHistoryScroll && keptHistoryScroll.rounds === rounds.length) {
+  if (keptHistoryScroll && keptHistoryScroll.key === getHistoryScrollKey(rounds.length)) {
     const nextList = document.querySelector("#app [data-history-scroll]");
     if (nextList) nextList.scrollTop = keptHistoryScroll.top;
   }
@@ -198,7 +199,7 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
     const brightness = isSelected ? "brightness(0.7)" : "brightness(0.85)"; // Darken more when selected
     // Inner div for probability text to ensure z-index works with sunken-selected's ::after
     winProbDisplay = `
-      <div class="mt-1 text-xs rounded-full px-2 py-1 relative whitespace-nowrap w-fit mx-auto" style="background-color: ${teamColorVar}; filter: ${brightness};">
+      <div class="mt-1 rounded-full py-1 relative win-pill" style="background-color: ${teamColorVar}; filter: ${brightness};">
         <span class="relative font-medium" style="color: ${teamInkVar}; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
       </div>`;
   }
@@ -210,7 +211,7 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
     onclick="handleTeamClick('${teamKey}')"
     aria-pressed="${isSelected}" aria-label="Select ${teamLabelAttr}">
     <div class="text-center w-full min-w-0">
-<h2 class="text-base sm:text-xl font-bold truncate max-w-full mx-auto sm:max-w-[120px]" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
+<h2 class="text-base sm:text-xl font-bold truncate team-card-name" style="text-shadow: 0 2px 0 rgba(0,0,0,0.25);">${teamLabelDisplay}</h2>
 <p id="teamScore-${teamKey}" class="team-score-value text-2xl font-extrabold" style="text-shadow: 0 2px 0 rgba(0,0,0,0.2);" aria-live="polite" aria-atomic="true">${score}</p>
 ${winProbDisplay}
     </div>
@@ -298,7 +299,7 @@ function renderScoreInputCard() {
     <div class="${fadeClass}bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex flex-wrap justify-between items-center gap-x-2 gap-y-2">
         <h2 class="text-lg font-extrabold text-gray-800 dark:text-white name-fit" style="flex: 1 1 6.5rem;">Enter Bid for <span class="name-clip">${biddingTeamDisplayText}</span></h2>
-        <div class="flex space-x-2 shrink-0">
+        <div class="flex flex-wrap gap-2 max-w-full shrink-0">
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
           <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>
           <button type="button"
@@ -358,8 +359,8 @@ function renderPointsInput() {
       <div>
         <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-white">Enter Points For</label>
         <div class="flex gap-3">
-          <button type="button" class="flex-1 min-w-0 truncate rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}">${biddingTeamDisplay}</button>
-          <button type="button" class="flex-1 min-w-0 truncate rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}">${nonBiddingTeamDisplay}</button>
+          <button type="button" class="flex-1 min-w-0 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${biddingTeamButtonActive ? `${biddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(true)" aria-pressed="${biddingTeamButtonActive}"><span class="name-lines">${biddingTeamDisplay}</span></button>
+          <button type="button" class="flex-1 min-w-0 rounded-full px-3 py-1.5 text-sm font-medium threed transition focus:outline-none focus:ring-2 focus:ring-opacity-50 ${nonBiddingTeamButtonActive ? `${nonBiddingTeamColorClass} text-white shadow` : `bg-white border border-gray-300 text-gray-700 dark:bg-gray-700 dark:border-gray-500 dark:text-white`} ${focusRingColor}" onclick="handleBiddingPointsToggle(false)" aria-pressed="${nonBiddingTeamButtonActive}"><span class="name-lines">${nonBiddingTeamDisplay}</span></button>
         </div>
       </div>
       <div>
@@ -391,6 +392,12 @@ function startHistoryEdit(idx, field) {
 }
 function cancelHistoryEdit() {
   if (state.historyEdit) updateState({ historyEdit: null });
+}
+// What a History cell shows for a round: its bid, or the running total after it.
+function getHistoryCellValue(round, field) {
+  if (field === "bid") return Number.isFinite(Number(round?.bidAmount)) ? Number(round.bidAmount) : 0;
+  const total = Number(round?.runningTotals?.[field]);
+  return Number.isFinite(total) ? total : 0;
 }
 function handleHistoryEditKey(e, idx, field) {
   if (e.key === "Enter") {
@@ -454,23 +461,34 @@ function commitHistoryEdit(idx, field, rawValue) {
     return;
   }
 
+  // The alert sits at the top of the page, which can be far above the History row being edited.
+  const refuse = (message) => {
+    updateState({ historyEdit: null, error: message });
+    if (typeof showWarningToast === "function") showWarningToast(message);
+  };
   const numericValue = Number(rawValue);
   if (!Number.isFinite(numericValue)) {
-    updateState({ historyEdit: null, error: "Enter a valid number." });
+    refuse("Enter a valid number.");
+    return;
+  }
+  // Opening a cell and leaving it as it was is not an edit (it used to wipe Redo and rewrite the rounds).
+  if (numericValue === getHistoryCellValue(rounds[idx], field)) {
+    cancelHistoryEdit();
     return;
   }
   if (field === "bid") {
-    const bidError = getCustomBidProblem(String(numericValue));
+    // Unlike the keypad, nothing here is a bid still being typed: only validateBid's rules apply.
+    const bidError = validateBid(String(numericValue));
     if (bidError) {
-      updateState({ historyEdit: null, error: bidError });
+      refuse(bidError);
       return;
     }
   } else if (!Number.isInteger(numericValue) || numericValue % 5 !== 0) {
     // Every hand scores in fives, so a total that is not a multiple of 5 is a typo.
-    updateState({ historyEdit: null, error: "Scores must be multiples of 5." });
+    refuse("Scores must be multiples of 5.");
     return;
   } else if (Math.abs(numericValue) > HISTORY_EDIT_MAX_SCORE) {
-    updateState({ historyEdit: null, error: `Scores stay between -${HISTORY_EDIT_MAX_SCORE} and ${HISTORY_EDIT_MAX_SCORE}.` });
+    refuse(`Scores stay between -${HISTORY_EDIT_MAX_SCORE} and ${HISTORY_EDIT_MAX_SCORE}.`);
     return;
   }
 
@@ -559,7 +577,7 @@ function renderHistoryCard() {
   const showProbabilityButton = state.showWinProbability && !state.gameOver && rounds.length > 0;
   const currentTotals = getLastRunningTotals();
   const pointDiffRaw = currentTotals.us - currentTotals.dem;
-  const pointDiffLeader = `<span class="name-clip" style="max-width: 9rem;">${pointDiffRaw > 0 ? labelUsDisplay : labelDemDisplay}</span>`;
+  const pointDiffLeader = `<span class="name-clip" style="max-width: min(9rem, 100%);">${pointDiffRaw > 0 ? labelUsDisplay : labelDemDisplay}</span>`;
   const pointDiffDisplay = pointDiffRaw === 0 ? "Tied" : `${pointDiffLeader} +${Math.abs(pointDiffRaw)}`;
   const pointDiffColorClass = pointDiffRaw > 0
     ? "text-primary"
@@ -591,12 +609,12 @@ function renderHistoryCard() {
   const html = `
     <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-md${animation.className}"${animation.attrs}>
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="shrink-0">
+        <div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <div>
             <h2 class="text-lg font-extrabold text-gray-800 dark:text-white">History</h2>
             ${renderCurrentGameTimer()}
           </div>
-          <p class="text-sm font-medium text-gray-600 dark:text-gray-300 text-right name-fit">
+          <p class="text-sm font-medium text-gray-600 dark:text-gray-300 text-right min-w-0" style="flex: 1 1 6.5rem;">
             Point Difference:
             <span class="font-semibold ${pointDiffColorClass}">${pointDiffDisplay}</span>
           </p>
@@ -607,7 +625,7 @@ function renderHistoryCard() {
           <div class="text-right truncate">${labelDemDisplay}</div>
         </div>
       </div>
-      <div class="p-4 max-h-60 overflow-y-auto no-scrollbar" data-history-scroll="${rounds.length}">
+      <div class="p-4 max-h-60 overflow-y-auto no-scrollbar" data-history-scroll="${getHistoryScrollKey(rounds.length)}">
         <div class="space-y-2">
           ${getHistoryRoundsForDisplay(rounds).map(({ round, idx }) => {
             const biddingTeamLabel = round.biddingTeam === "us" ? (round.usTeamNameOnRound || labelUs) : (round.demTeamNameOnRound || labelDem);
@@ -693,7 +711,8 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
   const dateStr = date && !Number.isNaN(date.getTime())
     ? date.toLocaleString([], { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
     : "Unknown date";
-  const roundList = Array.isArray(rounds) ? rounds : [];
+  // The library list drops non-game entries; a game from a damaged backup can still hold a null among its rounds.
+  const roundList = Array.isArray(rounds) ? rounds.filter(round => round && typeof round === "object" && !Array.isArray(round)) : [];
   const roundsCount = roundList.length;
   const margin = Math.abs(usScore - demScore);
 

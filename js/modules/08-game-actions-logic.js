@@ -277,9 +277,12 @@ function openScoreKeypad(target) {
 
   if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
   scoreKeypadCloseTimer = null;
-  scoreKeypadShouldAnimate = activeScoreKeypadTarget !== target;
+  const opening = activeScoreKeypadTarget !== target;
+  scoreKeypadShouldAnimate = opening;
   activeScoreKeypadTarget = target;
-  scheduleRender();
+  // A refusal from earlier (a History edit, a bad total) is not about this entry; the sheet would show it as if it were.
+  if (opening && state.error) updateState({ error: "" });
+  else scheduleRender();
 }
 
 function closeScoreKeypad(immediate = false) {
@@ -790,10 +793,7 @@ async function startRematchWithFirstDealer(firstDealer) {
   resetRenderAnimationState();
   updateState(nextState);
   confettiTriggered = false;
-  ephemeralCustomBid = "";
-  ephemeralPoints = "";
-  activeScoreKeypadTarget = "";
-  scoreKeypadShouldAnimate = false;
+  clearTransientScoreInputs();
   pendingGameAction = null;
   window.prePopulatedTeamData = null;
   saveCurrentGameState();
@@ -1097,8 +1097,14 @@ function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
     const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
     const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
     const resumedAt = Date.now();
+    // A different game is landing: nothing typed or remembered for the last one comes with it.
+    resetRenderAnimationState();
+    clearTransientScoreInputs();
     // Restore all relevant game state aspects
     updateState({
+        savedScoreInputStates: { us: null, dem: null },
+        pendingPenalty: null,
+        historyEdit: null,
         rounds: (Array.isArray(chosen.rounds) ? chosen.rounds : []).filter(round => round && typeof round === "object" && !Array.isArray(round)),
         startingTotals: sanitizeTotals(chosen.startingTotals),
         gameOver: false, // Frozen games are not over

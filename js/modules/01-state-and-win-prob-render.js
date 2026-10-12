@@ -9,6 +9,7 @@ let activeScoreKeypadTarget = "";
 let scoreKeypadShouldAnimate = false;
 let scoreKeypadCloseTimer = null;
 let lastRoundCommittedAt = 0; // Lets a second tap on Submit pass over the History rows that appear under it
+let historyScrollEpoch = 0; // Changes with every different game on the scoreboard, so a scroll position is never carried over to it
 let confirmationCallback = null;
 let noCallback = null;
 let pendingGameAction = null; // For actions requiring team name input first
@@ -86,7 +87,23 @@ let historyCardAnimationRoundCount = 0;
 const renderedCardPopAnimationKeys = new Set();
 const HISTORY_RENDER_CACHE = { key: null, html: "" };
 
+// Typed-but-unsubmitted input belongs to the game it was typed in. Whatever puts a different game on the
+// scoreboard (new, rematch, resume, paper, import, cloud) drops it, or it comes back as a ghost bid or score.
+function clearTransientScoreInputs() {
+  ephemeralCustomBid = "";
+  ephemeralPoints = "";
+  activeScoreKeypadTarget = "";
+  scoreKeypadShouldAnimate = false;
+  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
+  scoreKeypadCloseTimer = null;
+}
+
+function getHistoryScrollKey(roundCount) {
+  return `${roundCount}:${historyScrollEpoch}`;
+}
+
 function resetRenderAnimationState() {
+  historyScrollEpoch += 1;
   scoreCardAnimationIdentity = "";
   historyCardAnimationRoundCount = 0;
   renderedCardPopAnimationKeys.clear();

@@ -748,6 +748,9 @@ function handleResumeGameSubmit(event) {
   updates.usPlayers = usPlayers;
   updates.demPlayers = demPlayers;
 
+  resetRenderAnimationState();
+  clearTransientScoreInputs();
+  updates.historyEdit = null;
   updateState(updates);
   confettiTriggered = false;
   pendingGameAction = null;

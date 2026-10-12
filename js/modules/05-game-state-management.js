@@ -292,12 +292,7 @@ function resetGame() {
     pendingPenalty : null
   });
   confettiTriggered = false;
-  ephemeralCustomBid = "";
-  ephemeralPoints = "";
-  activeScoreKeypadTarget = "";
-  scoreKeypadShouldAnimate = false;
-  if (scoreKeypadCloseTimer) clearTimeout(scoreKeypadCloseTimer);
-  scoreKeypadCloseTimer = null;
+  clearTransientScoreInputs();
   // Keep an explicit empty value, including offline. An absent key means this
   // device has no opinion and permits cloud restore; null means it was cleared.
   setLocalStorage(ACTIVE_GAME_KEY, null);
@@ -329,6 +324,7 @@ loadedState = JSON.parse(storedStateString);
     // A deselected team's remembered bid belongs to one tap-away moment, not to a saved game: older
     // builds kept it for the rest of the game, so it must not come back as a ghost bid after a reload.
     completeLoadedState.savedScoreInputStates = { us: null, dem: null };
+    clearTransientScoreInputs(); // (a cloud merge or an import can land a different game while something was typed)
     Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
     completeLoadedState.showWinProbability = Boolean(getLocalStorage(PRO_MODE_KEY, false));

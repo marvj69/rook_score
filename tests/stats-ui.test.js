@@ -557,12 +557,20 @@ test('Back from a partner or opponent returns to where the reader was in the pro
 });
 
 test('the margin chart counts whole games, and the calendar says how much it shows', () => {
-  const few = statsRenderOverview(model(sampleLibrary(5)));
-  const figure = (few.match(/<figure class="st-chart st-chart--bars"[^>]*Games by final margin[\s\S]*?<\/figure>/) || [''])[0];
-  assert.ok(figure, 'the final margin chart is drawn');
-  const axis = [...figure.matchAll(/<text class="st-axis" x="[\d.]+" y="[\d.]+" text-anchor="end">([^<]*)<\/text>/g)].map(match => match[1]);
-  assert.ok(axis.length >= 2);
-  assert.ok(axis.every(label => /^\d+$/.test(label)), `count axis shows ${axis.join(', ')}`);
+  const countAxis = html => {
+    const figure = (html.match(/<figure class="st-chart st-chart--bars"[^>]*Games by final margin[\s\S]*?<\/figure>/) || [''])[0];
+    assert.ok(figure, 'the final margin chart is drawn');
+    return [...figure.matchAll(/<text class="st-axis" x="[\d.]+" y="[\d.]+" text-anchor="end">([^<]*)<\/text>/g)].map(match => match[1]);
+  };
+  const few = countAxis(statsRenderOverview(model(sampleLibrary(5))));
+  assert.ok(few.length >= 2);
+  assert.ok(few.every(label => /^\d+$/.test(label)), `count axis shows ${few.join(', ')}`);
+
+  // Every game in a bin of its own: left alone, the axis for "how many games" would read 0, 0.5, 1.
+  const spread = loser => makeGame({ at: NOW - (loser / 50) * DAY, rounds: [round('us', 120, 140)], winner: 'us', final: { us: 520, dem: loser } });
+  const sparse = countAxis(statsRenderOverview(model([spread(500), spread(450), spread(400), spread(350)])));
+  assert.deepEqual(sparse, ['0', '1'], 'at most one game in a bin: 0 and 1, never 0.5');
+
   const long = statsRenderOverview(model(sampleLibrary(120, ['Ann', 'Bob', 'Cy', 'Di', 'Eve', 'Flo'])));
   assert.match(long, /game days in the last 26 weeks\./);
 });

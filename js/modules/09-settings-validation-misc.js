@@ -60,7 +60,7 @@ function isVoiceExperimentalOnboardingComplete() {
   return Boolean(getLocalStorage(VOICE_EXPERIMENTAL_ONBOARDING_KEY, false));
 }
 
-// What the voice runtime was last told, so it is only started or stopped when the setting changes.
+// Whether the voice runtime was last told to run, so it is only started or stopped when that changes.
 let experimentalRuntimeEnabled = null;
 
 function updateExperimentalFeaturesUI(isEnabled) {
@@ -72,10 +72,13 @@ function updateExperimentalFeaturesUI(isEnabled) {
   updateVoiceImprovementConsentUI();
   // The microphone follows the setting however it changed: the toggle, or a cloud merge that
   // rewrote it (loadSettings lands here). Before, a merged "off" left a dead mic on screen and a
-  // merged "on" showed no mic until the next launch.
-  if (experimentalRuntimeEnabled !== Boolean(isEnabled)) {
-    experimentalRuntimeEnabled = Boolean(isEnabled);
-    if (isEnabled) initializeVoiceScoreModuleWhenEnabled();
+  // merged "on" showed no mic until the next launch. It only runs once the voice walkthrough is
+  // done (the runtime refuses to start before), so a setting that was already on at launch must not
+  // count as started: finishing the walkthrough is what starts it.
+  const runtimeShouldRun = Boolean(isEnabled) && isVoiceExperimentalOnboardingComplete();
+  if (experimentalRuntimeEnabled !== runtimeShouldRun) {
+    experimentalRuntimeEnabled = runtimeShouldRun;
+    if (runtimeShouldRun) initializeVoiceScoreModuleWhenEnabled();
     else cancelLoadedVoiceScoreEntry();
   }
 }

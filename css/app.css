@@ -394,8 +394,10 @@ body.liquid-glass .version-badge {
 body.liquid-glass .voice-score-button {
   box-shadow: var(--shadow-3d-sm), var(--shadow-glow-primary);
 }
-/* The status line is always in the page so screen readers hear what is written into it. */
-.voice-score-status:empty { display: none; }
+/* The status line is always in the page so screen readers hear what is written into it. While it is
+   empty it only has to draw nothing: display: none would take it out of the accessibility tree, and a
+   live region that appears together with its text is the case screen readers announce unreliably. */
+.voice-score-status:empty { padding: 0; border-width: 0; box-shadow: none; }
 /* The mic renders outside #app, so it stays usable over open panels and can
    answer their prompts by voice. It sits below the save toast. */
 .modal-open .voice-score-control {
@@ -1062,6 +1064,9 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
   position: relative;
   z-index: 1;
 }
+/* The overlay above darkens the card, so its text is white on any team colour. --primary-ink and
+   --accent-ink are chosen for the bare colour, and are dark on a light one, which would then sit on this dark card. */
+body.liquid-glass .sunken-selected { color: #ffffff; }
 
 /* ── Theme CSS Variables ── */
 .bg-primary  { background-color: var(--primary-color) !important; transition: background-color 0.3s var(--smooth), filter 0.3s var(--smooth); }
@@ -1073,6 +1078,18 @@ html.dark body.liquid-glass .dealer-seat .dealer-seat__input::placeholder,
    not push the card (or the page) wider. */
 .name-fit { min-width: 0; overflow-wrap: anywhere; }
 .name-clip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* Inside a button an ellipsis on one line hides too much: wrap to two lines, then clip. */
+.name-lines { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+/* A team card is about 90px wide on a 320px phone. The name may borrow the card's own padding, and
+   gets smaller type on the narrowest phones, so an ordinary name ("Alice & Bob", "The Winners") still fits before it needs an ellipsis. */
+.team-card-name { margin-inline: -0.5rem; max-width: calc(100% + 1rem); }
+@media (max-width: 374px) { .team-card-name { font-size: 0.9375rem; } }
+@media (max-width: 359px) { .team-card-name { font-size: 0.8125rem; } }
+@media (min-width: 640px) { .team-card-name { margin-inline: 0; max-width: 100%; } }
+/* The Win % pill: one line when it fits (tighter type and padding on a 320px phone), and it wraps
+   rather than overflowing the card when the text is enlarged. */
+.win-pill { width: fit-content; max-width: 100%; margin-inline: auto; padding-inline: 0.5rem; font-size: 0.75rem; line-height: 1rem; text-align: center; }
+@media (max-width: 359px) { .win-pill { padding-inline: 0.25rem; font-size: 0.6875rem; } }
 
 /* ── Input Focus ── */
 input[type="text"]:focus,
@@ -1263,6 +1280,12 @@ button:focus-visible {
   .score-keypad { gap: 0.35rem; }
   .score-keypad__key { min-height: 2.25rem; }
   .score-keypad-sheet__submit { min-height: 2.5rem; margin-top: 0.4rem; }
+  .score-keypad-sheet__message { margin-bottom: 0.3rem; padding: 0.25rem 0.6rem; font-size: 0.72rem; }
+}
+/* The shortest screens (568x320): with a message showing, one more squeeze keeps Submit Round on screen. */
+@media (max-height: 340px) {
+  .score-keypad-sheet:has(.score-keypad-sheet__message) .score-keypad-sheet__header { min-height: 1.5rem; }
+  .score-keypad-sheet:has(.score-keypad-sheet__message) .score-keypad__key { min-height: 2rem; }
 }
 /* A small phone held sideways: the sheet reaches the corners where the menu button and version badge sit. */
 @media (max-height: 520px) and (max-width: 640px) {
@@ -2981,6 +3004,8 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 .home-status.hidden { display: none; }
 .home-card {
   --card-tone: var(--primary-color);
+  /* Text on the dark card: the tone itself, or its lightened form when a dark team colour would vanish there. */
+  --card-text: var(--primary-text, var(--primary-color));
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -3003,8 +3028,8 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 .home-card:active { transform: translateY(2px) scale(0.98); box-shadow: var(--shadow-3d-pressed); }
 .home-card:focus { outline: none; }
 .home-card:focus-visible { outline: 3px solid var(--card-tone); outline-offset: 3px; }
-.home-card--frozen { --card-tone: #22d3ee; }
-.home-card--recent { --card-tone: #fbbf24; padding: 0.6rem 0.9rem; }
+.home-card--frozen { --card-tone: #22d3ee; --card-text: #22d3ee; }
+.home-card--recent { --card-tone: #fbbf24; --card-text: #fbbf24; padding: 0.6rem 0.9rem; }
 .home-card__eyebrow {
   display: flex;
   align-items: center;
@@ -3013,7 +3038,7 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--card-tone) 75%, #ffffff);
+  color: color-mix(in srgb, var(--card-text) 75%, #ffffff);
 }
 .home-card__eyebrow .ui-icon { width: 0.95rem; height: 0.95rem; }
 .home-card__pulse {
@@ -3373,7 +3398,8 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
   /* Centred when it fits, scrollable from the top when it does not (justify-content: center would
      push the overflow above the first line, where it cannot be reached). */
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow-x: hidden; /* overflow-y alone makes this auto too, and at larger text the slide then scrolled sideways and trapped the swipe meant for the next slide */
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
 }
 .onboarding__slide::-webkit-scrollbar { display: none; }
