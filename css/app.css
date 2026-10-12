@@ -1086,10 +1086,10 @@ body.liquid-glass .sunken-selected { color: #ffffff; }
 @media (max-width: 374px) { .team-card-name { font-size: 0.9375rem; } }
 @media (max-width: 359px) { .team-card-name { font-size: 0.8125rem; } }
 @media (min-width: 640px) { .team-card-name { margin-inline: 0; max-width: 100%; } }
-/* The Win % pill: one line when it fits (tighter type and padding on a 320px phone), and it wraps
-   rather than overflowing the card when the text is enlarged. */
+/* The Win % pill: one line when it fits (tighter type and padding on a phone narrower than 375px, where a
+   card is under 90px wide), and it wraps rather than overflowing the card when the text is enlarged. */
 .win-pill { width: fit-content; max-width: 100%; margin-inline: auto; padding-inline: 0.5rem; font-size: 0.75rem; line-height: 1rem; text-align: center; }
-@media (max-width: 359px) { .win-pill { padding-inline: 0.25rem; font-size: 0.6875rem; } }
+@media (max-width: 374px) { .win-pill { padding-inline: 0.25rem; font-size: 0.6875rem; } }
 
 /* ── Input Focus ── */
 input[type="text"]:focus,

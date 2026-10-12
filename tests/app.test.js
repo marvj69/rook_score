@@ -930,7 +930,70 @@ test('a bid or total typed on the keypad and never submitted does not follow the
   localStorage.setItem('activeGameState', JSON.stringify({ rounds: [], usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'] }));
   loadCurrentGameState(); // what a cloud merge or an import does to the scoreboard
   assert.deepEqual(getTransientScoreInputsForTests(), nothingLeft, 'a game loaded from storage');
+
+  typeSomething();
+  localStorage.removeItem('activeGameState'); // an import of a file with no game in progress
+  loadCurrentGameState();
+  assert.deepEqual(getTransientScoreInputsForTests(), nothingLeft, 'no game stored at all');
   resetGame();
+});
+
+test('a rematch starts with nothing left over from the game that just ended', async () => {
+  resetState();
+  resetGame();
+  handleTeamClick('us');
+  handleBidSelect('other');
+  openScoreKeypad('bid');
+  for (const key of '130') handleScoreKeypadInput('bid', key);
+  updateState({
+    rounds: [{ bidAmount: 120, biddingTeam: 'us', usPoints: 180, demPoints: 0, runningTotals: { us: 500, dem: 260 } }],
+    gameOver: true, winner: 'us', victoryMethod: 'points',
+    usTeamName: 'Alice & Carol', demTeamName: 'Bob & Dan', usPlayers: ['Alice', 'Carol'], demPlayers: ['Bob', 'Dan'],
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'], startingTotals: { us: 320, dem: 260 }, accumulatedTime: 120000, startTime: null,
+  });
+  assert.deepEqual(getTransientScoreInputsForTests(), { customBid: '130', points: '', keypad: 'bid' });
+  const epochBefore = getHistoryScrollKey(0);
+  assert.equal(await startRematchWithFirstDealer('Bob'), true);
+  assert.deepEqual(getTransientScoreInputsForTests(), { customBid: '', points: '', keypad: '' });
+  assert.notEqual(getHistoryScrollKey(0), epochBefore, 'and its History list is not the one that was scrolled');
+  resetGame();
+  resetState();
+});
+
+test('an open History cell and the last refusal are not restored along with a saved game', () => {
+  resetGame();
+  assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: '120', points: 125 }), true);
+  updateState({ historyEdit: { idx: 0, field: 'us' }, error: 'Scores must be multiples of 5.' });
+  saveCurrentGameState({ sync: false, showIndicator: false }); // the checkpoint saves the whole state
+  loadCurrentGameState();
+  assert.equal(getStateForTests().historyEdit, null);
+  assert.equal(getStateForTests().error, '');
+  assert.equal(getStateForTests().rounds.length, 1, 'the game itself is still there');
+  resetGame();
+});
+
+test('opening the keypad does not show a refusal left over from something else', () => {
+  resetGame();
+  handleTeamClick('us');
+  handleBidSelect('other');
+  updateState({ error: 'Scores must be multiples of 5.' });
+  openScoreKeypad('bid');
+  assert.equal(getStateForTests().error, '');
+  updateState({ error: 'About the keypad that is open' });
+  openScoreKeypad('bid'); // already open: nothing is being opened, and a message about it stays
+  assert.equal(getStateForTests().error, 'About the keypad that is open');
+  resetGame();
+});
+
+test('a bid that is selected shows as the Current Bid with no excuse under it; one still being typed does not', () => {
+  // A chip of 10, or a bid of 10 picked by voice: the game takes it as a finished bid.
+  const chosen = renderScoreboardWith({ biddingTeam: 'us', bidAmount: '10', showCustomBid: true, customBidValue: '10' }).html;
+  assert.match(chosen, /Current Bid:/);
+  assert.doesNotMatch(chosen, /Bids start at 20/);
+  // A 10 typed on the keypad may still be on its way to 100, so it is neither a bid nor accepted.
+  const typed = renderScoreboardWith({ biddingTeam: 'us', bidAmount: '', showCustomBid: true, customBidValue: '10' }).html;
+  assert.doesNotMatch(typed, /Current Bid:/);
+  assert.match(typed, /Bids start at 20\./);
 });
 
 test('custom bids of 5, 10, and 15 are refused everywhere with a reason', () => {
@@ -6970,6 +7033,7 @@ test('a long unbroken team name is clipped or wrapped everywhere it appears on t
   assert.match(html, /<h2 class="[^"]*truncate team-card-name[^"]*"[^>]*>W+<\/h2>/, 'the team card truncates at the card width');
   assert.doesNotMatch(html, /max-w-\[100px\]|sm:max-w-\[120px\]/, 'no fixed width wider than a 320px phone card');
   assert.match(html, /flex flex-wrap gap-2 max-w-full shrink-0/, 'Undo, Redo and the flag button wrap rather than push past the card at large text');
+  assert.match(html, /flex flex-wrap items-start justify-between gap-x-3 gap-y-1/, 'the History header puts Point Difference under the title when they do not fit side by side');
 });
 
 test('the layout helpers behind long names, the Win pill and the walkthrough stay in the stylesheet', () => {
@@ -6982,8 +7046,13 @@ test('the layout helpers behind long names, the Win pill and the walkthrough sta
   assert.match(rule('.name-lines'), /-webkit-line-clamp:\s*2/);
   assert.match(rule('.name-lines'), /overflow-wrap:\s*anywhere/);
   assert.match(rule('.team-card-name'), /max-width:\s*calc\(100% \+ 1rem\)/, 'a name borrows the card padding');
+  assert.match(rule('.team-card-name'), /margin-inline:\s*-0\.5rem/);
+  assert.match(css, /@media \(max-width: 359px\)\s*\{\s*\.team-card-name\s*\{\s*font-size:\s*0\.8125rem/, 'names step down on the narrowest phones');
+  assert.match(css, /@media \(max-width: 374px\)\s*\{\s*\.team-card-name\s*\{\s*font-size:\s*0\.9375rem/);
   assert.match(rule('.win-pill'), /max-width:\s*100%/, 'the Win pill can never be wider than the card');
   assert.match(rule('.win-pill'), /width:\s*fit-content/);
+  assert.match(css, /@media \(max-width: 374px\)\s*\{\s*\.win-pill\s*\{[^}]*font-size:\s*0\.6875rem/, 'the pill is compact on a 360px phone, where "Win: 52.3%" no longer fits one line at full size');
+  assert.match(css, /@media \(max-height: 520px\)\s*\{[^@]*\.score-keypad-sheet__message\s*\{[^}]*font-size:\s*0\.72rem/, 'the keypad message is compact on short screens');
   assert.match(rule('.onboarding__slide'), /overflow-x:\s*hidden/, 'a slide never scrolls sideways under the swipe to the next one');
   assert.doesNotMatch(rule('.onboarding__slide'), /overscroll-behavior:\s*contain/, 'overscroll-behavior: contain on both axes traps the swipe');
   assert.match(css, /@media \(max-height: 340px\)\s*\{[^}]*:has\(\.score-keypad-sheet__message\)/, 'with a message showing, the keypad squeezes once more on a 320px-tall screen');

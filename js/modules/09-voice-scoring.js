@@ -1027,6 +1027,7 @@ function applyVoiceScoreStartPaperGame(action) {
   updates.demTeamName = deriveTeamDisplay(updates.demPlayers, state.demTeamName || "Dem");
 
   resetRenderAnimationState();
+  if (typeof clearTransientScoreInputs === "function") clearTransientScoreInputs(); // what was typed belonged to the game being replaced
   updateState(updates);
   confettiTriggered = false;
   saveCurrentGameState();

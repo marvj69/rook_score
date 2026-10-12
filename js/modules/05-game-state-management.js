@@ -309,6 +309,8 @@ loadedState = JSON.parse(storedStateString);
     localStorage.removeItem(ACTIVE_GAME_KEY); // Critical: remove the corrupted state
     // loadedState remains null, so it will fall through to using DEFAULT_STATE
   }
+  // Whatever lands here (an import, a cloud merge, or no game at all) is not the game that something was typed for.
+  clearTransientScoreInputs();
 
   if (loadedState && typeof loadedState === 'object' && loadedState !== null) {
     // Ensure all DEFAULT_STATE keys are present, preferring loaded values
@@ -324,7 +326,10 @@ loadedState = JSON.parse(storedStateString);
     // A deselected team's remembered bid belongs to one tap-away moment, not to a saved game: older
     // builds kept it for the rest of the game, so it must not come back as a ghost bid after a reload.
     completeLoadedState.savedScoreInputStates = { us: null, dem: null };
-    clearTransientScoreInputs(); // (a cloud merge or an import can land a different game while something was typed)
+    // The checkpoint saves the whole state, so an open History cell or the last refusal would come back with it.
+    completeLoadedState.historyEdit = null;
+    completeLoadedState.error = "";
+    completeLoadedState.pendingPenalty = null;
     Object.assign(completeLoadedState, normalizeLoadedGameTimerState(completeLoadedState));
     // Ensure showWinProbability is correctly set from localStorage PRO_MODE_KEY
     completeLoadedState.showWinProbability = Boolean(getLocalStorage(PRO_MODE_KEY, false));

@@ -287,7 +287,8 @@ function renderScoreInputCard() {
   const animation = getScoreCardAnimation(biddingTeam, { duration: "0.45s", delay: "0.05s" });
   const fadeClass = animation.className ? "animate-fadeIn " : "";
   const hasBid = bidAmount || (showCustomBid && isUsableBid(customBidValue));
-  const customBidProblem = showCustomBid && activeScoreKeypadTarget !== "bid" ? getCustomBidProblem(customBidValue) : "";
+  // Only for a typed bid that is not accepted (none selected): a bid already chosen, such as one picked by voice, needs no excuse.
+  const customBidProblem = showCustomBid && !bidAmount && activeScoreKeypadTarget !== "bid" ? getCustomBidProblem(customBidValue) : "";
   const biddingTeamDisplayName = biddingTeam === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
   const biddingTeamDisplayText = escapeHtmlValue(biddingTeamDisplayName);
   const customBidValueAttr = escapeAttribute(customBidValue);

@@ -760,6 +760,15 @@ for (const bundled of [false, true]) {
     assert.equal(app.run('[ephemeralCustomBid, ephemeralPoints, activeScoreKeypadTarget].join("|")'), '||');
   });
 
+  test(`${label}: starting a paper game by voice drops what was typed for the game it replaces`, () => {
+    const { app } = startedApp();
+    app.loadVoice();
+    app.run(`ephemeralCustomBid = '130'; ephemeralPoints = '45'; activeScoreKeypadTarget = 'points';`);
+    app.run('applyVoiceScoreStartPaperGame({ usScore: 200, demScore: 150 })');
+    assert.equal(app.run('[ephemeralCustomBid, ephemeralPoints, activeScoreKeypadTarget].join("|")'), '||');
+    assert.equal(app.run('JSON.stringify(state.startingTotals)'), '{"us":200,"dem":150}');
+  });
+
   test(`${label}: early authentication waits for the shared client and returns its result`, async () => {
     const app = createRuntime(bundled);
     app.run(`
