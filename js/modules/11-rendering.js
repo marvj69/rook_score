@@ -196,10 +196,12 @@ function renderTeamCard(teamKey, score, winProb, isScorePreview = false) {
     const prob = teamKey === "us" ? winProb.us : winProb.dem;
     const teamColorVar = teamKey === "us" ? "var(--primary-color)" : "var(--accent-color)";
     const teamInkVar = teamKey === "us" ? "var(--primary-ink, #FFF)" : "var(--accent-ink, #FFF)";
-    const brightness = isSelected ? "brightness(0.7)" : "brightness(0.85)"; // Darken more when selected
+    // The pill is a darker shade of the team colour (darker still on the selected card). It is shaded in the
+    // background, not with a filter, so its label keeps the full ink colour instead of being dimmed with it.
+    const shade = isSelected ? 70 : 85;
     // Inner div for probability text to ensure z-index works with sunken-selected's ::after
     winProbDisplay = `
-      <div class="mt-1 rounded-full py-1 relative win-pill" style="background-color: ${teamColorVar}; filter: ${brightness};">
+      <div class="mt-1 rounded-full py-1 relative win-pill" style="background-color: ${teamColorVar}; background-color: color-mix(in srgb, ${teamColorVar} ${shade}%, #000);">
         <span class="relative font-medium" style="color: ${teamInkVar}; z-index: 1;">Win: ${prob.toFixed(1)}%</span>
       </div>`;
   }
@@ -698,9 +700,14 @@ function renderGameOverOverlay() {
   </div>
 </div>`;
 }
+// The hands of a saved or frozen game that can be shown. The library list drops entries that are not games,
+// but a game from a damaged backup can still hold a null (or junk) among its rounds.
+function getGameRounds(game) {
+  return Array.isArray(game?.rounds) ? game.rounds.filter(round => round && typeof round === "object" && !Array.isArray(round)) : [];
+}
 // (renderReadOnlyGameDetails, renderSavedGames, renderFreezerGames, renderStatisticsContent, renderTeamStatsTable - these remain substantial and are called by modal openers)
 function renderReadOnlyGameDetails(game, originalIndex = null) {
-  const { rounds, timestamp, usTeamName, demTeamName, durationMs, winner, finalScore, victoryMethod } = game;
+  const { timestamp, usTeamName, demTeamName, durationMs, winner, finalScore, victoryMethod } = game;
   const usDisp = getGameTeamDisplay(game, "us") || usTeamName || "Us";
   const demDisp = getGameTeamDisplay(game, "dem") || demTeamName || "Dem";
   const finalTotals = sanitizeTotals(finalScore);
@@ -711,8 +718,7 @@ function renderReadOnlyGameDetails(game, originalIndex = null) {
   const dateStr = date && !Number.isNaN(date.getTime())
     ? date.toLocaleString([], { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
     : "Unknown date";
-  // The library list drops non-game entries; a game from a damaged backup can still hold a null among its rounds.
-  const roundList = Array.isArray(rounds) ? rounds.filter(round => round && typeof round === "object" && !Array.isArray(round)) : [];
+  const roundList = getGameRounds(game);
   const roundsCount = roundList.length;
   const margin = Math.abs(usScore - demScore);
 

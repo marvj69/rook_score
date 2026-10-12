@@ -746,6 +746,18 @@ test('a saved game with a null among its rounds still opens, showing the rounds 
   assert.match(html, /Bids made<\/dt>\s*<dd class="gd-stat__value">1\/1<\/dd>/);
 });
 
+test('a library card, a frozen card and the details sheet count the same rounds when a backup left junk among them', () => {
+  const round = { biddingTeam: 'us', bidAmount: 130, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } };
+  const game = {
+    usName: 'Ann & Bob', demName: 'Cy & Di', usPlayers: ['Ann', 'Bob'], demPlayers: ['Cy', 'Di'],
+    winner: 'us', timestamp: '2026-05-18T14:00:00.000Z', finalScore: { us: 280, dem: 80 },
+    rounds: [round, null, { ...round, runningTotals: { us: 280, dem: 80 } }, 'junk'],
+  };
+  assert.match(buildSavedGameCard(game, 0), /2 rds/);
+  assert.match(buildFreezerGameCard(game, 0), /2 rds/);
+  assert.equal(renderReadOnlyGameDetails(game).split('<li class="gd-round').length - 1, 2);
+});
+
 test('installed iOS safe-area fallback is limited to standalone zero-inset launches', () => {
   assert.equal(shouldApplyStandaloneSafeAreaFallback({
     isIOS: true,
@@ -6922,6 +6934,9 @@ test('surfaces that were hard to read on an extreme team colour use the readable
   const css = readFileSync(path.join(repoRoot, 'css/app.css'), 'utf8');
   assert.match(css, /--card-text:\s*var\(--primary-text, var\(--primary-color\)\)/, 'the live Home card lightens a dark team colour for its text');
   assert.match(css, /\.home-card__eyebrow \{[^}]*color:\s*color-mix\(in srgb, var\(--card-text\) 75%, #ffffff\)/);
+  assert.match(css, /\.home-card--frozen \{[^}]*--card-text:\s*#22d3ee/, 'the frozen card keeps its own cyan');
+  assert.match(css, /\.home-card--recent \{[^}]*--card-text:\s*#fbbf24/, 'and the last-game card its amber');
+  assert.match(css, /\.home-card:focus-visible \{\s*outline:\s*3px solid var\(--card-text\)/, 'a focus ring that a dark team colour cannot hide');
   assert.doesNotMatch(css, /\.voice-score-status:empty\s*\{[^}]*display:\s*none/, 'an empty live region stays in the accessibility tree');
   assert.match(css, /\.voice-score-status:empty\s*\{[^}]*padding:\s*0/);
 });
@@ -6972,6 +6987,13 @@ test('the layout helpers behind long names, the Win pill and the walkthrough sta
   assert.match(rule('.onboarding__slide'), /overflow-x:\s*hidden/, 'a slide never scrolls sideways under the swipe to the next one');
   assert.doesNotMatch(rule('.onboarding__slide'), /overscroll-behavior:\s*contain/, 'overscroll-behavior: contain on both axes traps the swipe');
   assert.match(css, /@media \(max-height: 340px\)\s*\{[^}]*:has\(\.score-keypad-sheet__message\)/, 'with a message showing, the keypad squeezes once more on a 320px-tall screen');
+});
+
+test('the Win % pill is shaded in its background, so its label keeps the full ink colour', () => {
+  const { html } = renderScoreboardWith({ showWinProbability: true, usTeamName: 'Us', demTeamName: 'Dem', biddingTeam: 'us', bidAmount: '130' });
+  assert.match(html, /class="mt-1 rounded-full py-1 relative win-pill" style="background-color: var\(--primary-color\); background-color: color-mix\(in srgb, var\(--primary-color\) 70%, #000\);"/, 'darker on the selected card');
+  assert.match(html, /color-mix\(in srgb, var\(--accent-color\) 85%, #000\)/, 'not as dark on the other one');
+  assert.doesNotMatch(html, /filter: brightness/, 'a filter would dim the label along with the pill');
 });
 
 test('the Misdeal button text is dark, since white on yellow cannot be read', () => {

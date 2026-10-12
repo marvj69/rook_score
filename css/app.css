@@ -3027,7 +3027,7 @@ html.home-boot.home-boot-timeout .home-screen__inner { opacity: 1; }
 }
 .home-card:active { transform: translateY(2px) scale(0.98); box-shadow: var(--shadow-3d-pressed); }
 .home-card:focus { outline: none; }
-.home-card:focus-visible { outline: 3px solid var(--card-tone); outline-offset: 3px; }
+.home-card:focus-visible { outline: 3px solid var(--card-text); outline-offset: 3px; }
 .home-card--frozen { --card-tone: #22d3ee; --card-text: #22d3ee; }
 .home-card--recent { --card-tone: #fbbf24; --card-text: #fbbf24; padding: 0.6rem 0.9rem; }
 .home-card__eyebrow {

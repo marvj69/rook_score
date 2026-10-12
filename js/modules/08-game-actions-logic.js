@@ -1105,7 +1105,7 @@ function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
         savedScoreInputStates: { us: null, dem: null },
         pendingPenalty: null,
         historyEdit: null,
-        rounds: (Array.isArray(chosen.rounds) ? chosen.rounds : []).filter(round => round && typeof round === "object" && !Array.isArray(round)),
+        rounds: getGameRounds(chosen),
         startingTotals: sanitizeTotals(chosen.startingTotals),
         gameOver: false, // Frozen games are not over
         winner: null, victoryMethod: null,

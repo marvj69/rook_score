@@ -353,7 +353,7 @@ function buildSavedGameCard(game, originalIndex, position = 0, grouped = false) 
   const demWon = game.winner === 'dem';
   const hasWinner = usWon || demWon;
   const when = formatLibraryWhen(game.timestamp, { grouped });
-  const roundsCount = Array.isArray(game.rounds) ? game.rounds.length : 0;
+  const roundsCount = getGameRounds(game).length;
   const margin = Math.abs(usScore - demScore);
   const winnerName = usWon ? usDisplay : demWon ? demDisplay : '';
   const facts = [
@@ -397,7 +397,7 @@ function buildFreezerGameCard(game, originalIndex, position = 0) {
   const leadInfo = usLeads || demLeads ? `Up ${Math.abs(usScore - demScore)}` : 'Tied';
   const lastBidMatch = typeof game.lastBid === 'string' ? game.lastBid.match(/^\s*(\d+)/) : null;
   const lastBid = lastBidMatch ? lastBidMatch[1] : game.lastBid;
-  const roundsCount = Array.isArray(game.rounds) ? game.rounds.length : 0;
+  const roundsCount = getGameRounds(game).length;
   const facts = [
     roundsCount ? `${roundsCount} rd${roundsCount === 1 ? '' : 's'}` : '',
     game.accumulatedTime ? `${formatDuration(game.accumulatedTime)} played` : '',
