@@ -51,6 +51,8 @@ function renderCurrentGameTimer() {
 }
 
 function renderApp() {
+  const keypadFocus = captureScoreKeypadFocus();
+  const correctionFocusId = document.activeElement?.id;
   const { error, rounds, bidAmount, showCustomBid, biddingTeam, customBidValue, gameOver } = state;
   const scorePreview = getRoundScorePreview();
   const totals = scorePreview.totals;
@@ -150,6 +152,12 @@ function renderApp() {
   updateCurrentGameTimerDisplay();
   scheduleViewportCompatibilitySync();
   syncHomeScreenWithGame();
+  restoreScoreKeypadFocus(keypadFocus);
+  if (!document.getElementById("app").inert && /^round(Undo|Redo)Btn$/.test(correctionFocusId || "")) {
+    const control = document.getElementById(correctionFocusId);
+    const alternate = document.getElementById(correctionFocusId === "roundUndoBtn" ? "roundRedoBtn" : "roundUndoBtn");
+    (control && !control.disabled ? control : alternate && !alternate.disabled ? alternate : document.getElementById("teamCard-us"))?.focus({ preventScroll: true });
+  }
   if (gameOver && !confettiTriggered) {
     confettiTriggered = true;
     launchGameOverConfetti();
@@ -233,6 +241,48 @@ function renderRoundCard(roundNumber, lastBidDisplayHtml) {
 function renderErrorAlert(errorMessage) {
   return `<div role="alert" class="flex items-center border border-red-400 rounded-xl p-4 bg-red-50 text-red-700 space-x-3 dark:bg-red-900/50 dark:border-red-600 dark:text-red-300">${Icons.AlertCircle}<div class="flex-1">${escapeHtmlValue(errorMessage)}</div></div>`;
 }
+// These controls are recreated with the scoreboard. Keep the keyboard on the same key,
+// and remember which input to return to when the sheet is dismissed.
+function captureScoreKeypadFocus() {
+  const sheet = document.getElementById("scoreKeypadSheet");
+  const focused = document.activeElement;
+  return {
+    target: sheet?.dataset?.target || "",
+    hadFocus: Boolean(focused && sheet?.contains(focused)),
+    controlId: focused?.id || "",
+  };
+}
+
+function restoreScoreKeypadFocus(previous) {
+  // A zero-points choice or another modal opened by a scoring action owns focus now.
+  if (document.getElementById("app")?.inert) return;
+  if (activeScoreKeypadTarget) {
+    if (!previous.target || previous.hadFocus) {
+      const sheet = document.getElementById("scoreKeypadSheet");
+      const control = previous.hadFocus ? document.getElementById(previous.controlId) : null;
+      (control && sheet?.contains(control) ? control : document.getElementById("scoreKeypadKey-1"))?.focus({ preventScroll: true });
+    }
+  } else if (previous.hadFocus) {
+    const inputId = previous.target === "bid" ? "customBidInput" : "pointsInput";
+    (document.getElementById(inputId) || document.querySelector('[data-overlay="gameover"] button')
+      || document.getElementById("teamCard-us"))?.focus({ preventScroll: true });
+  }
+}
+
+function handleScoreKeypadKeydown(event) {
+  if (event.key !== "Tab") return;
+  const sheet = event.currentTarget;
+  const buttons = Array.from(sheet.querySelectorAll("button:not([disabled])"));
+  const first = buttons[0];
+  const last = buttons[buttons.length - 1];
+  const target = event.shiftKey ? (document.activeElement === first ? last : null)
+    : (document.activeElement === last ? first : null);
+  if (target) {
+    event.preventDefault();
+    target.focus();
+  }
+}
+
 function renderInAppNumericKeypad(target, label) {
   const keys = [
     ["1", "1"], ["2", "2"], ["3", "3"],
@@ -248,7 +298,7 @@ function renderInAppNumericKeypad(target, label) {
   const displayValueAttr = escapeAttribute(displayValue);
   const displayPlaceholder = safeTarget === "bid" ? "Enter bid" : "Enter points";
   const submitRoundButton = safeTarget === "points"
-    ? `<button type="button" class="score-keypad-sheet__submit threed" onclick="handleFormSubmit(event)">Submit Round</button>`
+    ? `<button id="scoreKeypadSubmit" type="button" class="score-keypad-sheet__submit threed" onclick="handleFormSubmit(event)">Submit Round</button>`
     : "";
   if (activeScoreKeypadTarget !== safeTarget) return "";
   // The page's own alert sits behind this sheet on short screens, so the message lives here.
@@ -264,10 +314,10 @@ function renderInAppNumericKeypad(target, label) {
 
   return `
     <div id="scoreKeypadBackdrop" class="score-keypad-backdrop" onclick="closeScoreKeypad()" aria-hidden="true"></div>
-    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" role="dialog" aria-label="${safeLabel}">
+    <section id="scoreKeypadSheet" class="score-keypad-sheet${animationClass}" role="dialog" aria-modal="true" aria-label="${safeLabel}" data-target="${safeTarget}" onkeydown="handleScoreKeypadKeydown(event)">
       <div class="score-keypad-sheet__header">
         <span>${escapeHtmlValue(label)}</span>
-        <button type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Done, hide ${safeLabel}">Done</button>
+        <button id="scoreKeypadDone" type="button" class="score-keypad-sheet__done threed" onclick="closeScoreKeypad()" aria-label="Done, hide ${safeLabel}">Done</button>
       </div>
       ${keypadMessageHtml}
       <input id="scoreKeypadDisplay" type="text" inputmode="none" readonly tabindex="-1" class="score-keypad-sheet__display" value="${displayValueAttr}" placeholder="${displayPlaceholder}" aria-label="${safeLabel} value" aria-readonly="true" aria-live="polite" />
@@ -275,15 +325,27 @@ function renderInAppNumericKeypad(target, label) {
         ${keys.map(([key, display]) => {
           const keyClass = key === "clear" || key === "backspace" ? " score-keypad__key--action" : "";
           const ariaLabel = key === "backspace" ? "Delete last digit" : (key === "clear" ? "Clear value" : `Number ${key}`);
-          return `<button type="button" class="score-keypad__key${keyClass} threed" onclick="handleScoreKeypadInput('${safeTarget}', '${key}')" aria-label="${ariaLabel}">${display}</button>`;
+          return `<button id="scoreKeypadKey-${key}" type="button" class="score-keypad__key${keyClass} threed" onclick="handleScoreKeypadInput('${safeTarget}', '${key}')" aria-label="${ariaLabel}">${display}</button>`;
         }).join("")}
       </div>
       ${submitRoundButton}
     </section>`;
 }
+function renderRoundCorrectionControls(focusRingColor = "focus:ring-blue-500 dark:focus:ring-blue-400") {
+  const { rounds, undoneRounds } = state;
+  const buttonClass = `flex items-center border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed`;
+  return `<button id="roundUndoBtn" type="button" class="${buttonClass}" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
+    <button id="roundRedoBtn" type="button" class="${buttonClass}" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>`;
+}
+
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
-  if (gameOver || !biddingTeam) { getScoreCardAnimation(""); return ""; }
+  if (gameOver || !biddingTeam) {
+    getScoreCardAnimation("");
+    return !gameOver && (rounds.length || undoneRounds.length)
+      ? `<div class="flex justify-end gap-2" role="group" aria-label="Round corrections">${renderRoundCorrectionControls()}</div>`
+      : "";
+  }
   const animation = getScoreCardAnimation(biddingTeam, { duration: "0.45s", delay: "0.05s" });
   const fadeClass = animation.className ? "animate-fadeIn " : "";
   const hasBid = bidAmount || (showCustomBid && isUsableBid(customBidValue));
@@ -303,8 +365,7 @@ function renderScoreInputCard() {
       <div class="border-b-2 border-gray-200 dark:border-gray-700 p-3 flex flex-wrap justify-between items-center gap-x-2 gap-y-2">
         <h2 class="text-lg font-extrabold text-gray-800 dark:text-white name-fit" style="flex: 1 1 6.5rem;">Enter Bid for <span class="name-clip">${biddingTeamDisplayText}</span></h2>
         <div class="flex flex-wrap gap-2 max-w-full shrink-0">
-          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
-          <button type="button" class="flex items-center border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>
+          ${renderRoundCorrectionControls(focusRingColor)}
           <button type="button"
     class="${penaltyBtnClass}"
     onclick="${penaltyBtnOnClick}"
@@ -328,7 +389,7 @@ function renderScoreInputCard() {
               }).join("")}
             </div>
             ${showCustomBid ? `<div class="mt-3 score-keypad-field">
-              <input id="customBidInput" type="text" inputmode="none" readonly aria-readonly="true" aria-expanded="${activeScoreKeypadTarget === "bid"}" value="${customBidValueAttr}" placeholder="Tap to enter bid" onclick="openScoreKeypad('bid')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('bid'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
+              <input id="customBidInput" type="text" inputmode="none" readonly aria-readonly="true" aria-label="Custom bid amount" aria-haspopup="dialog" aria-controls="scoreKeypadSheet" aria-expanded="${activeScoreKeypadTarget === "bid"}" value="${customBidValueAttr}" placeholder="Tap to enter bid" onclick="openScoreKeypad('bid')" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openScoreKeypad('bid'); } else if (event.key === 'Escape') { closeScoreKeypad(); }" class="score-number-display w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 ${focusRingColor} transition dark:bg-gray-700 dark:border-gray-500 dark:text-white" />
               ${customBidProblem ? `<p class="mt-1.5 text-sm font-medium text-red-600 dark:text-red-300" role="status">${escapeHtmlValue(customBidProblem)}</p>` : ""}
             </div>` : ""}
           </div>

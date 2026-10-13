@@ -124,6 +124,13 @@ const {
   handleBidSelect,
   handleScoreKeypadInput,
   openScoreKeypad,
+  closeScoreKeypad,
+  captureScoreKeypadFocus,
+  restoreScoreKeypadFocus,
+  handleScoreKeypadKeydown,
+  renderScoreInputCard,
+  handleUndo,
+  handleRedo,
   getTransientScoreInputsForTests,
   getHistoryScrollKey,
   resetRenderAnimationState,
@@ -6086,6 +6093,179 @@ test('a game with nothing played is started from paper scores without asking', (
     document.getElementById = originalGetElementById;
     resetGame();
     resetState();
+  }
+});
+
+test('starting a paper game clears the old dealers and misdeals, but cancelling keeps them', () => {
+  const originalGetElementById = document.getElementById;
+  const live = installLiveDocument();
+  document.getElementById = id => /^resume(Us|Dem)(Score|Player)|^resumePaperPhotoStatus$/.test(id)
+    ? live.get(id) : originalGetElementById(id);
+  live.get('resumeUsScore').dispatchEvent = () => {};
+  live.get('resumeDemScore').dispatchEvent = () => {};
+  try {
+    for (const imported of [false, true]) {
+      resetGame();
+      updateState({ dealers: ['Alice', 'Bob', 'Carol', 'Dave'], misdealCount: 2, misdealDealers: ['Alice', 'Bob'] });
+      submitStructuredRound({ biddingTeam: 'us', bidAmount: 120, points: 150 });
+      live.get('resumeUsScore').value = '300';
+      live.get('resumeDemScore').value = '250';
+      live.get('resumeUsPlayerOne').value = 'Erin';
+      live.get('resumeUsPlayerTwo').value = 'Grace';
+      live.get('resumeDemPlayerOne').value = 'Frank';
+      live.get('resumeDemPlayerTwo').value = 'Henry';
+      if (imported) {
+        applyPaperGamePhotoResult({ usScore: 300, demScore: 250, confidence: 'high', rows: [
+          { us: 150, bid: 120, dem: 30 }, { us: 300, bid: 120, dem: 250 },
+        ] });
+      }
+      handleResumeGameSubmit({ preventDefault() {} });
+      getPendingConfirmationForTests().cancel();
+      assert.deepEqual(getStateForTests().dealers, ['Alice', 'Bob', 'Carol', 'Dave']);
+      assert.equal(getStateForTests().misdealCount, 2);
+      assert.deepEqual(getStateForTests().misdealDealers, ['Alice', 'Bob']);
+
+      handleResumeGameSubmit({ preventDefault() {} });
+      getPendingConfirmationForTests().confirm();
+      const started = getStateForTests();
+      assert.deepEqual(started.dealers, []);
+      assert.equal(started.misdealCount, 0);
+      assert.deepEqual(started.misdealDealers, []);
+      assert.equal(getCurrentDealer(started), '');
+      assert.deepEqual(started.usPlayers, ['Erin', 'Grace']);
+      assert.deepEqual(started.demPlayers, ['Frank', 'Henry']);
+      assert.equal(started.rounds.length, imported ? 2 : 0);
+      const stored = getLocalStorage('activeGameState');
+      assert.deepEqual(stored.dealers, []);
+      assert.deepEqual(stored.misdealDealers, []);
+      assert.equal(stored.misdealCount, 0);
+    }
+  } finally {
+    live.restore();
+    resetGame();
+  }
+});
+
+test('Undo and Redo are available between rounds, including after undoing the only hand', () => {
+  resetGame();
+  const button = (html, id) => html.match(new RegExp(`<button[^>]*id="${id}"[^>]*>`))?.[0] || '';
+  try {
+    assert.equal(renderScoreInputCard(), '', 'a new empty game needs no correction toolbar');
+    submitStructuredRound({ biddingTeam: 'us', bidAmount: 120, points: 150 });
+    assert.equal(getStateForTests().biddingTeam, '');
+    let html = renderScoreInputCard();
+    assert.ok(button(html, 'roundUndoBtn'));
+    assert.doesNotMatch(button(html, 'roundUndoBtn'), /\sdisabled(?=[\s>])/);
+    assert.match(button(html, 'roundRedoBtn'), /\sdisabled(?=[\s>])/);
+    handleUndo();
+    assert.equal(getStateForTests().rounds.length, 0);
+    assert.equal(getStateForTests().biddingTeam, '');
+    html = renderScoreInputCard();
+    assert.match(button(html, 'roundUndoBtn'), /\sdisabled(?=[\s>])/);
+    assert.ok(button(html, 'roundRedoBtn'));
+    assert.doesNotMatch(button(html, 'roundRedoBtn'), /\sdisabled(?=[\s>])/);
+    handleRedo();
+    assert.deepEqual(getStateForTests().rounds[0].runningTotals, { us: 150, dem: 30 });
+    handleTeamClick('dem');
+    html = renderScoreInputCard();
+    assert.equal((html.match(/id="roundUndoBtn"/g) || []).length, 1);
+    assert.equal((html.match(/id="roundRedoBtn"/g) || []).length, 1);
+    updateState({ gameOver: true });
+    assert.equal(renderScoreInputCard(), '', 'completion retains the existing Fix Score flow');
+  } finally {
+    resetGame();
+  }
+});
+
+function installKeypadFocusDocument() {
+  const live = installLiveDocument();
+  const sheet = live.get('scoreKeypadSheet');
+  const buttons = ['scoreKeypadDone', 'scoreKeypadKey-1', 'scoreKeypadKey-0', 'scoreKeypadSubmit'].map(live.get);
+  sheet.contains = element => buttons.includes(element);
+  sheet.querySelectorAll = () => buttons;
+  live.get('app').inert = false;
+  document.getElementById = id => live.has(id) ? live.get(id) : null;
+  return { ...live, sheet, buttons };
+}
+
+test('keypad opening and digit redraws retain keyboard focus and closing returns it to the field', () => {
+  resetGame();
+  handleTeamClick('us');
+  handleBidSelect('other');
+  const live = installKeypadFocusDocument();
+  try {
+    live.get('customBidInput').focus();
+    const beforeOpening = captureScoreKeypadFocus();
+    openScoreKeypad('bid');
+    live.sheet.dataset.target = 'bid';
+    restoreScoreKeypadFocus(beforeOpening);
+    assert.equal(document.activeElement.id, 'scoreKeypadKey-1');
+    for (const key of ['1', '0', '0']) {
+      live.get(`scoreKeypadKey-${key}`).focus();
+      const beforeDigit = captureScoreKeypadFocus();
+      handleScoreKeypadInput('bid', key);
+      live.get('body').focus(); // Replacing #app removes the old focused element.
+      restoreScoreKeypadFocus(beforeDigit);
+      assert.equal(document.activeElement.id, `scoreKeypadKey-${key}`);
+    }
+    assert.equal(getStateForTests().bidAmount, '100');
+    const beforeClose = captureScoreKeypadFocus();
+    closeScoreKeypad(true);
+    live.get('body').focus();
+    restoreScoreKeypadFocus(beforeClose);
+    assert.equal(document.activeElement.id, 'customBidInput');
+  } finally {
+    live.restore();
+    resetGame();
+  }
+});
+
+test('keypad validation preserves Submit focus and never takes it from a covering modal', () => {
+  resetGame();
+  handleTeamClick('us');
+  handleBidSelect('120');
+  openScoreKeypad('points');
+  const live = installKeypadFocusDocument();
+  try {
+    live.sheet.dataset.target = 'points';
+    live.get('pointsInput').value = '181';
+    live.get('scoreKeypadSubmit').focus();
+    const beforeError = captureScoreKeypadFocus();
+    submitRoundFromCurrentInputs();
+    assert.ok(getStateForTests().error);
+    assert.equal(getStateForTests().rounds.length, 0);
+    live.get('body').focus();
+    restoreScoreKeypadFocus(beforeError);
+    assert.equal(document.activeElement.id, 'scoreKeypadSubmit');
+    live.get('app').inert = true;
+    live.get('zeroPointsModal').focus();
+    restoreScoreKeypadFocus(beforeError);
+    assert.equal(document.activeElement.id, 'zeroPointsModal');
+    closeScoreKeypad(true);
+    restoreScoreKeypadFocus(beforeError);
+    assert.equal(document.activeElement.id, 'zeroPointsModal');
+  } finally {
+    live.restore();
+    resetGame();
+  }
+});
+
+test('Tab and Shift+Tab wrap within the score keypad without intercepting other keys', () => {
+  const live = installKeypadFocusDocument();
+  try {
+    let prevented = 0;
+    const event = { key: 'Tab', currentTarget: live.sheet, preventDefault() { prevented += 1; } };
+    live.buttons.at(-1).focus();
+    handleScoreKeypadKeydown(event);
+    assert.equal(document.activeElement, live.buttons[0]);
+    handleScoreKeypadKeydown({ ...event, shiftKey: true });
+    assert.equal(document.activeElement, live.buttons.at(-1));
+    live.buttons[1].focus();
+    handleScoreKeypadKeydown(event);
+    handleScoreKeypadKeydown({ ...event, key: 'Enter' });
+    assert.equal(prevented, 2, 'ordinary tabbing and button activation remain native');
+  } finally {
+    live.restore();
   }
 });
 

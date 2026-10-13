@@ -743,6 +743,11 @@ function handleResumeGameSubmit(event) {
     timerSkippedMs: 0,
     pendingPenalty: null,
     savedScoreInputStates: { us: null, dem: null },
+    // This is a different game, even when its scores were typed over the old ones.
+    // A prior dealing order (and its misdeals) cannot identify this game's dealer.
+    dealers: [],
+    misdealCount: 0,
+    misdealDealers: [],
   };
 
   updates.usPlayers = usPlayers;
