@@ -124,7 +124,63 @@ const ROOK_APP_STORAGE_KEYS = new Set([
   "voiceImprovementOptIn",
   "probabilityPersonalizationV1",
   "darkModeEnabled",
+  "removedGames",
 ]);
+
+// Cloud sync joins the saved and frozen game lists of every device, so a game
+// deleted here (or a frozen game resumed here) would come back from any copy
+// that still holds it. Each removal is recorded as { list, key, at } and synced;
+// the merge in js/firebase-init.js drops a listed game from both sides. A game
+// stamped later than its record (restored from Recently Deleted) is kept.
+// js/firebase-init.js mirrors the key and the two limits.
+const REMOVED_GAMES_KEY = "removedGames";
+const REMOVED_GAMES_MAX = 500;
+const REMOVED_GAMES_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
+
+// The same identity the cloud merge uses to tell two games apart.
+function getStoredGameKey(game) {
+  if (!game || typeof game !== "object") return "";
+  const key = game.id || game.timestamp;
+  return typeof key === "string" || typeof key === "number" ? String(key) : "";
+}
+
+// Mirrors getGameDataTime in js/firebase-init.js.
+function getStoredGameTime(game) {
+  if (!game || typeof game !== "object") return 0;
+  return [game.timestamp, game.frozenAt, game.timerLastActivityAt, game.timerLastSavedAt, game.startTime, game.restoredAt]
+    .map(time => (typeof time === "number" ? time : Date.parse(time || "")))
+    .filter(Number.isFinite)
+    .reduce((latest, time) => Math.max(latest, time), 0);
+}
+
+function normalizeRemovedGames(entries, now = Date.now()) {
+  const latest = new Map();
+  (Array.isArray(entries) ? entries : []).forEach(entry => {
+    if (!entry || typeof entry !== "object") return;
+    const { list, key, at } = entry;
+    if (list !== "savedGames" && list !== "freezerGames") return;
+    if (typeof key !== "string" || !key || key.length > 200) return;
+    if (typeof at !== "number" || !Number.isFinite(at)) return;
+    const id = `${list}\n${key}`;
+    if (!latest.has(id) || latest.get(id).at < at) latest.set(id, { list, key, at });
+  });
+  return [...latest.values()]
+    .filter(entry => entry.at >= now - REMOVED_GAMES_MAX_AGE_MS)
+    .sort((left, right) => right.at - left.at
+      || left.list.localeCompare(right.list)
+      || left.key.localeCompare(right.key))
+    .slice(0, REMOVED_GAMES_MAX);
+}
+
+// Called after a game has left a list for good. Never earlier than the game's
+// own latest time, so a device with a slow clock still outranks the copy it removed.
+function recordRemovedGame(listKey, game, now = Date.now()) {
+  const key = getStoredGameKey(game);
+  if (!key || key.length > 200 || (listKey !== "savedGames" && listKey !== "freezerGames")) return false;
+  const stored = getLocalStorage(REMOVED_GAMES_KEY, []);
+  const entry = { list: listKey, key, at: Math.max(now, getStoredGameTime(game)) };
+  return setLocalStorage(REMOVED_GAMES_KEY, normalizeRemovedGames([entry, ...(Array.isArray(stored) ? stored : [])], now));
+}
 
 // "Delete All Game Data" erases these keys; settings and preferences stay.
 // js/firebase-init.js mirrors this list; a test keeps the two identical.

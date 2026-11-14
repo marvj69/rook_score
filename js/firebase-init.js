@@ -126,6 +126,7 @@ const ROOK_APP_STORAGE_KEYS = new Set([
   "voiceImprovementOptIn",
   "probabilityPersonalizationV1",
   "darkModeEnabled",
+  "removedGames",
 ]);
 
 function isCloudSyncStorageKey(key) {
@@ -269,6 +270,50 @@ function dropGameDataBefore(data, marker) {
     droppedKeys.push(key);
   });
   return { kept, droppedKeys };
+}
+
+// Single-game removals. The saved and frozen lists of both sides are joined, so
+// a game deleted on one device (or a frozen game resumed there) would come back
+// from any copy that still holds it. Each removal is recorded as
+// { list, key, at }, the records of both sides are joined too, and a listed
+// game is dropped unless it was stamped after its record (a restored game).
+// Mirrors REMOVED_GAMES_KEY and its limits in js/modules/03-storage-icons-presets.js.
+const REMOVED_GAMES_KEY = "removedGames";
+const REMOVED_GAMES_MAX = 500;
+const REMOVED_GAMES_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
+const REMOVABLE_GAME_LISTS = ["savedGames", "freezerGames"];
+
+function mergeRemovedGames(left, right, now = Date.now()) {
+  const latest = new Map();
+  [left, right].forEach(entries => {
+    (Array.isArray(entries) ? entries : []).forEach(entry => {
+      if (!entry || typeof entry !== "object") return;
+      const { list, key, at } = entry;
+      if (!REMOVABLE_GAME_LISTS.includes(list)) return;
+      if (typeof key !== "string" || !key || key.length > 200) return;
+      if (typeof at !== "number" || !Number.isFinite(at)) return;
+      const id = `${list}\n${key}`;
+      if (!latest.has(id) || latest.get(id).at < at) latest.set(id, { list, key, at });
+    });
+  });
+  return [...latest.values()]
+    .filter(entry => entry.at >= now - REMOVED_GAMES_MAX_AGE_MS)
+    .sort((a, b) => b.at - a.at || a.list.localeCompare(b.list) || a.key.localeCompare(b.key))
+    .slice(0, REMOVED_GAMES_MAX);
+}
+
+function dropRemovedGames(listKey, games, removedGames) {
+  const removedAt = new Map();
+  removedGames.forEach(entry => {
+    if (entry.list === listKey) removedAt.set(entry.key, entry.at);
+  });
+  if (!removedAt.size) return games;
+  return games.filter(game => {
+    const key = game && typeof game === "object" ? game.id || game.timestamp : "";
+    if (typeof key !== "string" && typeof key !== "number") return true;
+    const at = removedAt.get(String(key));
+    return at === undefined || getGameDataTime(game) > at;
+  });
 }
 
 function getCloudSyncStorageChanges(snapshot) {
@@ -479,6 +524,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
 
   allKeys.forEach(key => {
     if (!isCloudSyncStorageKey(key)) return;
+    if (key === REMOVED_GAMES_KEY) return; // Joined below, once the lists are.
 
     const localValue = localData[key];
     const firestoreValue = firestoreData[key];
@@ -521,6 +567,18 @@ window.mergeLocalStorageWithFirestore = async function(user) {
       mergedData[key] = localValue !== undefined ? localValue : firestoreValue;
     }
   });
+
+  // A game one side removed on its own leaves the joined lists on both sides.
+  const removedGamesSynced = isCloudSyncStorageKey(REMOVED_GAMES_KEY);
+  if (removedGamesSynced && (allKeys.has(REMOVED_GAMES_KEY))) {
+    const removedGames = mergeRemovedGames(localData[REMOVED_GAMES_KEY], firestoreData[REMOVED_GAMES_KEY]);
+    mergedData[REMOVED_GAMES_KEY] = removedGames;
+    REMOVABLE_GAME_LISTS.forEach(listKey => {
+      if (Array.isArray(mergedData[listKey])) {
+        mergedData[listKey] = dropRemovedGames(listKey, mergedData[listKey], removedGames);
+      }
+    });
+  }
 
   // Stale game data with no newer copy on the other side is cleared everywhere.
   staleKeys.forEach(key => {
@@ -596,6 +654,13 @@ window.mergeLocalStorageWithFirestore = async function(user) {
         localStorageUpdatedByMerge = true;
       });
       changedLocalData = kept;
+    }
+    // A removal recorded mid-merge is added to the joined records, not swapped for them.
+    if (removedGamesSynced && Array.isArray(changedLocalData[REMOVED_GAMES_KEY])) {
+      const removedGames = mergeRemovedGames(changedLocalData[REMOVED_GAMES_KEY], mergedData[REMOVED_GAMES_KEY]);
+      changedLocalData[REMOVED_GAMES_KEY] = removedGames;
+      const serialized = JSON.stringify(removedGames);
+      if (localStorage.getItem(REMOVED_GAMES_KEY) !== serialized) localStorage.setItem(REMOVED_GAMES_KEY, serialized);
     }
     Object.assign(latestLocalData, changedLocalData);
     await setDoc(docRef, latestLocalData, { merge: true });
@@ -735,6 +800,25 @@ async function flushPendingSync() {
     console.log("Unable to establish user session. Not syncing to Firestore.");
     keys.forEach(key => trackSyncFailure(key, "auth_unavailable"));
     return false;
+  }
+
+  // Each write replaces a whole value. Until this session has merged with the
+  // cloud copy, the local game lists may be missing games another device saved,
+  // so writing them would erase those games from the cloud. The merge goes
+  // first (again, if the one at startup failed); while it cannot run, nothing
+  // is written and the next save tries again. "Delete All Game Data" is the
+  // exception: it clears the lists on purpose and carries its own marker.
+  if (lastMergedAuthUid !== user.uid && !values.has(GAME_DATA_RESET_FIELD)) {
+    const merged = await mergeUserDataForCurrentUser(user);
+    if (!merged || auth?.currentUser?.uid !== user.uid) {
+      console.warn("Cloud sync is waiting for a first merge with the cloud copy; nothing was uploaded.");
+      return false;
+    }
+    // The merge may have widened what is stored here; send the stored value.
+    [...values.keys()].forEach(key => {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) values.set(key, deserializeLocalStorageValue(key, raw));
+    });
   }
 
   // Every write names the delete it knows about. The security rules refuse a
@@ -1183,7 +1267,12 @@ window.startFirebaseInitialization = startFirebaseInitialization;
 // An app opened offline recovers cloud sync as soon as the network returns.
 if (typeof window.addEventListener === "function") {
   window.addEventListener("online", () => {
-    if (window.firebaseInitError && !auth) startFirebaseInitialization({ retry: true });
+    if (window.firebaseInitError && !auth) {
+      startFirebaseInitialization({ retry: true });
+    } else if (auth?.currentUser && lastMergedAuthUid !== auth.currentUser.uid) {
+      // The merge at startup failed (no connection); uploads wait for it.
+      mergeUserDataForCurrentUser(auth.currentUser);
+    }
   });
 }
 scheduleFirebaseInitialization();

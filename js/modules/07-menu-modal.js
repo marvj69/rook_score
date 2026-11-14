@@ -917,8 +917,12 @@ function closeViewSavedGameModal() {
   closeSheetModal("viewSavedGameModal");
 }
 
-function openZeroPointsModal(callback) {
+function openZeroPointsModal(callback, { takerName = "" } = {}) {
   let zeroPointsCallback = callback;
+
+  // Name the team that took every point; "the bidding team" alone was wrong when the 0 was theirs.
+  const takerLabel = document.getElementById("zeroPointsModalTeam");
+  if (takerLabel) takerLabel.textContent = takerName || "the other team";
 
   // Open the modal
   openModal("zeroPointsModal");

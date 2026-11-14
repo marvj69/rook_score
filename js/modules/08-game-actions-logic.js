@@ -539,30 +539,29 @@ function submitRoundFromCurrentInputs(skipZeroCheck = false) {
 
   if (!skipZeroCheck && numericPoints === 0) {
   // We're deferring this submit to the zero-points modal. Release the re-entry
-  // guard now so the modal's re-entrant submit (or a cancel) isn't permanently
-  // blocked — otherwise the flag stays true forever and freezes all submits.
+  // guard now so the modal's choice (or a cancel) isn't permanently blocked —
+  // otherwise the flag stays true forever and freezes all submits.
   updateState({ isSubmittingRound: false });
   closeScoreKeypad(true);
-  const enteredForNonBidder = !state.enterBidderPoints;   // true ⇢ '0' belonged to non-bid team
+  // The team the 0 was entered for took nothing, so the other team took every point:
+  // 180, or 360 for a shoot-the-moon hand. The choice is scored for that other team.
+  const zeroWasForBidder = Boolean(enterBidderPoints);
+  const takerIsBidder = !zeroWasForBidder;
+  const takerSide = takerIsBidder ? biddingTeam : (biddingTeam === "us" ? "dem" : "us");
+  const takerName = takerSide === "us" ? (state.usTeamName || "Us") : (state.demTeamName || "Dem");
 
   openZeroPointsModal(chosen => {
-    /* commit() will run once the DOM is ready */
-    const commit = () => {
-  const freshInput = document.getElementById("pointsInput");
-  if (freshInput) freshInput.value = String(chosen);
-
-  submitRoundFromCurrentInputs(/* skipZeroCheck */ true);
-};
-
-    /* if the '0' was for the non-bidding team we must flip the toggle first,
- which triggers a re-render → wait one tick before commit()            */
- if (enteredForNonBidder && chosen !== 0 && state.enterBidderPoints === false) {
-  handleBiddingPointsToggle(true);     // causes one re-render
-  setTimeout(commit, 0);               // run after new DOM appears
-    } else {
-  commit();                            // no toggle needed
-    }
-  });
+    // The bid on screen may have changed while the dialog was open (voice, a cloud merge).
+    if (state.isSubmittingRound || state.biddingTeam !== biddingTeam || String(state.bidAmount) !== String(bidAmount)) return;
+    updateState({ isSubmittingRound: true, error: "" });
+    commitRoundScore({
+      biddingTeam,
+      bidAmount: numericBid,
+      pointsVal: chosen,
+      enterBidderPoints: takerIsBidder,
+      source: "round_submit",
+    });
+  }, { takerName });
 
   return;                                 // pause main handler until modal choice
 }
@@ -1138,11 +1137,14 @@ function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
     const freezerGames = getLocalStorage("freezerGames");
     const currentIndex = findStoredGameIndex(freezerGames, chosen);
     if (currentIndex >= 0) {
-      freezerGames.splice(currentIndex, 1); // Remove from freezer
+      const [resumedEntry] = freezerGames.splice(currentIndex, 1); // Remove from freezer
       if (!setLocalStorage("freezerGames", freezerGames)) {
         // The copy in the freezer survived (storage is full), so it would come back after a reload.
         LOCAL_STORAGE_CACHE.delete("freezerGames");
         showWarningToast("Not saved: storage full");
+      } else {
+        // Another device (or the cloud copy) still lists this frozen game; the record stops it coming back.
+        recordRemovedGame("freezerGames", resumedEntry);
       }
     }
     closeSavedGamesModal();
@@ -1191,11 +1193,14 @@ function deleteGame(storageKey, index, descriptor, onDeleted) {
     const items = getLocalStorage(storageKey);
     const currentIndex = findStoredGameIndex(items, chosen);
     if (currentIndex >= 0) {
-      items.splice(currentIndex, 1);
+      const [deletedEntry] = items.splice(currentIndex, 1);
       if (!setLocalStorage(storageKey, items)) {
         // Storage refused the write: the game is still stored, so show it again instead of pretending.
         LOCAL_STORAGE_CACHE.delete(storageKey);
         showWarningToast("Not deleted: storage is full");
+      } else {
+        // Without this record the next cloud merge would bring the game back from another device.
+        recordRemovedGame(storageKey, deletedEntry);
       }
     }
     if (storageKey === "savedGames") recalcTeamsStats(); // Only if deleting a completed game

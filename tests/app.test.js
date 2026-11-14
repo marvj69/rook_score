@@ -5637,7 +5637,7 @@ test('submitting a blank points field opens the 180 or 360 decision flow', () =>
   assert.match(actionsSource, /openZeroPointsModal\(chosen =>/);
   assert.doesNotMatch(actionsSource, /Please enter points before submitting/);
   assert.match(htmlSource, /id="zeroPointsModalTitle"[^>]*>\s*No points entered/);
-  assert.match(htmlSource, /Did the Bidding team score <strong>180 or 360<\/strong>/);
+  assert.match(htmlSource, /Did <strong id="zeroPointsModalTeam">the other team<\/strong> score <strong>180 or 360<\/strong>/);
 });
 
 test('about modal links to other developer apps with self-contained app icons', () => {
@@ -5907,7 +5907,7 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
   assert.equal(renderCount, 0);
 });
 
-function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {} } = {}) {
+function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {}, exposeMerge = false, failReads = null } = {}) {
   const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
   const storage = {
     getItem: key => (storageValues.has(key) ? storageValues.get(key) : null),
@@ -5933,7 +5933,10 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
     setTimeout,
     clearTimeout,
     console: { log: () => {}, warn: () => {}, error: () => {}, info: () => {} },
-    __getDoc: async () => ({ exists: () => true, data: () => structuredClone(cloudData) }),
+    __getDoc: async () => {
+      if (failReads?.()) throw Object.assign(new Error('Failed to get document because the client is offline.'), { code: 'unavailable' });
+      return { exists: () => true, data: () => structuredClone(cloudData) };
+    },
     __setDoc: async (_docRef, payload) => {
       if (windowForFirebase.__rejectWrite?.()) {
         throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
@@ -5955,7 +5958,10 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
         "const reportedSyncFailures = new Set();",
       ].join("\n"),
     )
-    .replace("scheduleFirebaseInitialization();", "");
+    .replace(
+      "scheduleFirebaseInitialization();",
+      exposeMerge ? "window.__mergeUserDataForCurrentUser = mergeUserDataForCurrentUser;" : "",
+    );
   vm.runInNewContext(instrumentedSource, context, { filename: 'firebase-init.test.js' });
   return { windowForFirebase, storage, storageValues, writePayloads };
 }
@@ -6977,14 +6983,20 @@ test('a cloud delete clears every game key in the same write and replaces queued
 });
 
 test('a write refused for missing a newer delete triggers a fresh merge', async () => {
-  let rejectNextWrite = true;
+  let rejectNextWrite = false;
+  const cloudData = {};
   const { windowForFirebase, storage } = loadFirebaseInitForTests({
     storageValues: new Map([
       ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })],
       ['savedGames', JSON.stringify([{ id: 'before', timestamp: '2026-10-01T00:00:00.000Z' }])],
     ]),
-    cloudData: { gameDataResetAt: '2026-10-07T12:00:00.000Z', savedGames: null },
+    cloudData,
+    exposeMerge: true,
   });
+  // This session has merged; then another device deletes everything.
+  assert.equal(await windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), true);
+  Object.assign(cloudData, { gameDataResetAt: '2026-10-07T12:00:00.000Z', savedGames: null });
+  rejectNextWrite = true;
   // Reject the first write the way the security rules do, then let the merge through.
   const merged = new Promise(resolve => { windowForFirebase.renderApp = resolve; });
   windowForFirebase.__rejectWrite = () => {
@@ -7303,4 +7315,248 @@ test('re-rendering keeps a scrolled-back History list where it was, unless a rou
     live.restore();
     updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
   }
+});
+
+test('a 0 gives 180 or 360 to the other team, whichever team the 0 was entered for', () => {
+  const originalOpen = globalThis.openZeroPointsModal;
+  const opened = [];
+  globalThis.openZeroPointsModal = (callback, options) => opened.push({ callback, options });
+  const startBid = (team, bid, zeroIsForBidder) => {
+    resetGame();
+    opened.length = 0;
+    handleTeamClick(team);
+    handleBidSelect(bid);
+    handleBiddingPointsToggle(zeroIsForBidder);
+    submitRoundFromCurrentInputs(); // nothing typed counts as 0
+    assert.equal(opened.length, 1);
+    assert.equal(getStateForTests().rounds.length, 0, 'nothing is recorded until a total is picked');
+  };
+  const lastRound = () => {
+    const { rounds } = getStateForTests();
+    return [rounds.length, rounds[0]?.usPoints, rounds[0]?.demPoints];
+  };
+  try {
+    // 0 for the bidders: they are set, and the other team took every point.
+    startBid('dem', '145', true);
+    assert.equal(opened[0].options.takerName, 'Us');
+    opened[0].callback(180);
+    assert.deepEqual(lastRound(), [1, 180, -145]);
+
+    startBid('dem', '145', true);
+    opened[0].callback(360);
+    assert.deepEqual(lastRound(), [1, 360, -145]);
+
+    // 0 for the other team: the bidders took every point.
+    startBid('us', '125', false);
+    assert.equal(opened[0].options.takerName, 'Us');
+    opened[0].callback(180);
+    assert.deepEqual(lastRound(), [1, 180, 0]);
+
+    startBid('dem', '125', false);
+    assert.equal(opened[0].options.takerName, 'Dem');
+    opened[0].callback(360);
+    assert.deepEqual(lastRound(), [1, 0, 360]);
+    assert.equal(getStateForTests().isSubmittingRound, false);
+
+    // A choice made after the bid on screen changed is dropped.
+    startBid('us', '125', true);
+    handleBidSelect('130');
+    opened[0].callback(180);
+    assert.equal(getStateForTests().rounds.length, 0);
+  } finally {
+    globalThis.openZeroPointsModal = originalOpen;
+    resetGame();
+  }
+});
+
+test('deleting a game or resuming a frozen one records the removal for cloud sync', () => {
+  resetState();
+  const g1 = { timestamp: '2026-11-01T10:00:00.000Z', finalScore: { us: 500, dem: 300 }, rounds: [] };
+  const g2 = { timestamp: '2026-11-02T10:00:00.000Z', finalScore: { us: 200, dem: 520 }, rounds: [] };
+  const frozen = { timestamp: '2026-11-03T10:00:00.000Z', frozenAt: '2026-11-03T10:00:00.000Z', finalScore: { us: 100, dem: 80 }, rounds: [] };
+  setLocalStorage('savedGames', [g1, g2]);
+  setLocalStorage('freezerGames', [frozen]);
+  try {
+    deleteGame('savedGames', 0);
+    getPendingConfirmationForTests().confirm();
+    assert.deepEqual(getLocalStorage('savedGames').map(game => game.timestamp), [g2.timestamp]);
+    let removed = getLocalStorage(REMOVED_GAMES_KEY, []);
+    assert.deepEqual(removed.map(entry => [entry.list, entry.key]), [['savedGames', g1.timestamp]]);
+    assert.ok(removed[0].at >= Date.parse(g1.timestamp));
+
+    loadFreezerGame(0, { confirm: false });
+    assert.deepEqual(getLocalStorage('freezerGames'), []);
+    removed = getLocalStorage(REMOVED_GAMES_KEY, []);
+    assert.deepEqual(
+      removed.map(entry => [entry.list, entry.key]).sort(),
+      [['freezerGames', frozen.timestamp], ['savedGames', g1.timestamp]],
+    );
+    assert.equal(isCloudSyncStorageKey(REMOVED_GAMES_KEY), true);
+  } finally {
+    resetState();
+    localStorage.removeItem('savedGames');
+    localStorage.removeItem('freezerGames');
+    localStorage.removeItem(REMOVED_GAMES_KEY);
+  }
+});
+
+test('removal records keep the newest per game, drop damaged and expired ones, and stay bounded', () => {
+  const now = Date.parse('2026-11-14T00:00:00.000Z');
+  const day = 24 * 60 * 60 * 1000;
+  const normalized = normalizeRemovedGames([
+    { list: 'savedGames', key: 'a', at: now - day },
+    { list: 'savedGames', key: 'a', at: now - 2 * day },
+    { list: 'freezerGames', key: 'a', at: now - 3 * day },
+    { list: 'savedGames', key: 'old', at: now - REMOVED_GAMES_MAX_AGE_MS - day },
+    { list: 'teams', key: 'x', at: now },
+    { list: 'savedGames', key: '', at: now },
+    { list: 'savedGames', key: 'no-time' },
+    null,
+    'text',
+  ], now);
+  assert.deepEqual(normalized, [
+    { list: 'savedGames', key: 'a', at: now - day },
+    { list: 'freezerGames', key: 'a', at: now - 3 * day },
+  ]);
+  const many = Array.from({ length: REMOVED_GAMES_MAX + 50 }, (_, index) => ({ list: 'savedGames', key: `g${index}`, at: now - index }));
+  const bounded = normalizeRemovedGames(many, now);
+  assert.equal(bounded.length, REMOVED_GAMES_MAX);
+  assert.equal(bounded[0].key, 'g0');
+  assert.deepEqual(normalizeRemovedGames('not a list', now), []);
+
+  // A slow clock on the deleting device never dates the record before the game itself.
+  resetState();
+  try {
+    const future = { timestamp: new Date(Date.now() + day).toISOString() };
+    assert.equal(recordRemovedGame('savedGames', future), true);
+    assert.equal(getLocalStorage(REMOVED_GAMES_KEY, [])[0].at, Date.parse(future.timestamp));
+    assert.equal(recordRemovedGame('savedGames', { rounds: [] }), false, 'a game with no identity cannot be recorded');
+    assert.equal(recordRemovedGame('teams', future), false);
+  } finally {
+    localStorage.removeItem(REMOVED_GAMES_KEY);
+  }
+});
+
+test('the removal record limits in firebase-init match the app', () => {
+  const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
+  assert.match(firebaseSource, /const REMOVED_GAMES_KEY = "removedGames";/);
+  assert.equal(REMOVED_GAMES_KEY, 'removedGames');
+  assert.equal(Number(firebaseSource.match(/const REMOVED_GAMES_MAX = (\d+);/)[1]), REMOVED_GAMES_MAX);
+  assert.match(firebaseSource, /const REMOVED_GAMES_MAX_AGE_MS = 400 \* 24 \* 60 \* 60 \* 1000;/);
+  assert.equal(REMOVED_GAMES_MAX_AGE_MS, 400 * 24 * 60 * 60 * 1000);
+});
+
+test('a game another device deleted is not brought back by a device that still has it', async () => {
+  const g1 = { timestamp: '2026-11-01T10:00:00.000Z' };
+  const g2 = { timestamp: '2026-11-02T10:00:00.000Z' };
+  const removedAt = Date.now() - 60_000;
+  const removedGames = [{ list: 'savedGames', key: g1.timestamp, at: removedAt }];
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([g1, g2])]]),
+    cloudData: { savedGames: [g2], removedGames },
+  });
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [g2]);
+  assert.deepEqual(JSON.parse(storage.getItem('removedGames')), removedGames);
+  writePayloads.forEach(payload => {
+    if ('savedGames' in payload) assert.deepEqual(payload.savedGames, [g2]);
+  });
+});
+
+test('a delete or resume made offline reaches the cloud on the next merge', async () => {
+  const g1 = { timestamp: '2026-11-01T10:00:00.000Z' };
+  const g2 = { timestamp: '2026-11-02T10:00:00.000Z' };
+  const frozen = { timestamp: '2026-11-03T10:00:00.000Z', frozenAt: '2026-11-03T10:00:00.000Z' };
+  const at = Date.now() - 60_000;
+  const removedGames = [
+    { list: 'savedGames', key: g1.timestamp, at },
+    { list: 'freezerGames', key: frozen.timestamp, at: at - 1 },
+  ];
+  const cloudOnly = [{ list: 'savedGames', key: 'gone-elsewhere', at: at - 2 }];
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['savedGames', JSON.stringify([g2])],
+      ['freezerGames', JSON.stringify([])],
+      ['removedGames', JSON.stringify(removedGames)],
+    ]),
+    cloudData: { savedGames: [g1, g2], freezerGames: [frozen], removedGames: cloudOnly },
+  });
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(writePayloads.length, 1);
+  assert.deepEqual(writePayloads[0].savedGames, [g2]);
+  assert.deepEqual(writePayloads[0].freezerGames, []);
+  assert.deepEqual(writePayloads[0].removedGames, [...removedGames, ...cloudOnly]);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [g2]);
+  assert.deepEqual(JSON.parse(storage.getItem('freezerGames')), []);
+  assert.deepEqual(JSON.parse(storage.getItem('removedGames')), [...removedGames, ...cloudOnly]);
+});
+
+test('a game restored after its removal record, or frozen again, is kept by the merge', async () => {
+  const at = Date.now() - 60_000;
+  const restored = { timestamp: '2026-11-01T10:00:00.000Z', restoredAt: new Date(at + 1000).toISOString() };
+  const stale = { timestamp: '2026-11-02T10:00:00.000Z' };
+  const { windowForFirebase, storage } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([restored, stale])]]),
+    cloudData: {
+      removedGames: [
+        { list: 'savedGames', key: restored.timestamp, at },
+        { list: 'savedGames', key: stale.timestamp, at },
+        // Same key in the other list says nothing about a saved game.
+        { list: 'freezerGames', key: 'unrelated', at },
+        { list: 'savedGames', key: 'expired', at: Date.now() - 401 * 24 * 60 * 60 * 1000 },
+      ],
+    },
+  });
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [restored]);
+  assert.equal(JSON.parse(storage.getItem('removedGames')).some(entry => entry.key === 'expired'), false);
+});
+
+test('nothing is uploaded until this session has merged with the cloud copy', async () => {
+  const local = { timestamp: '2026-11-10T10:00:00.000Z' };
+  const cloudGames = [{ timestamp: '2026-11-01T10:00:00.000Z' }, { timestamp: '2026-11-02T10:00:00.000Z' }];
+  let offline = true;
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([local])]]),
+    cloudData: { savedGames: cloudGames },
+    failReads: () => offline,
+  });
+
+  // The startup merge failed (no connection); a save must not replace the cloud list.
+  assert.equal(await windowForFirebase.syncToFirestore('savedGames', [local]), false);
+  assert.equal(writePayloads.length, 0);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [local]);
+
+  // Back online: the next save merges first, so every upload carries all three games.
+  offline = false;
+  assert.equal(await windowForFirebase.syncToFirestore('savedGames', [local]), true);
+  assert.ok(writePayloads.length >= 1);
+  writePayloads.forEach(payload => {
+    if ('savedGames' in payload) assert.equal(payload.savedGames.length, 3);
+  });
+  assert.equal(JSON.parse(storage.getItem('savedGames')).length, 3);
+
+  // Once merged, later saves write straight through with no second merge.
+  const before = writePayloads.length;
+  assert.equal(await windowForFirebase.syncToFirestore('proModeEnabled', true), true);
+  assert.equal(writePayloads.length, before + 1);
+  assert.deepEqual(Object.keys(writePayloads[before]).sort(), ['gameDataResetAt', 'proModeEnabled', 'timestamp']);
+});
+
+test('Delete All Game Data still reaches the cloud when this session has not merged yet', async () => {
+  const deletedAt = new Date().toISOString();
+  const { windowForFirebase, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map(),
+    cloudData: { savedGames: [{ timestamp: '2026-11-01T10:00:00.000Z' }] },
+    failReads: () => true,
+  });
+
+  assert.equal(await windowForFirebase.syncGameDataReset(deletedAt), true);
+  assert.equal(writePayloads.length, 1);
+  assert.equal(writePayloads[0].savedGames, null);
+  assert.equal(writePayloads[0].freezerGames, null);
+  assert.equal(writePayloads[0].gameDataResetAt, deletedAt);
 });
