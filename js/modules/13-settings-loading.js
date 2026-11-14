@@ -27,8 +27,9 @@ function loadSettings() {
     console.warn("penaltyPointsInput element not found");
   }
 
-  // Show/hide custom points input based on penalty type
-  handleTableTalkPenaltyChange();
+  // Show/hide custom points input based on penalty type. Loading only reads:
+  // storing the value here would write a default on every launch.
+  updateTableTalkPenaltyUI();
 }
 
 function migrateTeamsCollection() {

@@ -386,8 +386,9 @@ function normalizeVoiceScorePlan(plan) {
     : actions.length
       ? "execute"
       : "clarify";
-  // Mirrors the server: answers never act, and "act" needs a runnable action.
-  if (status === "answer") actions = [];
+  // Mirrors the server: only "execute" and "confirm" act, so a question or a
+  // refusal never runs actions behind it, and "act" needs a runnable action.
+  if (status === "answer" || status === "clarify" || status === "unsupported") actions = [];
   if ((status === "execute" || status === "confirm") && !actions.length) status = "clarify";
 
   return {

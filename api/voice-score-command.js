@@ -463,9 +463,11 @@ function normalizePlan(plan, fallbackHeardText = "") {
       : "clarify";
   let message = typeof normalized.message === "string" ? normalized.message.slice(0, MAX_MESSAGE_LENGTH) : "";
 
-  // Answers are read-only, and a plan that says to act must name an action the
-  // app can run; otherwise the user is asked to try again instead.
-  if (status === "answer") actions = [];
+  // Only "execute" and "confirm" act. An answer is read-only, and a plan that
+  // asks a question or declines must not also record a hand behind it. A plan
+  // that says to act must name an action the app can run; otherwise the user
+  // is asked to try again instead.
+  if (status === "answer" || status === "clarify" || status === "unsupported") actions = [];
   if ((status === "execute" || status === "confirm") && !actions.length) {
     status = "clarify";
     message = message || "I didn't catch an action. Please try again.";

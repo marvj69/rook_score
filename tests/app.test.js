@@ -7640,3 +7640,248 @@ test('Delete All Game Data still reaches the cloud when this session has not mer
   assert.equal(writePayloads[0].freezerGames, null);
   assert.equal(writePayloads[0].gameDataResetAt, deletedAt);
 });
+
+test('a voice plan that asks a question or declines never runs the actions it carries', async () => {
+  const scoreAction = { type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140, enterBidderPoints: true };
+  ['clarify', 'unsupported'].forEach(status => {
+    const fromServer = voiceScoreCommandHandler.normalizePlan({
+      status,
+      message: 'Which team bid?',
+      requiresConfirmation: true,
+      actions: [scoreAction],
+    });
+    assert.equal(fromServer.status, status);
+    assert.deepEqual(fromServer.actions, []);
+    assert.equal(fromServer.requiresConfirmation, false);
+
+    const inBrowser = normalizeVoiceScorePlan({ status, message: 'Which team bid?', requiresConfirmation: true, actions: [scoreAction] });
+    assert.equal(inBrowser.status, status);
+    assert.deepEqual(inBrowser.actions, []);
+    assert.equal(inBrowser.requiresConfirmation, false);
+  });
+
+  resetState();
+  setLocalStorage('experimentalFeaturesEnabled', true);
+  setLocalStorage('localOnly:voiceSpokenReplies', false);
+  updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [], usPlayers: ['Alice', 'Bob'], demPlayers: ['Carol', 'Dan'] });
+  try {
+    for (const status of ['clarify', 'unsupported']) {
+      assert.equal(await applyVoiceScorePlan({
+        status,
+        summary: 'Score the hand',
+        message: 'Which team bid?',
+        heardText: 'one thirty made one forty',
+        actions: [scoreAction, { type: 'newGame' }],
+      }), false);
+      assert.equal(getStateForTests().rounds.length, 0);
+      assert.equal(getPendingConfirmationForTests().confirm, null);
+      assert.match(renderVoiceScoreControls(), /Which team bid\?/);
+    }
+    // The same action still runs when the plan says to act.
+    assert.equal(await applyVoiceScorePlan({ status: 'execute', summary: 'Us bid 130 and made 140', actions: [scoreAction] }), true);
+    assert.equal(getStateForTests().rounds.length, 1);
+  } finally {
+    clearVoiceScoreConversation();
+    updateState({ ...DEFAULT_STATE, rounds: [], undoneRounds: [] });
+  }
+});
+
+const RULE_SETTING_KEYS = ['rookMustWinByBid', 'misdealHandlingEnabled', 'tableTalkPenaltyType', 'tableTalkPenaltyPoints', 'voiceImprovementOptIn'];
+
+test('loading or closing Settings stores nothing until a rule is actually changed', () => {
+  const previousRaw = new Map(RULE_SETTING_KEYS.map(key => [key, localStorage.getItem(key)]));
+  RULE_SETTING_KEYS.forEach(key => localStorage.removeItem(key));
+  const live = installLiveDocument();
+  try {
+    live.get('mustWinByBidToggle').checked = false;
+    live.get('misdealHandlingToggle').checked = false;
+    live.get('voiceImprovementOptInToggle').checked = false;
+    live.get('tableTalkPenaltySelect').value = 'setPoints';
+    live.get('penaltyPointsInput').value = '180';
+    live.get('customPenaltyPoints');
+
+    // Launch and every cloud merge run loadSettings; Settings runs saveSettings when it closes.
+    loadSettings();
+    assert.equal(live.get('tableTalkPenaltySelect').value, 'setPoints');
+    assert.equal(live.get('customPenaltyPoints').classList.contains('hidden'), false);
+    saveSettings();
+    RULE_SETTING_KEYS.forEach(key => assert.equal(localStorage.getItem(key), null, `${key} was stored untouched`));
+
+    // A real change is stored, and only that one.
+    live.get('mustWinByBidToggle').checked = true;
+    saveSettings();
+    assert.equal(getLocalStorage('rookMustWinByBid', false), true);
+    RULE_SETTING_KEYS.filter(key => key !== 'rookMustWinByBid')
+      .forEach(key => assert.equal(localStorage.getItem(key), null, `${key} was stored untouched`));
+
+    // Picking a penalty type stores it at once and hides the points field.
+    live.get('tableTalkPenaltySelect').value = 'loseBid';
+    handleTableTalkPenaltyChange();
+    assert.equal(getLocalStorage('tableTalkPenaltyType', 'setPoints'), 'loseBid');
+    assert.equal(live.get('customPenaltyPoints').classList.contains('hidden'), true);
+
+    // Loading shows what is stored without writing it back.
+    live.get('tableTalkPenaltySelect').value = 'setPoints';
+    const writesBefore = localStorage.getItem('tableTalkPenaltyType');
+    loadSettings();
+    assert.equal(live.get('tableTalkPenaltySelect').value, 'loseBid');
+    assert.equal(localStorage.getItem('tableTalkPenaltyType'), writesBefore);
+    assert.equal(localStorage.getItem('tableTalkPenaltyPoints'), null);
+
+    // Points typed as text and saved as a number are the same value.
+    live.get('penaltyPointsInput').value = '200';
+    handlePenaltyPointsChange();
+    const storedPoints = localStorage.getItem('tableTalkPenaltyPoints');
+    saveSettings();
+    assert.equal(localStorage.getItem('tableTalkPenaltyPoints'), storedPoints);
+  } finally {
+    live.restore();
+    RULE_SETTING_KEYS.forEach(key => {
+      if (previousRaw.get(key) === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, previousRaw.get(key));
+    });
+  }
+});
+
+test("a device joining an account for the first time takes the account's rule settings", async () => {
+  const markers = { agreed: { 'anonymous-user': '' }, lastUid: 'anonymous-user' };
+  const localDefaults = [
+    ['rookMustWinByBid', 'false'],
+    ['misdealHandlingEnabled', 'false'],
+    ['tableTalkPenaltyType', '"setPoints"'],
+    ['tableTalkPenaltyPoints', '"180"'],
+    ['proModeEnabled', 'false'],
+  ];
+  const cloudData = {
+    rookMustWinByBid: true,
+    tableTalkPenaltyType: 'loseBid',
+    tableTalkPenaltyPoints: 200,
+    proModeEnabled: true,
+  };
+  const joining = loadFirebaseInitForTests({
+    storageValues: new Map([...localDefaults, ['localOnly:gameDataResetMarkers', JSON.stringify(markers)]]),
+    cloudData,
+  });
+
+  assert.equal(await joining.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(joining.storage.getItem('rookMustWinByBid'), 'true');
+  assert.equal(joining.storage.getItem('tableTalkPenaltyType'), 'loseBid');
+  assert.equal(joining.storage.getItem('tableTalkPenaltyPoints'), '200');
+  // A rule the account has no value for keeps this device's value, and other settings still go local-first.
+  assert.equal(joining.storage.getItem('misdealHandlingEnabled'), 'false');
+  assert.equal(joining.storage.getItem('proModeEnabled'), 'false');
+  joining.writePayloads.forEach(payload => {
+    ['rookMustWinByBid', 'tableTalkPenaltyType', 'tableTalkPenaltyPoints'].forEach(key => assert.equal(key in payload, false));
+  });
+  assert.equal(joining.writePayloads.at(-1).misdealHandlingEnabled, false);
+
+  // Once the device has synced with the account, a rule changed on it wins as before.
+  joining.storage.setItem('rookMustWinByBid', 'false');
+  assert.equal(await joining.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(joining.storage.getItem('rookMustWinByBid'), 'false');
+  assert.equal(joining.writePayloads.at(-1).rookMustWinByBid, false);
+
+  // A rule changed while the first merge is still writing is the player's choice and is kept.
+  const changing = loadFirebaseInitForTests({
+    storageValues: new Map([...localDefaults, ['localOnly:gameDataResetMarkers', JSON.stringify(markers)]]),
+    cloudData,
+  });
+  let changed = false;
+  changing.windowForFirebase.__afterWrite = () => {
+    if (changed) return;
+    changed = true;
+    changing.storage.setItem('tableTalkPenaltyType', '"setPoints"');
+    changing.storage.setItem('tableTalkPenaltyPoints', '"150"');
+  };
+  assert.equal(await changing.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(changing.storage.getItem('tableTalkPenaltyPoints'), '"150"');
+  assert.equal(changing.writePayloads.at(-1).tableTalkPenaltyPoints, '150');
+  assert.equal(changing.storage.getItem('rookMustWinByBid'), 'true');
+});
+
+test('a save made while the startup merge is writing keeps the games the merge brought in', async () => {
+  const mine = { timestamp: '2026-11-10T10:00:00.000Z' };
+  const justSaved = { timestamp: '2026-11-14T10:00:00.000Z' };
+  const cloudGames = [{ timestamp: '2026-11-01T10:00:00.000Z' }, { timestamp: '2026-11-02T10:00:00.000Z' }];
+  const cloudFrozen = { timestamp: '2026-11-03T10:00:00.000Z', frozenAt: '2026-11-03T10:00:00.000Z' };
+  const justFrozen = { timestamp: '2026-11-14T11:00:00.000Z', frozenAt: '2026-11-14T11:00:00.000Z' };
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([mine])]]),
+    cloudData: { savedGames: cloudGames, freezerGames: [cloudFrozen] },
+    exposeMerge: true,
+  });
+  let saved = false;
+  windowForFirebase.__afterWrite = () => {
+    if (saved) return;
+    saved = true;
+    // The player saves one game and freezes another while the merge's first write is in flight.
+    storage.setItem('savedGames', JSON.stringify([mine, justSaved]));
+    storage.setItem('freezerGames', JSON.stringify([justFrozen]));
+  };
+
+  assert.equal(await windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), true);
+  const expectedSaved = [mine, justSaved, ...cloudGames];
+  assert.equal(writePayloads.length, 2);
+  assert.deepEqual(writePayloads[1].savedGames, expectedSaved);
+  assert.deepEqual(writePayloads[1].freezerGames, [justFrozen, cloudFrozen]);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), expectedSaved);
+  assert.deepEqual(JSON.parse(storage.getItem('freezerGames')), [justFrozen, cloudFrozen]);
+
+  // The save's own upload was queued with this device's list; it must not take the cloud games back out.
+  assert.equal(await windowForFirebase.syncToFirestore('savedGames', [mine, justSaved]), true);
+  assert.deepEqual(writePayloads.at(-1).savedGames, expectedSaved);
+});
+
+test('a delete or resume made while the startup merge is writing stays deleted without losing cloud games', async () => {
+  const keep = { timestamp: '2026-11-10T10:00:00.000Z' };
+  const deleted = { timestamp: '2026-11-11T10:00:00.000Z' };
+  const cloudGame = { timestamp: '2026-11-01T10:00:00.000Z' };
+  const resumed = { timestamp: '2026-11-12T10:00:00.000Z', frozenAt: '2026-11-12T10:00:00.000Z' };
+  const cloudFrozen = { timestamp: '2026-11-03T10:00:00.000Z', frozenAt: '2026-11-03T10:00:00.000Z' };
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['savedGames', JSON.stringify([keep, deleted])],
+      ['freezerGames', JSON.stringify([resumed])],
+    ]),
+    cloudData: { savedGames: [cloudGame, deleted], freezerGames: [cloudFrozen, resumed] },
+  });
+  let removed = false;
+  let records = [];
+  windowForFirebase.__afterWrite = () => {
+    if (removed) return;
+    removed = true;
+    const at = Date.now();
+    records = [
+      { list: 'savedGames', key: deleted.timestamp, at },
+      { list: 'freezerGames', key: resumed.timestamp, at },
+    ];
+    storage.setItem('savedGames', JSON.stringify([keep]));
+    storage.setItem('freezerGames', JSON.stringify([]));
+    storage.setItem('removedGames', JSON.stringify(records));
+  };
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(writePayloads.length, 2);
+  assert.deepEqual(writePayloads[1].savedGames, [keep, cloudGame]);
+  assert.deepEqual(writePayloads[1].freezerGames, [cloudFrozen]);
+  assert.deepEqual(writePayloads[1].removedGames.map(entry => entry.key).sort(), records.map(entry => entry.key).sort());
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [keep, cloudGame]);
+  assert.deepEqual(JSON.parse(storage.getItem('freezerGames')), [cloudFrozen]);
+});
+
+test('Delete All Game Data made while the startup merge is writing is not undone by the merged lists', async () => {
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([{ timestamp: '2026-11-10T10:00:00.000Z' }])]]),
+    cloudData: { savedGames: [{ timestamp: '2026-11-01T10:00:00.000Z' }] },
+  });
+  let cleared = false;
+  windowForFirebase.__afterWrite = () => {
+    if (cleared) return;
+    cleared = true;
+    storage.removeItem('savedGames');
+  };
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(writePayloads.at(-1).savedGames, null);
+  assert.equal(storage.getItem('savedGames'), null);
+});

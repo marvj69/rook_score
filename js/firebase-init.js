@@ -316,6 +316,38 @@ function dropRemovedGames(listKey, games, removedGames) {
   });
 }
 
+// Joins two lists of saved or frozen games into one, each game once. When both
+// lists hold the same game, the first list's copy stays unless the second
+// carries a later timestamp.
+function joinGameLists(first, second) {
+  const uniqueMap = new Map();
+  [...first, ...second].forEach(item => {
+    // Prefer item.id or item.timestamp for uniqueness
+    const uniqueKey = item.id || item.timestamp || JSON.stringify(item); // Fallback to stringify
+    if (!uniqueMap.has(uniqueKey)) {
+      uniqueMap.set(uniqueKey, item);
+      return;
+    }
+    const existingItem = uniqueMap.get(uniqueKey);
+    if (item.timestamp && existingItem.timestamp && new Date(item.timestamp) > new Date(existingItem.timestamp)) {
+      uniqueMap.set(uniqueKey, item);
+    }
+  });
+  return Array.from(uniqueMap.values());
+}
+
+// Rule settings follow the account the first time a device joins it. A device
+// holds a value for these as soon as Settings has been used once (older
+// versions stored the defaults on every launch), so "local wins" would put a
+// new device's defaults over the rules already saved on the account. After that
+// first merge the device's own changes win as before.
+const ACCOUNT_FIRST_SETTING_KEYS = [
+  "rookMustWinByBid",
+  "misdealHandlingEnabled",
+  "tableTalkPenaltyType",
+  "tableTalkPenaltyPoints",
+];
+
 function getCloudSyncStorageChanges(snapshot) {
   if (typeof window.getCloudSyncStorageChanges === "function") {
     return window.getCloudSyncStorageChanges(snapshot, localStorage);
@@ -504,6 +536,8 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     ? firestoreData[GAME_DATA_RESET_FIELD]
     : "";
   const localResetMarker = getLocalGameDataResetMarker(userId);
+  // null: this device has never synced with this account.
+  const firstMergeWithAccount = localResetMarker === null;
   const resetMarker = laterGameDataResetMarker(localResetMarker ?? "", cloudResetMarker);
   const localResetTime = parseGameDataResetTime(localResetMarker);
   const cloudResetTime = parseGameDataResetTime(cloudResetMarker);
@@ -538,23 +572,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
       else if (firestoreValue !== undefined) mergedData[key] = firestoreValue;
     } else if (Array.isArray(localValue) && Array.isArray(firestoreValue) && (key === "savedGames" || key === "freezerGames")) {
       // Merge arrays of games, ensuring uniqueness by timestamp or a unique ID if available
-      const combined = [...localValue, ...firestoreValue];
-      const uniqueMap = new Map();
-      combined.forEach(item => {
-        // Prefer item.id or item.timestamp for uniqueness
-        const uniqueKey = item.id || item.timestamp || JSON.stringify(item); // Fallback to stringify
-        if (!uniqueMap.has(uniqueKey)) {
-          uniqueMap.set(uniqueKey, item);
-        } else {
-          // Basic conflict resolution: take the one with a later timestamp if available
-          const existingItem = uniqueMap.get(uniqueKey);
-          if (item.timestamp && existingItem.timestamp && new Date(item.timestamp) > new Date(existingItem.timestamp)) {
-            uniqueMap.set(uniqueKey, item);
-          }
-          // More complex merging could be done here if needed
-        }
-      });
-      mergedData[key] = Array.from(uniqueMap.values());
+      mergedData[key] = joinGameLists(localValue, firestoreValue);
     } else if (Array.isArray(localValue) || Array.isArray(firestoreValue)) {
       // Lists such as custom bid presets are replaced whole; spreading them into
       // an object would turn [120, 125] into {0: 120, 1: 125}.
@@ -562,6 +580,9 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     } else if (typeof localValue === 'object' && localValue !== null && typeof firestoreValue === 'object' && firestoreValue !== null) {
       // Simple object merge, local overrides remote for simple key-value settings
       mergedData[key] = { ...firestoreValue, ...localValue };
+    } else if (firstMergeWithAccount && ACCOUNT_FIRST_SETTING_KEYS.includes(key)
+        && firestoreValue !== undefined && firestoreValue !== null) {
+      mergedData[key] = firestoreValue;
     } else {
       // Default to local if present, else remote, else undefined
       mergedData[key] = localValue !== undefined ? localValue : firestoreValue;
@@ -662,6 +683,29 @@ window.mergeLocalStorageWithFirestore = async function(user) {
       const serialized = JSON.stringify(removedGames);
       if (localStorage.getItem(REMOVED_GAMES_KEY) !== serialized) localStorage.setItem(REMOVED_GAMES_KEY, serialized);
     }
+    // A save, delete, freeze or resume made mid-merge stored this device's own
+    // list, without the games the merge had just brought in from the cloud.
+    // It is joined with the merged list (and its removals applied) here and in
+    // the cloud; uploading it as it stands would erase those games from both.
+    // A list that was cleared outright (Delete All Game Data) stays cleared.
+    const removedGamesAfterMerge = removedGamesSynced
+      ? changedLocalData[REMOVED_GAMES_KEY] || mergedData[REMOVED_GAMES_KEY] || []
+      : [];
+    REMOVABLE_GAME_LISTS.forEach(listKey => {
+      if (!Array.isArray(changedLocalData[listKey])) return;
+      const mergedList = Array.isArray(mergedData[listKey]) ? mergedData[listKey] : [];
+      const joined = dropRemovedGames(
+        listKey,
+        joinGameLists(changedLocalData[listKey], mergedList),
+        removedGamesAfterMerge,
+      );
+      changedLocalData[listKey] = joined;
+      const serialized = JSON.stringify(joined);
+      if (localStorage.getItem(listKey) !== serialized) {
+        localStorage.setItem(listKey, serialized);
+        localStorageUpdatedByMerge = true;
+      }
+    });
     Object.assign(latestLocalData, changedLocalData);
     await setDoc(docRef, latestLocalData, { merge: true });
     if (auth?.currentUser?.uid !== userId) return false;
@@ -816,6 +860,17 @@ async function flushPendingSync() {
     }
     // The merge may have widened what is stored here; send the stored value.
     [...values.keys()].forEach(key => {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) values.set(key, deserializeLocalStorageValue(key, raw));
+    });
+  }
+
+  // The stored game lists are what gets uploaded. A merge that finished after
+  // this write was queued may have joined cloud games into them, and the queued
+  // copy would take those games back out of the cloud.
+  if (!values.has(GAME_DATA_RESET_FIELD)) {
+    [...REMOVABLE_GAME_LISTS, REMOVED_GAMES_KEY].forEach(key => {
+      if (!values.has(key)) return;
       const raw = localStorage.getItem(key);
       if (raw !== null) values.set(key, deserializeLocalStorageValue(key, raw));
     });

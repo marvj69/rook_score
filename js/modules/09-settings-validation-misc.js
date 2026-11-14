@@ -1,26 +1,34 @@
 "use strict";
 
 // --- Settings & Pro Mode ---
+// Stores a setting only when it differs from the value in effect. Writing an
+// untouched default would make it look like this device's own choice, and the
+// cloud merge would then put it over the value saved on the account.
+function saveSettingIfChanged(key, value, fallback) {
+  if (String(getLocalStorage(key, fallback)) === String(value)) return false;
+  return setLocalStorage(key, value);
+}
+
 function saveSettings() {
   const mustWinToggle = document.getElementById("mustWinByBidToggle");
-  if (mustWinToggle) setLocalStorage(MUST_WIN_BY_BID_KEY, mustWinToggle.checked);
+  if (mustWinToggle) saveSettingIfChanged(MUST_WIN_BY_BID_KEY, mustWinToggle.checked, false);
 
   const misdealToggle = document.getElementById("misdealHandlingToggle");
-  if (misdealToggle) setLocalStorage(MISDEAL_HANDLING_KEY, misdealToggle.checked);
+  if (misdealToggle) saveSettingIfChanged(MISDEAL_HANDLING_KEY, misdealToggle.checked, false);
 
   const voiceImprovementOptInToggle = document.getElementById("voiceImprovementOptInToggle");
   if (voiceImprovementOptInToggle) {
-    setLocalStorage(VOICE_IMPROVEMENT_OPT_IN_KEY, voiceImprovementOptInToggle.checked);
+    saveSettingIfChanged(VOICE_IMPROVEMENT_OPT_IN_KEY, voiceImprovementOptInToggle.checked, false);
   }
 
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
-  if (penaltySelect) setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
+  if (penaltySelect) saveSettingIfChanged(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value, "setPoints");
 
   const penaltyPointsInput = document.getElementById("penaltyPointsInput");
   if (penaltyPointsInput) {
     const points = normalizePenaltyPoints(penaltyPointsInput.value);
     penaltyPointsInput.value = points; // Show the corrected value
-    setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, points);
+    saveSettingIfChanged(TABLE_TALK_PENALTY_POINTS_KEY, points, "180");
   }
 
   renderApp();
@@ -206,18 +214,20 @@ function maybePromptForVoiceExperimentalOnboarding() {
   return false;
 }
 
-function handleTableTalkPenaltyChange() {
+// Shows the points field only for the "set number of points" penalty. Display
+// only: this also runs when settings are loaded, which must not store anything.
+function updateTableTalkPenaltyUI() {
   const penaltySelect = document.getElementById("tableTalkPenaltySelect");
   const customPointsDiv = document.getElementById("customPenaltyPoints");
+  if (!penaltySelect || !customPointsDiv) return;
+  customPointsDiv.classList.toggle("hidden", penaltySelect.value !== "setPoints");
+}
 
-  if (penaltySelect && customPointsDiv) {
-    if (penaltySelect.value === "setPoints") {
-      customPointsDiv.classList.remove("hidden");
-    } else {
-      customPointsDiv.classList.add("hidden");
-    }
-
-    // Save the penalty type setting
+// The player picked a penalty type.
+function handleTableTalkPenaltyChange() {
+  const penaltySelect = document.getElementById("tableTalkPenaltySelect");
+  updateTableTalkPenaltyUI();
+  if (penaltySelect && document.getElementById("customPenaltyPoints")) {
     setLocalStorage(TABLE_TALK_PENALTY_TYPE_KEY, penaltySelect.value);
   }
 }
