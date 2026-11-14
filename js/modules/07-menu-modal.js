@@ -571,7 +571,17 @@ function handleDealerPairSelection(pair) {
       demPlayers: [state.dealers[0], state.dealers[2]]
     };
   }
-  
+
+  // A rematch keeps the same four players, so the pair just chosen is the whole answer: no name form.
+  if (pendingGameAction === "rematch" && window.prePopulatedTeamData) {
+    const { usPlayers, demPlayers } = window.prePopulatedTeamData;
+    window.prePopulatedTeamData = null;
+    pendingGameAction = null;
+    setCurrentGameTeams(usPlayers, demPlayers);
+    openRematchDealerModal();
+    return;
+  }
+
   // Open team selection modal with pre-populated data
   openTeamSelectionModal();
 }

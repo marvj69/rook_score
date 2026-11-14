@@ -324,7 +324,8 @@ function undoPenaltyFlag() {
 }
 
 function handleTeamSelectionCancel() {
-  if (state.gameOver) {
+  // Backing out of a rematch leaves the finished game on screen; only abandoning a save erases it.
+  if (state.gameOver && pendingGameAction !== "rematch") {
     openConfirmationModal(
       'This game is finished. Canceling now erases it instead of saving it.',
       () => { closeTeamSelectionModal(); resetGame(); closeConfirmationModal(); },
@@ -512,6 +513,11 @@ if (typeof module !== 'undefined' && module.exports) {
     buildRematchSetupState,
     handleMisdeal,
     startRematchWithFirstDealer,
+    openRematchDealerModal,
+    rematchNeedsTeamChoice,
+    isTeamGuessedFromDealers,
+    handleDealerPairSelection,
+    getPendingGameActionForTests: () => pendingGameAction,
     playersEqual,
     getHistoryRoundsForDisplay,
     renderReadOnlyGameDetails,

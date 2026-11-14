@@ -1064,6 +1064,7 @@ async function applyVoiceScoreSetTeams(action) {
   pendingGameAction = null;
   if (pending === "freeze") confirmFreeze();
   else if (pending === "save") await handleManualSaveGame();
+  else if (pending === "rematch") openRematchDealerModal();
   return "Teams updated.";
 }
 
@@ -1327,6 +1328,10 @@ async function applyVoiceScoreStatsControls(action) {
 }
 
 async function applyVoiceScoreRematch(action) {
+  if (rematchNeedsTeamChoice(state)) {
+    openRematchDealerModal(); // asks for the teams first, then the first dealer
+    return "Choose the teams for the rematch first.";
+  }
   if (action.firstDealer) {
     const started = await startRematchWithFirstDealer(action.firstDealer);
     if (started === null) throw new Error("The finished game could not be saved because storage is full.");

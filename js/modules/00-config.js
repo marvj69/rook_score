@@ -240,7 +240,7 @@ function getDealerPairPlayers(sourceState = {}, side = "us") {
   return side === "us" ? [dealers[0], dealers[2]] : [dealers[1], dealers[3]];
 }
 
-function getTeamSnapshotForSide(sourceState = {}, side = "us") {
+function resolveTeamForSide(sourceState = {}, side = "us") {
   const fallback = side === "us" ? "Us" : "Dem";
   const playersField = side === "us" ? sourceState?.usPlayers : sourceState?.demPlayers;
   const nameField = side === "us" ? sourceState?.usTeamName || sourceState?.usName : sourceState?.demTeamName || sourceState?.demName;
@@ -250,6 +250,7 @@ function getTeamSnapshotForSide(sourceState = {}, side = "us") {
     return {
       players,
       display: deriveTeamDisplay(players, isSideLabelTeamName(nameField, side) ? fallback : sanitizePlayerName(nameField)) || fallback,
+      fromDealers: false,
     };
   }
 
@@ -258,17 +259,32 @@ function getTeamSnapshotForSide(sourceState = {}, side = "us") {
     return {
       players: parsedNamePlayers,
       display: deriveTeamDisplay(parsedNamePlayers, sanitizePlayerName(nameField)) || fallback,
+      fromDealers: false,
     };
   }
 
   const dealerPlayers = isSideLabelTeamName(nameField, side) ? getDealerPairPlayers(sourceState, side) : ["", ""];
-  const resolvedPlayers = dealerPlayers.filter(Boolean).length === 2 ? dealerPlayers : players;
+  const fromDealers = dealerPlayers.filter(Boolean).length === 2;
+  const resolvedPlayers = fromDealers ? dealerPlayers : players;
   const displayFallback = isSideLabelTeamName(nameField, side) ? fallback : sanitizePlayerName(nameField);
 
   return {
     players: resolvedPlayers,
     display: deriveTeamDisplay(resolvedPlayers, displayFallback) || fallback,
+    fromDealers,
   };
+}
+
+function getTeamSnapshotForSide(sourceState = {}, side = "us") {
+  const { players, display } = resolveTeamForSide(sourceState, side);
+  return { players, display };
+}
+
+// True when a side has no players of its own, so its snapshot is the dealing-order fallback (seats 1 & 3
+// as "Us"). A dealing order does not say who partners whom, so that is a guess: fine as a label, but
+// anything that records a result under those names has to ask first.
+function isTeamGuessedFromDealers(sourceState = {}, side = "us") {
+  return resolveTeamForSide(sourceState, side).fromDealers;
 }
 
 function getGameTeamDisplay(game, side) {

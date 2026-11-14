@@ -350,14 +350,13 @@ function handleTeamSelectionSubmit(e) {
     return;
   }
 
-  addTeamIfNotExists(usPlayers, formatTeamDisplay(usPlayers));
-  addTeamIfNotExists(demPlayers, formatTeamDisplay(demPlayers));
-  updateState({ usPlayers, demPlayers });
-  saveCurrentGameState();
+  setCurrentGameTeams(usPlayers, demPlayers);
   closeTeamSelectionModal();
-  if (pendingGameAction === "freeze") { confirmFreeze(); }
-  else if (pendingGameAction === "save") { handleManualSaveGame(); }
+  const pending = pendingGameAction;
   pendingGameAction = null;
+  if (pending === "freeze") { confirmFreeze(); }
+  else if (pending === "save") { handleManualSaveGame(); }
+  else if (pending === "rematch") { openRematchDealerModal(); }
 }
 const SAME_ORIGIN_BUG_REPORT_URL = "/api/bug-report";
 const VERCEL_BUG_REPORT_URL = "https://rook-score.vercel.app/api/bug-report";

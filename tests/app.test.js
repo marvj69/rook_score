@@ -78,6 +78,11 @@ const {
   buildRematchSetupState,
   handleMisdeal,
   startRematchWithFirstDealer,
+  openRematchDealerModal,
+  rematchNeedsTeamChoice,
+  isTeamGuessedFromDealers,
+  handleDealerPairSelection,
+  getPendingGameActionForTests,
   playersEqual,
   getHistoryRoundsForDisplay,
   renderReadOnlyGameDetails,
@@ -5266,39 +5271,114 @@ test('starting a rematch saves the completed prior game before clearing the boar
   assert.equal(activeGame.demTeamName, 'Bob & Dan');
 });
 
-test('starting a rematch saves dealer-pair names when previous state only has side labels', async () => {
+// A game played with a dealing order but no team names: Dem (seats 2 & 4, or 1 & 3?) just won on a bid.
+const finishGameWithDealersOnly = (names = {}) => {
   resetState();
-  updateState({
-    rounds: [
-      { bidAmount: 120, biddingTeam: 'dem', usPoints: 40, demPoints: 140, runningTotals: { us: 260, dem: 500 } },
-    ],
-    gameOver: true,
-    winner: 'dem',
-    victoryMethod: 'points',
-    usTeamName: 'us',
-    demTeamName: 'dem',
-    usPlayers: ['', ''],
-    demPlayers: ['', ''],
-    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
-    accumulatedTime: 90000,
-    startTime: null,
-  });
+  resetGame();
+  updateState({ dealers: ['Alice', 'Bob', 'Carol', 'Dan'], startingTotals: { us: 260, dem: 400 }, ...names });
+  assert.equal(submitStructuredRound({ biddingTeam: 'dem', bidAmount: '120', points: 140 }), true);
+  assert.equal(getStateForTests().gameOver, true);
+  assert.equal(getStateForTests().winner, 'dem');
+};
+const teamRecord = key => {
+  const entry = getLocalStorage('teams', {})[key];
+  return entry ? { wins: entry.wins, losses: entry.losses, gamesPlayed: entry.gamesPlayed } : null;
+};
 
-  const started = await startRematchWithFirstDealer('Carol');
+test('a rematch asks which pair is "Us" instead of guessing it from the dealing order', async () => {
+  finishGameWithDealersOnly({ usTeamName: 'us', demTeamName: 'dem' });
+  assert.equal(rematchNeedsTeamChoice(), true);
+  // The game-end tally had to assume seats 1 & 3 are "Us".
+  assert.deepEqual(teamRecord('bob||dan'), { wins: 1, losses: 0, gamesPlayed: 1 });
+
+  assert.equal(await startRematchWithFirstDealer('Carol'), false);
+  assert.deepEqual(getLocalStorage('savedGames', []), [], 'nothing is saved under guessed names');
+  assert.equal(getStateForTests().gameOver, true, 'and the finished game is still on the scoreboard');
+  assert.equal(getPendingGameActionForTests(), 'rematch');
+
+  // "Us" was really seats 2 & 4, so Alice & Carol are the winners.
+  handleDealerPairSelection('24');
+  assert.equal(getPendingGameActionForTests(), null);
+  assert.deepEqual(getStateForTests().usPlayers, ['Bob', 'Dan']);
+  assert.deepEqual(getStateForTests().demPlayers, ['Alice', 'Carol']);
+  assert.equal(rematchNeedsTeamChoice(), false);
+  assert.deepEqual(teamRecord('alice||carol'), { wins: 1, losses: 0, gamesPlayed: 1 }, 'the win moves to the pair that won');
+  assert.deepEqual(teamRecord('bob||dan'), { wins: 0, losses: 1, gamesPlayed: 1 });
+
+  assert.equal(await startRematchWithFirstDealer('Carol'), true);
   const savedGames = getLocalStorage('savedGames', []);
   const activeGame = getLocalStorage('activeGameState', null);
-
-  assert.equal(started, true);
   assert.equal(savedGames.length, 1);
-  assert.equal(savedGames[0].usTeamName, 'Alice & Carol');
-  assert.equal(savedGames[0].demTeamName, 'Bob & Dan');
-  assert.deepEqual(savedGames[0].usPlayers, ['Alice', 'Carol']);
-  assert.deepEqual(savedGames[0].demPlayers, ['Bob', 'Dan']);
-  assert.notEqual(savedGames[0].usTeamName.toLowerCase(), 'us');
-  assert.notEqual(savedGames[0].demTeamName.toLowerCase(), 'dem');
-  assert.equal(activeGame.usTeamName, 'Alice & Carol');
-  assert.equal(activeGame.demTeamName, 'Bob & Dan');
+  assert.equal(savedGames[0].winner, 'dem');
+  assert.deepEqual(savedGames[0].usPlayers, ['Bob', 'Dan']);
+  assert.deepEqual(savedGames[0].demPlayers, ['Alice', 'Carol']);
+  assert.equal(savedGames[0].usTeamName, 'Bob & Dan');
+  assert.equal(savedGames[0].demTeamName, 'Alice & Carol');
+  assert.deepEqual(activeGame.usPlayers, ['Bob', 'Dan']);
+  assert.deepEqual(activeGame.demPlayers, ['Alice', 'Carol']);
   assert.deepEqual(activeGame.dealers, ['Carol', 'Dan', 'Alice', 'Bob']);
+  assert.deepEqual(activeGame.rounds, []);
+  resetGame();
+  resetState();
+});
+
+test('the rematch button asks for the pair first, and choosing seats 1 & 3 keeps the tally as it was', async () => {
+  finishGameWithDealersOnly();
+  openRematchDealerModal();
+  assert.equal(getPendingGameActionForTests(), 'rematch');
+  assert.deepEqual(getLocalStorage('savedGames', []), []);
+
+  handleDealerPairSelection('13');
+  assert.deepEqual(getStateForTests().usPlayers, ['Alice', 'Carol']);
+  assert.deepEqual(getStateForTests().demPlayers, ['Bob', 'Dan']);
+  assert.deepEqual(teamRecord('bob||dan'), { wins: 1, losses: 0, gamesPlayed: 1 });
+  assert.deepEqual(teamRecord('alice||carol'), { wins: 0, losses: 1, gamesPlayed: 1 });
+
+  // Fix Score after naming the teams takes the result back from the same pairs.
+  handleUndo();
+  assert.deepEqual(teamRecord('bob||dan'), { wins: 0, losses: 0, gamesPlayed: 0 });
+  assert.deepEqual(teamRecord('alice||carol'), { wins: 0, losses: 0, gamesPlayed: 0 });
+  resetGame();
+  resetState();
+});
+
+test('backing out of the rematch pair question saves nothing and leaves the finished game', async () => {
+  finishGameWithDealersOnly();
+  openRematchDealerModal();
+  cancelDealerPairSelection();
+  assert.equal(getPendingGameActionForTests(), null);
+  assert.deepEqual(getLocalStorage('savedGames', []), []);
+  assert.equal(getStateForTests().gameOver, true);
+  assert.deepEqual(getStateForTests().usPlayers, ['', '']);
+  assert.equal(rematchNeedsTeamChoice(), true);
+  resetGame();
+  resetState();
+});
+
+test('a voice rematch with a first dealer still asks for the pair when teams were never named', async () => {
+  finishGameWithDealersOnly();
+  await applyVoiceScorePlan({
+    status: 'execute',
+    summary: 'Start rematch with Carol dealing',
+    actions: [{ type: 'rematch', firstDealer: 'Carol' }],
+  });
+  assert.deepEqual(getLocalStorage('savedGames', []), []);
+  assert.equal(getStateForTests().gameOver, true);
+  assert.equal(getPendingGameActionForTests(), 'rematch');
+  cancelDealerPairSelection();
+  resetGame();
+  resetState();
+});
+
+test('only a side with no players of its own counts as guessed from the dealing order', () => {
+  const dealers = ['Alice', 'Bob', 'Carol', 'Dan'];
+  assert.equal(isTeamGuessedFromDealers({ dealers }, 'us'), true);
+  assert.equal(isTeamGuessedFromDealers({ dealers, usTeamName: 'us', demTeamName: 'dem' }, 'dem'), true);
+  assert.equal(isTeamGuessedFromDealers({ dealers, usPlayers: ['Bob', 'Dan'] }, 'us'), false);
+  assert.equal(isTeamGuessedFromDealers({ dealers, usTeamName: 'Bob & Dan' }, 'us'), false);
+  assert.equal(isTeamGuessedFromDealers({ dealers: ['Alice', 'Bob'] }, 'us'), false, 'no full dealing order, nothing to guess from');
+  assert.equal(isTeamGuessedFromDealers({}, 'us'), false);
+  assert.equal(rematchNeedsTeamChoice({ dealers, usPlayers: ['Alice', 'Carol'], demPlayers: ['Bob', 'Dan'] }), false);
 });
 
 test('ensureProbabilityPersonalizationForGames stores personalization record from saved games', () => {

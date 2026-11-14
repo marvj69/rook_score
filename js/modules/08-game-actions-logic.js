@@ -773,7 +773,27 @@ function closeRematchDealerModal(restoreGameOverOverlay = false) {
   restoreModalFocus("rematchDealerModal");
 }
 
+// A dealing order alone does not say who partners whom. Save and Freeze ask before they record anything;
+// a rematch saves the finished game and names the next one, so it has to ask too.
+function rematchNeedsTeamChoice(sourceState = state) {
+  return isTeamGuessedFromDealers(sourceState, "us") || isTeamGuessedFromDealers(sourceState, "dem");
+}
+
+function askRematchTeams() {
+  const neitherTeamNamed = isTeamGuessedFromDealers(state, "us") && isTeamGuessedFromDealers(state, "dem");
+  hideGameOverOverlay();
+  closeRematchDealerModal(false);
+  pendingGameAction = "rematch";
+  // Answering either prompt comes back to openRematchDealerModal.
+  if (neitherTeamNamed) openDealerPairSelectionModal();
+  else openTeamSelectionModal();
+}
+
 async function startRematchWithFirstDealer(firstDealer) {
+  if (rematchNeedsTeamChoice(state)) {
+    askRematchTeams();
+    return false;
+  }
   const shouldSavePriorGame = state.gameOver && state.rounds.length > 0;
   const nextState = buildRematchSetupState(state, firstDealer, getLocalStorage(PRO_MODE_KEY, false));
   if (!nextState) {
@@ -809,6 +829,10 @@ function openRematchDealerModal() {
   const dealerCandidates = getRematchDealerCandidates(state);
   if (dealerCandidates.length !== 4) {
     showNoticeModal("Add four players or a dealing order before starting a same-player rematch.", { title: "Players needed", tone: "info", icon: "users" });
+    return;
+  }
+  if (rematchNeedsTeamChoice(state)) {
+    askRematchTeams();
     return;
   }
 
@@ -850,6 +874,9 @@ function openRematchDealerModal() {
   // Backdrop dismissal is the shared handler's (modalCloseHandlers).
   activateModalEnvironment();
   modal?.focus();
+  // Arriving from the team question, a render is already queued (that prompt closing, the names just
+  // set) and would draw the game-over card again under this dialog.
+  scheduleFrame(() => { if (document.getElementById("rematchDealerModal")) hideGameOverOverlay(); });
 }
 
 function handleGameOverRematchClick(e) {

@@ -4,11 +4,11 @@ From the app scan on 2026-11-13 (tests, a hands-on pass at phone size, and a cod
 
 **Status key:** ✅ fixed · 🔧 in progress · ⬜ open
 
-**Progress:** 3 of 20 fixed (last updated 2026-11-14)
+**Progress:** 4 of 20 fixed (last updated 2026-11-14)
 
 | Area | Fixed | Open |
 | --- | --- | --- |
-| Scoring | 1 | 1 |
+| Scoring | 2 | 0 |
 | Cloud sync | 2 | 4 |
 | Voice and photo (experimental) | 0 | 6 |
 | Game flow | 0 | 4 |
@@ -21,7 +21,7 @@ How each bug was confirmed is noted in its row: **browser** (reproduced by hand 
 | # | Status | Severity | Bug | Confirmed | Where |
 | --- | --- | --- | --- | --- | --- |
 | 1 | ✅ | High | Typing 0 for the **bidding** team opens "Did the Bidding team score 180 or 360?" and either choice gives the bidder those points. The live preview shows the opposite (bidder set). | browser | `js/modules/08-game-actions-logic.js` `submitRoundFromCurrentInputs` |
-| 2 | ⬜ | Medium | Rematch saves the finished game with a guessed "Us" pair (seats 1 & 3) when a dealing order exists but teams were never named. Save and Freeze ask; Rematch does not, so the win lands on the wrong players half the time. | read (a test asserts it) | `js/modules/08-game-actions-logic.js` `startRematchWithFirstDealer` |
+| 2 | ✅ | Medium | Rematch saves the finished game with a guessed "Us" pair (seats 1 & 3) when a dealing order exists but teams were never named. Save and Freeze ask; Rematch does not, so the win lands on the wrong players half the time. | read (a test asserts it) | `js/modules/08-game-actions-logic.js` `startRematchWithFirstDealer` |
 
 ## Cloud sync
 
@@ -66,6 +66,7 @@ How each bug was confirmed is noted in its row: **browser** (reproduced by hand 
 ### 2026-11-14
 
 - **#1 Zero points for the bidding team.** The 180/360 choice now goes to the team opposite the one that got 0, and the dialog names that team ("Did Ann & Bo score 180 or 360?"). Checked in the browser for both sides, plus Cancel. Test: `a 0 gives 180 or 360 to the other team, whichever team the 0 was entered for`.
+- **#2 Rematch guessing the "Us" pair.** With a dealing order but no team names, Rematch now opens the same "Which pair is Us?" question Save uses, then goes straight on to Choose First Dealer (no name form, since the four players are already known). Nothing is saved until the pair is chosen, and Cancel leaves the finished game on screen. Voice "rematch, X deals first" asks the same question instead of saving. The internal win/loss tally, which had to assume seats 1 & 3 when the game ended, now moves to the chosen pairs (also when names are entered through Save). Checked in the browser at phone size for both pairs, Cancel, a rematch with named teams, and Save. Test: `a rematch asks which pair is "Us" instead of guessing it from the dealing order`.
 - **#3 Deleted games coming back.** Deleting a game or resuming a frozen one now writes a small synced record (`removedGames`: list, game key, time). The cloud merge joins the records of both sides and drops a listed game from both, unless the game was stamped later (restored from Recently Deleted). Records expire after 400 days and are capped at 500. No Firestore rule change was needed. Checked in the browser that the records are written; the merge itself is covered by simulator tests only, because the local preview has no Firebase.
 - **#4 Failed merge overwriting the cloud.** No list is uploaded until this session has merged with the cloud copy. If the startup merge failed, the next save (or the browser coming back online) runs the merge first and uploads the joined result. Delete All Game Data still writes straight through. Covered by simulator tests only.
 

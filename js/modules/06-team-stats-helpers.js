@@ -150,7 +150,8 @@ function applyTeamResultDelta(teamsObj, { usPlayers, demPlayers, usDisplay, demD
   return true;
 }
 
-function updateTeamsStatsOnGameEnd(winner) {
+// direction -1 takes back a result counted earlier for the teams as the state names them now.
+function updateTeamsStatsOnGameEnd(winner, direction = 1) {
   const teams = getTeamsObject();
   const usTeam = getTeamSnapshotForSide(state, "us");
   const demTeam = getTeamSnapshotForSide(state, "dem");
@@ -160,8 +161,20 @@ function updateTeamsStatsOnGameEnd(winner) {
     usDisplay: usTeam.display,
     demDisplay: demTeam.display,
     winner,
-  }, 1);
+  }, direction);
   if (updated) setTeamsObject(teams);
+}
+// Names the two teams of the game on the scoreboard. A finished game was already counted for whoever the
+// teams were taken to be when it ended (possibly the dealing-order guess), so that result moves with the
+// names; Undo and History edits take it back under whatever identity the state holds at that moment.
+function setCurrentGameTeams(usPlayers, demPlayers) {
+  const counted = state.gameOver && state.rounds.length && (state.winner === "us" || state.winner === "dem");
+  if (counted) updateTeamsStatsOnGameEnd(state.winner, -1);
+  updateState({ usPlayers, demPlayers });
+  addTeamIfNotExists(state.usPlayers, state.usTeamName);
+  addTeamIfNotExists(state.demPlayers, state.demTeamName);
+  if (counted) updateTeamsStatsOnGameEnd(state.winner);
+  saveCurrentGameState();
 }
 function recalcTeamsStats() {
   const teams = getTeamsObject();
