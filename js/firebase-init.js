@@ -336,6 +336,123 @@ function joinGameLists(first, second) {
   return Array.from(uniqueMap.values());
 }
 
+// Everything that syncs lives in one Firestore document, and a document tops
+// out at 1 MiB. The finished-games list is nearly all of it (2-3 KB a game), so
+// an account reached the limit somewhere past 370 games and every later write
+// failed. The list is uploaded gzipped in SAVED_GAMES_PACKED_FIELD instead,
+// about an eighth of the size, as a list of strings:
+//   ["gzip-json-v1;<delete marker the pack was written under>", "<base64>", "<base64>", ...]
+// The base64 is cut into short pieces because Firestore indexes every value,
+// and an indexed value is limited to 1,500 bytes.
+// The plain "savedGames" field stays readable. App versions from before this
+// (and browsers without CompressionStream) still write it; the merge joins
+// those games into the pack and empties the field.
+const SAVED_GAMES_KEY = "savedGames";
+const SAVED_GAMES_PACKED_FIELD = "savedGamesPacked";
+const SAVED_GAMES_PACK_PREFIX = "gzip-json-v1";
+const SAVED_GAMES_PACK_PIECE_LENGTH = 1000;
+
+// Set when Firestore refuses, as invalid, a write that carried the pack. The
+// rest of the session then syncs the plain list, exactly as before packing.
+let savedGamesPackingRefused = false;
+
+function canPackSavedGames() {
+  return !savedGamesPackingRefused
+    && typeof CompressionStream === "function"
+    && typeof DecompressionStream === "function"
+    && typeof Blob === "function"
+    && typeof Response === "function"
+    && typeof btoa === "function"
+    && typeof atob === "function";
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let start = 0; start < bytes.length; start += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(start, start + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function packSavedGames(games, resetMarker) {
+  const stream = new Blob([JSON.stringify(games)]).stream().pipeThrough(new CompressionStream("gzip"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  const marker = typeof resetMarker === "string" ? resetMarker : "";
+  const base64 = bytesToBase64(bytes);
+  const pack = [`${SAVED_GAMES_PACK_PREFIX};${marker}`];
+  for (let start = 0; start < base64.length; start += SAVED_GAMES_PACK_PIECE_LENGTH) {
+    pack.push(base64.slice(start, start + SAVED_GAMES_PACK_PIECE_LENGTH));
+  }
+  return pack;
+}
+
+// { present, games, resetAt }. A pack this version cannot read throws, which
+// fails the merge: nothing is uploaded over games that could not be read.
+async function unpackSavedGames(packed) {
+  if (packed === null || packed === undefined) return { present: false, games: [], resetAt: "" };
+  const pieces = Array.isArray(packed) && packed.every(piece => typeof piece === "string") ? packed : [];
+  const header = (pieces[0] || "").split(";");
+  if (pieces.length < 2 || header.length !== 2 || header[0] !== SAVED_GAMES_PACK_PREFIX) {
+    throw new Error("The cloud copy of the saved games is in a format this version cannot read.");
+  }
+  const bytes = base64ToBytes(pieces.slice(1).join(""));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const games = JSON.parse(await new Response(stream).text());
+  if (!Array.isArray(games)) throw new Error("The cloud copy of the saved games is damaged.");
+  return { present: true, games, resetAt: header[1] };
+}
+
+// Turns the fields of a write into what the cloud document stores. The plain
+// field is left as it is: only the merge, which has just joined its games in,
+// empties it.
+async function toCloudFields(fields, resetMarker) {
+  if (!Object.prototype.hasOwnProperty.call(fields, SAVED_GAMES_KEY)) return fields;
+  const games = fields[SAVED_GAMES_KEY];
+  // A cleared list is cleared in both places.
+  if (games === null) return { ...fields, [SAVED_GAMES_PACKED_FIELD]: null };
+  if (!Array.isArray(games) || !canPackSavedGames()) return fields;
+  const { [SAVED_GAMES_KEY]: plainGames, ...otherFields } = fields;
+  return { ...otherFields, [SAVED_GAMES_PACKED_FIELD]: await packSavedGames(games, resetMarker) };
+}
+
+// Every write of the cloud document goes through here. A refused write that
+// carried the pack switches packing off, and the caller tries once more with
+// the plain list. A list too large even when packed fails that retry as well.
+async function writeCloudFields(docRef, fields) {
+  try {
+    await setDoc(docRef, fields, { merge: true });
+  } catch (error) {
+    if (error?.code === "invalid-argument" && Array.isArray(fields[SAVED_GAMES_PACKED_FIELD])) {
+      savedGamesPackingRefused = true;
+    }
+    throw error;
+  }
+}
+
+// Firestore refuses a document (or a single field) past 1 MiB with
+// "invalid-argument" and a message that names the size in bytes.
+function isCloudDocumentFullError(error) {
+  return error?.code === "invalid-argument"
+    && /\bbytes\b|maximum (allowed )?size|too large|longer than|exceeds/i.test(String(error?.message || ""));
+}
+
+// Said once per session, and only to someone who signed in: an anonymous
+// session never chose cloud sync. The games themselves are safe on the device.
+let cloudDocumentFullReported = false;
+function reportCloudDocumentFull() {
+  trackSyncFailure("other", "document_too_large");
+  if (cloudDocumentFullReported || !auth?.currentUser || auth.currentUser.isAnonymous) return;
+  cloudDocumentFullReported = true;
+  window.showWarningToast?.("Cloud sync is full. New games stay on this device.");
+}
+
 // Rule settings follow the account the first time a device joins it. A device
 // holds a value for these as soon as Settings has been used once (older
 // versions stored the defaults on every launch), so "local wins" would put a
@@ -524,6 +641,11 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   const docSnap = await getDoc(docRef);
   if (auth?.currentUser?.uid !== userId) return false;
   let firestoreData = docSnap.exists() ? docSnap.data() : {};
+  // The cloud keeps finished games packed (see SAVED_GAMES_PACKED_FIELD).
+  const packsSavedGames = canPackSavedGames();
+  const cloudPack = packsSavedGames ? await unpackSavedGames(firestoreData[SAVED_GAMES_PACKED_FIELD]) : null;
+  if (auth?.currentUser?.uid !== userId) return false;
+  delete firestoreData[SAVED_GAMES_PACKED_FIELD];
   const localRawSnapshot = captureCloudSyncStorageSnapshot();
   let localData = {};
 
@@ -535,6 +657,21 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   const cloudResetMarker = typeof firestoreData[GAME_DATA_RESET_FIELD] === "string"
     ? firestoreData[GAME_DATA_RESET_FIELD]
     : "";
+  if (cloudPack) {
+    // An older app version clears the plain list on "Delete All Game Data" but
+    // does not know the pack, so a pack written before the cloud's latest
+    // delete only keeps the games stamped after it.
+    const cloudResetTimeForPack = parseGameDataResetTime(cloudResetMarker);
+    const packedGames = parseGameDataResetTime(cloudPack.resetAt) < cloudResetTimeForPack
+      ? cloudPack.games.filter(game => getGameDataTime(game) > cloudResetTimeForPack)
+      : cloudPack.games;
+    // The rest of the merge works on one plain list: the pack, plus whatever
+    // an older app version has uploaded to the plain field since.
+    const plainGames = Array.isArray(firestoreData[SAVED_GAMES_KEY]) ? firestoreData[SAVED_GAMES_KEY] : [];
+    if (packedGames.length || plainGames.length) {
+      firestoreData[SAVED_GAMES_KEY] = joinGameLists(packedGames, plainGames);
+    }
+  }
   const localResetMarker = getLocalGameDataResetMarker(userId);
   // null: this device has never synced with this account.
   const firstMergeWithAccount = localResetMarker === null;
@@ -611,17 +748,29 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   // dropped for predating a delete is cleared there as well.
   const cloudSnapshot = docSnap.exists() ? docSnap.data() : {};
   const payload = {};
+  const mergedSavedGames = mergedData[SAVED_GAMES_KEY];
+  const packMergedSavedGames = Boolean(cloudPack) && Array.isArray(mergedSavedGames);
   Object.entries(mergedData).forEach(([key, value]) => {
+    if (packMergedSavedGames && key === SAVED_GAMES_KEY) return; // Packed below.
     if (JSON.stringify(value) !== JSON.stringify(cloudSnapshot[key])) payload[key] = value;
   });
+  if (packMergedSavedGames) {
+    if (!cloudPack.present || JSON.stringify(mergedSavedGames) !== JSON.stringify(cloudPack.games)) {
+      payload[SAVED_GAMES_PACKED_FIELD] = await packSavedGames(mergedSavedGames, resetMarker);
+    }
+    // Games an older app version uploaded to the plain field are in the pack now.
+    if (Array.isArray(cloudSnapshot[SAVED_GAMES_KEY]) && cloudSnapshot[SAVED_GAMES_KEY].length) {
+      payload[SAVED_GAMES_KEY] = null;
+    }
+  }
   if (resetMarker !== cloudResetMarker) payload[GAME_DATA_RESET_FIELD] = resetMarker;
   if (auth?.currentUser?.uid !== userId) return false;
   if (Object.keys(payload).length) {
-    await setDoc(docRef, {
+    await writeCloudFields(docRef, {
       ...payload,
       [GAME_DATA_RESET_FIELD]: resetMarker,
       timestamp: new Date().toISOString(),
-    }, { merge: true });
+    });
   }
   if (auth?.currentUser?.uid !== userId) return false;
   rememberGameDataResetMarker(userId, resetMarker);
@@ -707,7 +856,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
       }
     });
     Object.assign(latestLocalData, changedLocalData);
-    await setDoc(docRef, latestLocalData, { merge: true });
+    await writeCloudFields(docRef, await toCloudFields(latestLocalData, resetMarker));
     if (auth?.currentUser?.uid !== userId) return false;
   }
 
@@ -741,19 +890,23 @@ async function mergeUserDataForCurrentUser(user) {
   const mergePromise = (async () => {
     try {
       for (let attempt = 1; ; attempt += 1) {
+        const packedThisAttempt = canPackSavedGames();
         try {
           const merged = await window.mergeLocalStorageWithFirestore(user);
           if (merged && auth?.currentUser?.uid === userId) lastMergedAuthUid = userId;
           return merged;
         } catch (error) {
           // Another device deleted all game data between this merge's read and
-          // write; one fresh merge picks up that delete.
-          if (!isStaleGameDataWrite(error) || attempt >= 2) throw error;
+          // write; one fresh merge picks up that delete. A merge whose packed
+          // write was refused runs once more with the plain list.
+          const packingJustRefused = packedThisAttempt && !canPackSavedGames();
+          if ((!isStaleGameDataWrite(error) && !packingJustRefused) || attempt >= 2) throw error;
         }
       }
     } catch (error) {
       console.error("Firestore merge error:", error);
       trackSyncFailure("other", "merge_failed");
+      if (isCloudDocumentFullError(error)) reportCloudDocumentFull();
       return false;
     } finally {
       firebaseMergePromises.delete(userId);
@@ -885,15 +1038,20 @@ async function flushPendingSync() {
     : agreedResetMarker ?? "";
   values.delete(GAME_DATA_RESET_FIELD);
   try {
-    await setDoc(
-      doc(db, "rookData", user.uid),
-      {
-        ...Object.fromEntries(values),
-        [GAME_DATA_RESET_FIELD]: resetMarker,
-        timestamp: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    const docRef = doc(db, "rookData", user.uid);
+    const buildFields = async () => ({
+      ...(await toCloudFields(Object.fromEntries(values), resetMarker)),
+      [GAME_DATA_RESET_FIELD]: resetMarker,
+      timestamp: new Date().toISOString(),
+    });
+    const packedThisWrite = canPackSavedGames();
+    try {
+      await writeCloudFields(docRef, await buildFields());
+    } catch (error) {
+      // The packed write was refused just now: send the plain list instead.
+      if (!packedThisWrite || canPackSavedGames()) throw error;
+      await writeCloudFields(docRef, await buildFields());
+    }
     const nextAgreedResetMarker = laterGameDataResetMarker(agreedResetMarker ?? "", resetMarker);
     if (nextAgreedResetMarker !== agreedResetMarker
         || readGameDataResetMarkers()?.lastUid !== user.uid) {
@@ -904,6 +1062,7 @@ async function flushPendingSync() {
   } catch (error) {
     console.error("Firestore sync error:", error);
     keys.forEach(key => trackSyncFailure(key, "write_failed"));
+    if (isCloudDocumentFullError(error)) reportCloudDocumentFull();
     // The local copy still holds these values; a fresh merge applies the newer
     // delete to them and uploads whatever survives it.
     if (isStaleGameDataWrite(error) && auth?.currentUser?.uid === user.uid) {

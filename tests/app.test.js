@@ -5987,7 +5987,7 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
   assert.equal(renderCount, 0);
 });
 
-function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {}, exposeMerge = false, failReads = null } = {}) {
+function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {}, exposeMerge = false, failReads = null, contextExtras = {}, anonymous = false } = {}) {
   const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
   const storage = {
     getItem: key => (storageValues.has(key) ? storageValues.get(key) : null),
@@ -6021,9 +6021,12 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
       if (windowForFirebase.__rejectWrite?.()) {
         throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
       }
+      const writeError = windowForFirebase.__writeError?.(payload);
+      if (writeError) throw writeError;
       writePayloads.push(structuredClone(payload));
       windowForFirebase.__afterWrite?.(payload);
     },
+    ...contextExtras,
   };
   windowForFirebase.window = windowForFirebase;
   const instrumentedSource = firebaseSource
@@ -6031,7 +6034,7 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
       "const reportedSyncFailures = new Set();",
       [
         "db = {};",
-        "auth = { currentUser: { uid: 'test-user' } };",
+        `auth = { currentUser: { uid: 'test-user', isAnonymous: ${anonymous ? 'true' : 'false'} } };`,
         "doc = (_db, _collection, uid) => ({ uid });",
         "getDoc = globalThis.__getDoc;",
         "setDoc = globalThis.__setDoc;",
@@ -7047,6 +7050,7 @@ test('a cloud delete clears every game key in the same write and replaces queued
   assert.ok(timestamp);
   assert.deepEqual(payload, {
     savedGames: null,
+    savedGamesPacked: null, // the packed copy of the list goes with it
     proModeEnabled: true,
     activeGameState: null,
     freezerGames: null,
@@ -7884,4 +7888,508 @@ test('Delete All Game Data made while the startup merge is writing is not undone
   assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
   assert.equal(writePayloads.at(-1).savedGames, null);
   assert.equal(storage.getItem('savedGames'), null);
+});
+
+// --- Bug list #7: the cloud document's 1 MiB limit ---
+// What a browser provides for packing; the plain loader above leaves these out,
+// so every other sync test also covers a browser without CompressionStream.
+const SAVED_GAMES_PACKING_GLOBALS = { CompressionStream, DecompressionStream, Blob, Response, btoa, atob };
+const FIRESTORE_DOCUMENT_LIMIT = 1048576;
+
+function unpackSavedGamesForTests(packed) {
+  assert.ok(Array.isArray(packed) && packed.length >= 2, 'the pack is a list: a header, then base64 pieces');
+  // Firestore indexes every value, and an indexed value may not pass 1,500 bytes.
+  packed.forEach(piece => assert.ok(typeof piece === 'string' && Buffer.byteLength(piece) <= 1000));
+  const [prefix, resetAt] = packed[0].split(';');
+  assert.equal(prefix, 'gzip-json-v1');
+  const data = packed.slice(1).join('');
+  return { resetAt, games: JSON.parse(require('node:zlib').gunzipSync(Buffer.from(data, 'base64')).toString('utf8')) };
+}
+
+function packSavedGamesForTests(games, resetAt = '') {
+  const data = require('node:zlib').gzipSync(JSON.stringify(games)).toString('base64');
+  return [`gzip-json-v1;${resetAt}`, ...data.match(/.{1,1000}/g)];
+}
+
+// A finished game the size the app really stores (2-3 KB).
+function buildSizedSavedGame(index) {
+  const players = [`Player${index % 7}A`, `Player${index % 5}B`, `Player${index % 3}C`, `Player${index % 11}D`];
+  const totals = { us: 0, dem: 0 };
+  const rounds = Array.from({ length: 12 }, (_, roundIndex) => {
+    const usPoints = ((index * 7 + roundIndex * 35) % 37) * 5;
+    const demPoints = 180 - usPoints;
+    totals.us += usPoints;
+    totals.dem += demPoints;
+    return { roundIndex, biddingTeam: roundIndex % 2 ? 'us' : 'dem', bidAmount: 120 + (roundIndex % 6) * 5, usPoints, demPoints, runningTotals: { ...totals }, dealer: players[roundIndex % 4] };
+  });
+  return {
+    usTeamName: `${players[0]} & ${players[2]}`, demTeamName: `${players[1]} & ${players[3]}`,
+    usPlayers: [players[0], players[2]], demPlayers: [players[1], players[3]],
+    usTeamKey: `${players[0]}||${players[2]}`.toLowerCase(), demTeamKey: `${players[1]}||${players[3]}`.toLowerCase(),
+    rounds, finalScore: { ...totals }, startingTotals: { us: 0, dem: 0 }, winner: totals.us > totals.dem ? 'us' : 'dem', victoryMethod: 'Won on Bid',
+    timestamp: new Date(Date.UTC(2025, 0, 1) + index * 3600000).toISOString(), durationMs: 2400000 + index, timerSkippedMs: 0,
+    dealers: players, misdealCount: 0, misdealDealers: [], playerStats: {},
+  };
+}
+
+// Applies writes to the fake cloud document the way setDoc(merge) does, and
+// refuses one that would take the document past Firestore's limit.
+function enforceCloudDocumentLimit(windowForFirebase, cloudData) {
+  windowForFirebase.__writeError = payload => {
+    const size = Buffer.byteLength(JSON.stringify({ ...cloudData, ...payload }));
+    return size > FIRESTORE_DOCUMENT_LIMIT
+      ? Object.assign(new Error(`Document cannot be written because its size (${size} bytes) exceeds the maximum allowed size of 1,048,576 bytes.`), { code: 'invalid-argument' })
+      : null;
+  };
+  windowForFirebase.__afterWrite = payload => Object.assign(cloudData, structuredClone(payload));
+}
+
+test('saved games sync packed, so a list past the 1 MiB document limit still uploads and reads back whole', async () => {
+  const games = Array.from({ length: 520 }, (_, index) => buildSizedSavedGame(index));
+  assert.ok(Buffer.byteLength(JSON.stringify(games)) > FIRESTORE_DOCUMENT_LIMIT, 'the fixture is past the document limit as plain JSON');
+  // An older app version uploaded the first 300 games as a plain list.
+  const cloudData = { savedGames: games.slice(0, 300), proModeEnabled: true };
+  const first = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify(games.slice(250))]]),
+    cloudData,
+    exposeMerge: true,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  enforceCloudDocumentLimit(first.windowForFirebase, cloudData);
+
+  assert.equal(await first.windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), true);
+  assert.equal(first.writePayloads.length, 1);
+  const written = first.writePayloads[0];
+  assert.equal(written.savedGames, null, 'the plain list an older version wrote is emptied once its games are packed');
+  const packed = unpackSavedGamesForTests(written.savedGamesPacked);
+  assert.equal(packed.games.length, 520);
+  assert.deepEqual(packed.games, JSON.parse(first.storage.getItem('savedGames')));
+  assert.ok(Buffer.byteLength(JSON.stringify(written.savedGamesPacked)) * 4 < Buffer.byteLength(JSON.stringify(packed.games)), 'packed is under a quarter of the plain size');
+  assert.ok(Buffer.byteLength(JSON.stringify(cloudData)) < FIRESTORE_DOCUMENT_LIMIT / 2);
+
+  // A save after the merge uploads the packed list and leaves the plain field alone.
+  const withNewGame = [...packed.games, buildSizedSavedGame(900)];
+  first.storage.setItem('savedGames', JSON.stringify(withNewGame));
+  assert.equal(await first.windowForFirebase.syncToFirestore('savedGames', withNewGame), true);
+  const saveWrite = first.writePayloads.at(-1);
+  assert.equal('savedGames' in saveWrite, false);
+  assert.equal(unpackSavedGamesForTests(saveWrite.savedGamesPacked).games.length, 521);
+
+  // A second device with nothing stored gets every game and has nothing to upload.
+  const second = loadFirebaseInitForTests({ storageValues: new Map(), cloudData, contextExtras: SAVED_GAMES_PACKING_GLOBALS });
+  assert.equal(await second.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(second.storage.getItem('savedGames')), withNewGame);
+  assert.equal(second.storage.getItem('proModeEnabled'), 'true');
+  assert.equal(second.writePayloads.length, 0);
+});
+
+test('games an older app version uploads after the pack exists are joined into it', async () => {
+  const packedGames = [buildSizedSavedGame(1), buildSizedSavedGame(2)];
+  const fromOldVersion = [buildSizedSavedGame(2), buildSizedSavedGame(3)];
+  const cloudData = { savedGamesPacked: packSavedGamesForTests(packedGames), savedGames: fromOldVersion };
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([buildSizedSavedGame(1)])]]),
+    cloudData,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  const expected = [buildSizedSavedGame(1), buildSizedSavedGame(2), buildSizedSavedGame(3)];
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), expected);
+  assert.deepEqual(unpackSavedGamesForTests(writePayloads[0].savedGamesPacked).games, expected);
+  assert.equal(writePayloads[0].savedGames, null);
+});
+
+test('an unchanged packed list costs no write, and removals and mid-merge saves reach the pack', async () => {
+  const kept = buildSizedSavedGame(1);
+  const removed = buildSizedSavedGame(2);
+  const cloudOnly = buildSizedSavedGame(3);
+  const cloudData = { savedGamesPacked: packSavedGamesForTests([kept, removed, cloudOnly]) };
+  const unchanged = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([kept, removed, cloudOnly])]]),
+    cloudData,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  assert.equal(await unchanged.windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(unchanged.writePayloads.length, 0);
+
+  // This device deleted one game; a new one is saved while the merge is writing.
+  const justSaved = buildSizedSavedGame(4);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['savedGames', JSON.stringify([kept])],
+      ['removedGames', JSON.stringify([{ list: 'savedGames', key: removed.timestamp, at: Date.now() }])],
+    ]),
+    cloudData,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  let saved = false;
+  windowForFirebase.__afterWrite = () => {
+    if (saved) return;
+    saved = true;
+    storage.setItem('savedGames', JSON.stringify([kept, justSaved]));
+  };
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.equal(writePayloads.length, 2);
+  assert.deepEqual(unpackSavedGamesForTests(writePayloads[0].savedGamesPacked).games, [kept, cloudOnly]);
+  assert.equal('savedGames' in writePayloads[1], false);
+  assert.deepEqual(unpackSavedGamesForTests(writePayloads[1].savedGamesPacked).games, [kept, justSaved, cloudOnly]);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [kept, justSaved, cloudOnly]);
+});
+
+test('Delete All Game Data clears the packed list, also when an older app version made the delete', async () => {
+  const deleter = loadFirebaseInitForTests({ storageValues: new Map(), contextExtras: SAVED_GAMES_PACKING_GLOBALS });
+  assert.equal(await deleter.windowForFirebase.syncGameDataReset('2026-11-10T00:00:00.000Z'), true);
+  assert.equal(deleter.writePayloads[0].savedGames, null);
+  assert.equal(deleter.writePayloads[0].savedGamesPacked, null);
+  assert.equal(deleter.writePayloads[0].gameDataResetAt, '2026-11-10T00:00:00.000Z');
+
+  // An older version cleared only the plain list. The pack predates that delete,
+  // so only the game stamped after it (restored on another device) survives.
+  const beforeDelete = { timestamp: '2026-11-01T10:00:00.000Z' };
+  const afterDelete = { timestamp: '2026-11-12T10:00:00.000Z' };
+  const cloudData = {
+    savedGames: null,
+    savedGamesPacked: packSavedGamesForTests([beforeDelete, afterDelete], ''),
+    gameDataResetAt: '2026-11-10T00:00:00.000Z',
+  };
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([
+      ['savedGames', JSON.stringify([beforeDelete])],
+      ['localOnly:gameDataResetMarkers', JSON.stringify({ agreed: { 'test-user': '' }, lastUid: 'test-user' })],
+    ]),
+    cloudData,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [afterDelete]);
+  const repacked = unpackSavedGamesForTests(writePayloads[0].savedGamesPacked);
+  assert.deepEqual(repacked.games, [afterDelete]);
+  assert.equal(repacked.resetAt, '2026-11-10T00:00:00.000Z');
+});
+
+test('a packed list this version cannot read stops the merge instead of being overwritten', async () => {
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([buildSizedSavedGame(1)])]]),
+    cloudData: { savedGamesPacked: ['gzip-json-v2;', 'AAAA'] },
+    exposeMerge: true,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  assert.equal(await windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), false);
+  assert.equal(await windowForFirebase.syncToFirestore('savedGames', [buildSizedSavedGame(1), buildSizedSavedGame(2)]), false);
+  assert.equal(writePayloads.length, 0);
+  assert.equal(JSON.parse(storage.getItem('savedGames')).length, 1);
+});
+
+test('a browser that cannot pack keeps the plain list and never touches the pack', async () => {
+  const packedGames = [buildSizedSavedGame(1)];
+  const mine = buildSizedSavedGame(2);
+  const { windowForFirebase, storage, writePayloads } = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([mine])]]),
+    cloudData: { savedGamesPacked: packSavedGamesForTests(packedGames), savedGames: null },
+  });
+  assert.equal(await windowForFirebase.mergeLocalStorageWithFirestore({ uid: 'test-user' }), true);
+  assert.deepEqual(writePayloads[0].savedGames, [mine]);
+  assert.equal('savedGamesPacked' in writePayloads[0], false);
+  assert.deepEqual(JSON.parse(storage.getItem('savedGames')), [mine]);
+});
+
+test('a cloud copy that is full says so once to a signed-in player and never to an anonymous session', async () => {
+  const games = Array.from({ length: 520 }, (_, index) => buildSizedSavedGame(index));
+  const run = async ({ anonymous }) => {
+    const toasts = [];
+    const cloudData = {};
+    // No CompressionStream here, so the list goes up plain and does not fit.
+    const loaded = loadFirebaseInitForTests({
+      storageValues: new Map([['savedGames', JSON.stringify(games)]]),
+      cloudData,
+      exposeMerge: true,
+      anonymous,
+      windowExtras: { showWarningToast: message => toasts.push(message) },
+    });
+    enforceCloudDocumentLimit(loaded.windowForFirebase, cloudData);
+    assert.equal(await loaded.windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), false);
+    assert.equal(await loaded.windowForFirebase.syncToFirestore('proModeEnabled', true), false);
+    assert.equal(loaded.writePayloads.length, 0);
+    return toasts;
+  };
+  assert.deepEqual(await run({ anonymous: false }), ['Cloud sync is full. New games stay on this device.']);
+  assert.deepEqual(await run({ anonymous: true }), []);
+
+  // Other write failures (offline, permissions) stay quiet.
+  const toasts = [];
+  const offline = loadFirebaseInitForTests({
+    storageValues: new Map(),
+    windowExtras: { showWarningToast: message => toasts.push(message) },
+  });
+  offline.windowForFirebase.__writeError = () => Object.assign(new Error('Failed to reach the backend.'), { code: 'unavailable' });
+  assert.equal(await offline.windowForFirebase.syncToFirestore('proModeEnabled', true), false);
+  assert.deepEqual(toasts, []);
+});
+
+// --- Bug list #10: voice fields left null or "" are not zeros ---
+async function withVoiceGameForTests(run) {
+  resetState();
+  setLocalStorage('experimentalFeaturesEnabled', true);
+  setLocalStorage('localOnly:voiceSpokenReplies', false);
+  resetGame();
+  updateState({
+    ...DEFAULT_STATE, rounds: [], undoneRounds: [],
+    usPlayers: ['Alice', 'Carol'], demPlayers: ['Bob', 'Dan'], usTeamName: 'Alice & Carol', demTeamName: 'Bob & Dan',
+    dealers: ['Alice', 'Bob', 'Carol', 'Dan'],
+  });
+  try {
+    await run();
+  } finally {
+    getPendingConfirmationForTests().cancel?.();
+    clearVoiceScoreConversation();
+    resetGame();
+    resetState();
+  }
+}
+
+const voiceActForTests = (actions, extra = {}) => applyVoiceScorePlan({ status: 'execute', summary: 'Done.', actions, ...extra });
+
+test('the voice planner\'s empty fields are dropped on the server and in the app', () => {
+  const action = { type: 'editRound', roundNumber: 2, bidAmount: null, usTotal: '', demTotal: '  ', index: undefined };
+  const zeroes = { type: 'editRound', roundNumber: 1, usTotal: 0, demTotal: '0' };
+  const presets = { type: 'setBidPresets', presets: [120, null, '', 130] };
+  [
+    voiceScoreCommandHandler.normalizePlan({ status: 'execute', actions: [action, zeroes, presets] }),
+    normalizeVoiceScorePlan({ status: 'execute', actions: [action, zeroes, presets] }),
+  ].forEach(plan => {
+    assert.deepEqual(plan.actions[0], { type: 'editRound', roundNumber: 2 });
+    assert.deepEqual(plan.actions[1], zeroes, 'a real zero is a value and stays');
+    assert.deepEqual(plan.actions[2], { type: 'setBidPresets', presets: [120, 130] });
+  });
+});
+
+test('a voice hand, correction or bid with a missing number is refused instead of recorded as 0', async () => {
+  await withVoiceGameForTests(async () => {
+    const state = getStateForTests;
+    for (const blank of [null, '', undefined, false]) {
+      assert.equal(await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: blank }]), false);
+      assert.equal(state().rounds.length, 0, `points ${JSON.stringify(blank)} records no hand`);
+      assert.match(renderVoiceScoreControls(), /Say how many points were made\./);
+      assert.equal(await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: blank, points: 140 }]), false);
+      assert.match(renderVoiceScoreControls(), /Say the bid amount\./);
+      assert.equal(await voiceActForTests([{ type: 'selectBid', biddingTeam: 'us', bidAmount: blank }]), false);
+      assert.equal(state().biddingTeam, '');
+    }
+    assert.equal(state().rounds.length, 0);
+
+    assert.equal(await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]), true);
+    assert.equal(await voiceActForTests([{ type: 'replaceLastRound', biddingTeam: 'us', bidAmount: 130, points: null }]), false);
+    assert.equal(state().rounds.length, 1);
+    assert.equal(state().rounds[0].usPoints, 140, 'the hand being corrected is left as it was');
+    assert.deepEqual(state().undoneRounds, []);
+
+    // A spoken zero is still a zero: the bidders took no points and are set.
+    assert.equal(await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'dem', bidAmount: 125, points: 0 }]), true);
+    assert.equal(state().rounds[1].demPoints, -125);
+  });
+});
+
+test('a voice round edit changes only the totals that were given', async () => {
+  await withVoiceGameForTests(async () => {
+    const state = getStateForTests;
+    await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]);
+    const before = structuredClone(state().rounds[0]);
+
+    assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: 1, bidAmount: null, usTotal: null, demTotal: '' }]), false);
+    assert.deepEqual(state().rounds[0], before, 'nothing given, nothing changed');
+    assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: null, usTotal: 200 }]), false);
+    assert.deepEqual(state().rounds[0], before);
+
+    assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: 1, bidAmount: null, usTotal: null, demTotal: 60 }]), true);
+    assert.equal(state().rounds[0].runningTotals.dem, 60);
+    assert.equal(state().rounds[0].runningTotals.us, before.runningTotals.us, 'the total that was not given is not zeroed');
+    assert.equal(state().rounds[0].bidAmount, before.bidAmount);
+
+    assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: 1, demTotal: 0 }]), true);
+    assert.equal(state().rounds[0].runningTotals.dem, 0, 'a spoken zero is applied');
+  });
+});
+
+test('voice does not pick the first saved game, start a paper game, or change a setting from an empty field', async () => {
+  await withVoiceGameForTests(async () => {
+    setLocalStorage('savedGames', [{ timestamp: '2026-11-01T10:00:00.000Z', rounds: [{}], finalScore: { us: 500, dem: 100 } }], { sync: false });
+    setLocalStorage('freezerGames', [{ timestamp: '2026-11-02T10:00:00.000Z', rounds: [{}] }], { sync: false });
+    for (const index of [null, '', false]) {
+      assert.equal(await voiceActForTests([{ type: 'gameLibraryAction', gameAction: 'delete', gameType: 'completed', index }]), false);
+      assert.equal(await voiceActForTests([{ type: 'gameLibraryAction', gameAction: 'resume', gameType: 'freezer', index }]), false);
+      assert.equal(getPendingConfirmationForTests().confirm, null, 'no delete or resume dialog opens');
+      assert.match(renderVoiceScoreControls(), /Say which game number to use\./);
+    }
+
+    assert.equal(await voiceActForTests([{ type: 'startPaperGame', usScore: 250, demScore: null }]), false);
+    assert.equal(await voiceActForTests([{ type: 'startPaperGame', usScore: '', demScore: 100 }]), false);
+    assert.deepEqual(getStateForTests().startingTotals, { us: 0, dem: 0 });
+
+    setLocalStorage('rookMustWinByBid', true, { sync: false });
+    setLocalStorage('tableTalkPenaltyType', 'loseBid', { sync: false });
+    setLocalStorage('tableTalkPenaltyPoints', '150', { sync: false });
+    for (const key of ['mustWinByBid', 'tableTalkPenaltyType', 'tableTalkPenaltyPoints']) {
+      for (const value of [null, '', undefined]) {
+        assert.equal(await voiceActForTests([{ type: 'setSetting', key, value }]), false);
+        assert.match(renderVoiceScoreControls(), /Say what to change that setting to\./);
+      }
+    }
+    assert.equal(getLocalStorage('rookMustWinByBid', false), true);
+    assert.equal(getLocalStorage('tableTalkPenaltyType', ''), 'loseBid');
+    assert.equal(String(getLocalStorage('tableTalkPenaltyPoints', '')), '150');
+    // Given values still apply.
+    assert.equal(await voiceActForTests([{ type: 'setSetting', key: 'mustWinByBid', value: false }]), true);
+    assert.equal(getLocalStorage('rookMustWinByBid', true), false);
+  });
+});
+
+// --- Bug list #11: voice asks before it replaces a game that is under way ---
+test('a voice paper game asks before replacing hands on the scoreboard, and waits for the answer', async () => {
+  await withVoiceGameForTests(async () => {
+    const state = getStateForTests;
+    // Nothing to lose yet: it starts straight away.
+    assert.equal(await voiceActForTests([{ type: 'startPaperGame', usScore: 100, demScore: 50 }]), true);
+    assert.equal(getPendingConfirmationForTests().confirm, null);
+    assert.deepEqual(state().startingTotals, { us: 100, dem: 50 });
+
+    await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]);
+    await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'dem', bidAmount: 125, points: 130 }]);
+    const rounds = structuredClone(state().rounds);
+
+    const paperGame = { type: 'startPaperGame', usScore: 250, demScore: 100 };
+    // The hand after it was meant for the paper game, so it is not scored into this one.
+    const plan = [paperGame, { type: 'scoreRound', biddingTeam: 'us', bidAmount: 150, points: 160 }];
+    assert.equal(await voiceActForTests(plan, { message: 'Started the paper game at 250 to 100.' }), true);
+    assert.deepEqual(state().rounds, rounds, 'the game is untouched while the question is open');
+    assert.deepEqual(state().startingTotals, { us: 100, dem: 50 });
+    assert.equal(typeof getPendingConfirmationForTests().confirm, 'function');
+    assert.match(renderVoiceScoreControls(), /Confirm replacing the current game\./);
+    assert.doesNotMatch(renderVoiceScoreControls(), /Started the paper game/);
+
+    getPendingConfirmationForTests().cancel();
+    assert.deepEqual(state().rounds, rounds, 'Cancel keeps the game');
+    assert.equal(getPendingConfirmationForTests().confirm, null);
+
+    await voiceActForTests([paperGame]);
+    await getPendingConfirmationForTests().confirm();
+    assert.deepEqual(state().rounds, []);
+    assert.deepEqual(state().startingTotals, { us: 250, dem: 100 });
+    assert.match(renderVoiceScoreControls(), /Started paper game at 250 to 100\./);
+  });
+});
+
+test('a voice paper game already confirmed by voice does not ask a second time', async () => {
+  await withVoiceGameForTests(async () => {
+    await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]);
+    assert.equal(await applyVoiceScorePlan({
+      status: 'confirm',
+      requiresConfirmation: true,
+      message: 'Replace this game with a paper game at 250 to 100?',
+      summary: 'Started the paper game.',
+      actions: [{ type: 'startPaperGame', usScore: 250, demScore: 100 }],
+    }), true);
+    assert.equal(getStateForTests().rounds.length, 1);
+    await getPendingConfirmationForTests().confirm();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(getStateForTests().rounds, []);
+    assert.deepEqual(getStateForTests().startingTotals, { us: 250, dem: 100 });
+    assert.equal(getPendingConfirmationForTests().confirm, null);
+  });
+});
+
+test('a voice rematch asks before discarding a game that is still being played', async () => {
+  await withVoiceGameForTests(async () => {
+    const state = getStateForTests;
+    await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]);
+    const rounds = structuredClone(state().rounds);
+
+    assert.equal(await voiceActForTests([{ type: 'rematch', firstDealer: 'Carol' }], { message: 'Starting the rematch.' }), true);
+    assert.deepEqual(state().rounds, rounds);
+    assert.deepEqual(state().dealers, ['Alice', 'Bob', 'Carol', 'Dan']);
+    assert.match(renderVoiceScoreControls(), /Confirm replacing the current game\./);
+    getPendingConfirmationForTests().cancel();
+    assert.deepEqual(state().rounds, rounds, 'Cancel keeps the game');
+
+    await voiceActForTests([{ type: 'rematch', firstDealer: 'Carol' }]);
+    await getPendingConfirmationForTests().confirm();
+    assert.deepEqual(state().rounds, []);
+    assert.equal(state().dealers[0], 'Carol');
+    assert.deepEqual(getLocalStorage('savedGames', []), [], 'an unfinished game is not saved as a result');
+    assert.match(renderVoiceScoreControls(), /Started rematch\./);
+  });
+});
+
+test('a voice rematch of a finished game still saves it and starts without an extra question', async () => {
+  await withVoiceGameForTests(async () => {
+    updateState({
+      rounds: [{ bidAmount: 120, biddingTeam: 'us', usPoints: 180, demPoints: 0, runningTotals: { us: 500, dem: 260 } }],
+      gameOver: true, winner: 'us', victoryMethod: 'points',
+    });
+    assert.equal(await voiceActForTests([{ type: 'rematch', firstDealer: 'Bob' }]), true);
+    assert.equal(getPendingConfirmationForTests().confirm, null);
+    assert.equal(getLocalStorage('savedGames', []).length, 1);
+    assert.deepEqual(getStateForTests().rounds, []);
+    assert.equal(getStateForTests().dealers[0], 'Bob');
+  });
+});
+
+test('if the cloud refuses the packed list, the session falls back to the plain list instead of stalling', async () => {
+  const mine = buildSizedSavedGame(1);
+  const theirs = buildSizedSavedGame(2);
+  const refusePack = windowForFirebase => {
+    windowForFirebase.__writeError = payload => (Array.isArray(payload.savedGamesPacked)
+      ? Object.assign(new Error('Invalid value for property savedGamesPacked.'), { code: 'invalid-argument' })
+      : null);
+  };
+  const toasts = [];
+  const merging = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([mine])]]),
+    cloudData: { savedGames: [theirs] },
+    exposeMerge: true,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+    windowExtras: { showWarningToast: message => toasts.push(message) },
+  });
+  refusePack(merging.windowForFirebase);
+  assert.equal(await merging.windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), true);
+  assert.equal(merging.writePayloads.length, 1);
+  assert.deepEqual(merging.writePayloads[0].savedGames, [mine, theirs]);
+  assert.equal('savedGamesPacked' in merging.writePayloads[0], false);
+  assert.deepEqual(JSON.parse(merging.storage.getItem('savedGames')), [mine, theirs]);
+  // Later saves in the session go up plain as well, without a failed attempt each time.
+  assert.equal(await merging.windowForFirebase.syncToFirestore('savedGames', [mine, theirs]), true);
+  assert.deepEqual(merging.writePayloads.at(-1).savedGames, [mine, theirs]);
+  assert.deepEqual(toasts, [], 'a fallback that worked is not reported as a full cloud copy');
+
+  // The same refusal on a save (the merge had nothing to write) is retried plain at once.
+  const saving = loadFirebaseInitForTests({
+    storageValues: new Map(),
+    exposeMerge: true,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+  });
+  refusePack(saving.windowForFirebase);
+  assert.equal(await saving.windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), true);
+  saving.storage.setItem('savedGames', JSON.stringify([mine]));
+  assert.equal(await saving.windowForFirebase.syncToFirestore('savedGames', [mine]), true);
+  assert.deepEqual(saving.writePayloads.at(-1).savedGames, [mine]);
+  assert.equal('savedGamesPacked' in saving.writePayloads.at(-1), false);
+});
+
+test('a list too large even when packed is reported once, after the plain retry also fails', async () => {
+  const toasts = [];
+  const loaded = loadFirebaseInitForTests({
+    storageValues: new Map([['savedGames', JSON.stringify([buildSizedSavedGame(1)])]]),
+    exposeMerge: true,
+    contextExtras: SAVED_GAMES_PACKING_GLOBALS,
+    windowExtras: { showWarningToast: message => toasts.push(message) },
+  });
+  const attempts = [];
+  loaded.windowForFirebase.__writeError = payload => {
+    attempts.push(Array.isArray(payload.savedGamesPacked) ? 'packed' : 'plain');
+    return Object.assign(new Error('Document cannot be written because its size (1,200,000 bytes) exceeds the maximum allowed size of 1,048,576 bytes.'), { code: 'invalid-argument' });
+  };
+  assert.equal(await loaded.windowForFirebase.__mergeUserDataForCurrentUser({ uid: 'test-user' }), false);
+  assert.deepEqual(attempts, ['packed', 'plain']);
+  assert.equal(loaded.writePayloads.length, 0);
+  assert.deepEqual(toasts, ['Cloud sync is full. New games stay on this device.']);
 });

@@ -4,6 +4,7 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 
 import { normalizeTrainingSnapshot } from "./rook-training-normalizer.mjs";
 
@@ -54,6 +55,20 @@ function decodeFirestoreFields(fields) {
   return Object.fromEntries(
     Object.entries(fields || {}).map(([key, value]) => [key, decodeFirestoreValue(value)]),
   );
+}
+
+// The app uploads finished games gzipped in "savedGamesPacked"
+// (["gzip-json-v1;<delete marker>", "<base64>", ...], see js/firebase-init.js).
+// Older app versions write the plain "savedGames" list; a document can hold both.
+function readSavedGames(data) {
+  const plain = Array.isArray(data.savedGames) ? data.savedGames : [];
+  const pieces = Array.isArray(data.savedGamesPacked) ? data.savedGamesPacked : [];
+  if (pieces.length < 2 || !String(pieces[0]).startsWith("gzip-json-v1;")) return plain;
+  const packed = JSON.parse(gunzipSync(Buffer.from(pieces.slice(1).join(""), "base64")).toString("utf8"));
+  if (!Array.isArray(packed)) return plain;
+  const gameKey = game => game?.id || game?.timestamp || JSON.stringify(game);
+  const packedKeys = new Set(packed.map(gameKey));
+  return [...packed, ...plain.filter(game => !packedKeys.has(gameKey(game)))];
 }
 
 function sourceKey(documentName) {
@@ -118,7 +133,7 @@ async function queryRookData(projectId) {
       const data = decodeFirestoreFields(document.fields || {});
       return {
         sourceKey: sourceKey(document.name),
-        games: Array.isArray(data.savedGames) ? data.savedGames : [],
+        games: readSavedGames(data),
       };
     });
 }

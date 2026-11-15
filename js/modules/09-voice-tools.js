@@ -20,7 +20,14 @@ const VOICE_TOOLS = (() => {
   });
   const scoredHandFields = ["biddingTeam", "bidAmount", "points", "enterBidderPoints"];
 
-  return Object.freeze({
+  // The planner fills a field it has no value for with null or "". Number(null)
+  // and Number("") are both 0, so a field left like that would be recorded as a
+  // real zero: a 0-point hand, round totals of 0, the first saved game.
+  const isBlankValue = value => value === null
+    || value === undefined
+    || (typeof value === "string" && !value.trim());
+
+  const catalog = {
     statuses: ["execute", "confirm", "clarify", "answer", "unsupported"],
     outcomes: ["success", "failed", "cancelled", "clarify", "unsupported", "answered"],
     fields: {
@@ -109,7 +116,22 @@ const VOICE_TOOLS = (() => {
       exportData: [],
       noop: [],
     },
-  });
+  };
+
+  // An action without its blank fields (and without blank entries in a list of
+  // numbers), so a handler sees "not given" instead of a value.
+  const withoutBlankFields = action => Object.fromEntries(
+    Object.entries(action && typeof action === "object" ? action : {})
+      .filter(([, value]) => !isBlankValue(value))
+      .map(([key, value]) => [
+        key,
+        catalog.fields[key]?.kind === "numbers" && Array.isArray(value)
+          ? value.filter(entry => !isBlankValue(entry))
+          : value,
+      ]),
+  );
+
+  return Object.freeze({ ...catalog, isBlankValue, withoutBlankFields });
 })();
 
 // The Vercel function require()s this file. Browsers and the test loader run it

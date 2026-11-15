@@ -455,6 +455,8 @@ function normalizePlan(plan, fallbackHeardText = "") {
     ? normalized.actions
         .filter(action => action && typeof action === "object" && ACTION_TYPES.has(action.type))
         .slice(0, 5)
+        // A field the model left null or "" is not a value; the app would read it as 0.
+        .map(VOICE_TOOLS.withoutBlankFields)
     : [];
   let status = PLAN_STATUSES.has(normalized.status)
     ? normalized.status

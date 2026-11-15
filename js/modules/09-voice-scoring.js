@@ -379,7 +379,11 @@ function getVoiceScoreAppContext() {
 function normalizeVoiceScorePlan(plan) {
   const candidate = plan && typeof plan === "object" ? plan : {};
   let actions = Array.isArray(candidate.actions)
-    ? candidate.actions.filter(action => action && VOICE_SCORE_ACTION_TYPES.has(action.type)).slice(0, 5)
+    ? candidate.actions
+        .filter(action => action && VOICE_SCORE_ACTION_TYPES.has(action.type))
+        .slice(0, 5)
+        // Mirrors the server: a field left null or "" was not given.
+        .map(VOICE_TOOLS.withoutBlankFields)
     : [];
   let status = VOICE_SCORE_PLAN_STATUSES.has(candidate.status)
     ? candidate.status
@@ -411,11 +415,20 @@ function normalizeVoiceScorePlan(plan) {
 // default enterBidderPoints, for execution and training samples alike.
 function normalizeVoiceScoreActionAliases(action) {
   const fields = VOICE_TOOLS.actions[action?.type] || [];
-  const normalized = { ...action };
-  if (fields.includes("biddingTeam") && !normalized.biddingTeam) normalized.biddingTeam = action.team;
-  if (fields.includes("team") && !normalized.team) normalized.team = action.biddingTeam;
-  if (fields.includes("enterBidderPoints")) normalized.enterBidderPoints = action.enterBidderPoints !== false;
+  const given = VOICE_TOOLS.withoutBlankFields(action);
+  const normalized = { ...given };
+  if (fields.includes("biddingTeam") && !normalized.biddingTeam) normalized.biddingTeam = given.team;
+  if (fields.includes("team") && !normalized.team) normalized.team = given.biddingTeam;
+  if (fields.includes("enterBidderPoints")) normalized.enterBidderPoints = given.enterBidderPoints !== false;
   return normalized;
+}
+
+// The number the planner gave, or NaN. Number() turns null, "" and false into
+// 0, which would pass for a real score, bid, or game number.
+function readVoiceScoreNumber(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim()) return Number(value);
+  return NaN;
 }
 
 // --- Voice improvement samples ---
@@ -893,11 +906,19 @@ function normalizeVoiceScoreActionTeam(team) {
   throw new Error("Say either Us or Dem.");
 }
 
+// The team, bid and points of a spoken hand; each one has to have been said.
+function readVoiceScoreHand(action) {
+  const biddingTeam = normalizeVoiceScoreActionTeam(action.biddingTeam);
+  const bidAmount = readVoiceScoreNumber(action.bidAmount);
+  const points = readVoiceScoreNumber(action.points);
+  if (!Number.isFinite(bidAmount)) throw new Error("Say the bid amount.");
+  if (!Number.isFinite(points)) throw new Error("Say how many points were made.");
+  return { biddingTeam, bidAmount, points };
+}
+
 function submitVoiceScoreHand(action) {
   const submitted = submitStructuredRound({
-    biddingTeam: normalizeVoiceScoreActionTeam(action.biddingTeam),
-    bidAmount: Number(action.bidAmount),
-    points: Number(action.points),
+    ...readVoiceScoreHand(action),
     enterBidderPoints: action.enterBidderPoints !== false,
     source: "voice_llm",
   });
@@ -914,8 +935,8 @@ function applyVoiceScoreRound(action) {
 // the original back if the correction is rejected.
 function applyVoiceScoreReplaceLastRound(action) {
   if (!state.rounds.length) throw new Error("There is no hand to correct yet.");
-  normalizeVoiceScoreActionTeam(action.biddingTeam);
-  const validationError = validateBid(String(Number(action.bidAmount))) || validatePoints(String(Number(action.points)));
+  const hand = readVoiceScoreHand(action);
+  const validationError = validateBid(String(hand.bidAmount)) || validatePoints(String(hand.points));
   if (validationError) throw new Error(validationError);
 
   // Undoing the only hand resets the game timer, so keep the running clock.
@@ -939,7 +960,8 @@ function applyVoiceScoreReplaceLastRound(action) {
 
 function applyVoiceScoreSelectBid(action) {
   const biddingTeam = normalizeVoiceScoreActionTeam(action.biddingTeam);
-  const bidAmount = Number(action.bidAmount);
+  const bidAmount = readVoiceScoreNumber(action.bidAmount);
+  if (!Number.isFinite(bidAmount)) throw new Error("Say the bid amount.");
   const bidError = validateBid(String(bidAmount));
   if (bidError) throw new Error(bidError);
   updateState({
@@ -967,6 +989,9 @@ function syncVoiceScoreSettingsSheet() {
 function applyVoiceScoreSetting(action) {
   const key = action.key;
   const value = action.value;
+  // Without a value there is nothing to set: "off", "set points" and a 5-point
+  // penalty are real choices, not what an empty field means.
+  if (VOICE_TOOLS.isBlankValue(value)) throw new Error("Say what to change that setting to.");
   if (key === "mustWinByBid" || key === "misdealHandling") {
     const isEnabled = toVoiceScoreBoolean(value);
     setLocalStorage(key === "mustWinByBid" ? MUST_WIN_BY_BID_KEY : MISDEAL_HANDLING_KEY, isEnabled);
@@ -998,7 +1023,7 @@ function applyVoiceScoreSetting(action) {
     return penaltyType === "loseBid" ? "Table talk penalty uses lost bid." : "Table talk penalty uses set points.";
   }
   if (key === "tableTalkPenaltyPoints") {
-    let points = Number(value);
+    let points = readVoiceScoreNumber(value);
     if (!Number.isFinite(points)) points = 180;
     points = Math.max(5, Math.min(500, Math.round(points / 5) * 5));
     setLocalStorage(TABLE_TALK_PENALTY_POINTS_KEY, String(points));
@@ -1008,9 +1033,35 @@ function applyVoiceScoreSetting(action) {
   throw new Error("That setting is not available.");
 }
 
-function applyVoiceScoreStartPaperGame(action) {
-  const usScore = Number(action.usScore);
-  const demScore = Number(action.demScore);
+// Voice can start a paper game or a rematch over a game that is under way,
+// which nothing else saves. With hands on the scoreboard the player is asked
+// first, in the words the Paper Game form uses. `run` does the replacing and
+// returns (or resolves to) the reply to give once it has. Returns false when
+// there is nothing to lose, and the caller goes straight ahead.
+const VOICE_SCORE_REPLACE_GAME_PROMPT = "Confirm replacing the current game.";
+
+function confirmVoiceScoreGameReplacement(run, { title, confirmLabel, onlyUnfinished = false } = {}) {
+  const hands = Array.isArray(state.rounds) ? state.rounds.length : 0;
+  if (!hands || (onlyUnfinished && state.gameOver)) return false;
+  openConfirmationModal(
+    `This replaces the game on the scoreboard, including its ${hands} ${hands === 1 ? "hand" : "hands"} of history. Freeze or save it first to keep it.`,
+    async () => {
+      closeConfirmationModal();
+      try {
+        reportVoiceScoreOutcome(await run(), "success");
+      } catch (error) {
+        reportVoiceScoreOutcome(error.message || "Voice action failed.", "error");
+      }
+    },
+    closeConfirmationModal,
+    { title, confirmLabel, tone: "warning", icon: "refresh" },
+  );
+  return true;
+}
+
+function applyVoiceScoreStartPaperGame(action, { confirmed = false } = {}) {
+  const usScore = readVoiceScoreNumber(action.usScore);
+  const demScore = readVoiceScoreNumber(action.demScore);
   if (!Number.isFinite(usScore) || !Number.isFinite(demScore)) throw new Error("Say both starting scores.");
   if (Math.abs(usScore) > 1000 || Math.abs(demScore) > 1000) throw new Error("Scores should stay between -1000 and 1000.");
   if (Math.abs(usScore % 5) >= 1e-9 || Math.abs(demScore % 5) >= 1e-9) throw new Error("Scores must be in increments of 5.");
@@ -1027,12 +1078,23 @@ function applyVoiceScoreStartPaperGame(action) {
   updates.usTeamName = deriveTeamDisplay(updates.usPlayers, state.usTeamName || "Us");
   updates.demTeamName = deriveTeamDisplay(updates.demPlayers, state.demTeamName || "Dem");
 
-  resetRenderAnimationState();
-  if (typeof clearTransientScoreInputs === "function") clearTransientScoreInputs(); // what was typed belonged to the game being replaced
-  updateState(updates);
-  confettiTriggered = false;
-  saveCurrentGameState();
-  return `Started paper game at ${usScore} to ${demScore}.`;
+  const started = `Started paper game at ${usScore} to ${demScore}.`;
+  const startPaperGame = () => {
+    resetRenderAnimationState();
+    if (typeof clearTransientScoreInputs === "function") clearTransientScoreInputs(); // what was typed belonged to the game being replaced
+    updateState(updates);
+    confettiTriggered = false;
+    saveCurrentGameState();
+  };
+  // Like the Paper Game form: hands on the scoreboard are not replaced unasked.
+  if (!confirmed && confirmVoiceScoreGameReplacement(
+    () => { startPaperGame(); return started; },
+    { title: "Replace the current game?", confirmLabel: "Replace game" },
+  )) {
+    return VOICE_SCORE_REPLACE_GAME_PROMPT;
+  }
+  startPaperGame();
+  return started;
 }
 
 async function applyVoiceScoreSetTeams(action) {
@@ -1070,16 +1132,17 @@ async function applyVoiceScoreSetTeams(action) {
 }
 
 function applyVoiceScoreEditRound(action) {
-  const roundNumber = Math.trunc(Number(action.roundNumber));
+  const roundNumber = Math.trunc(readVoiceScoreNumber(action.roundNumber));
   const rounds = Array.isArray(state.rounds) ? state.rounds : [];
   if (!Number.isInteger(roundNumber) || roundNumber < 1 || roundNumber > rounds.length) {
     throw new Error(`Choose a round from 1 to ${rounds.length || 1}.`);
   }
 
   const edits = [];
-  if (action.bidAmount !== undefined) edits.push(["bid", Number(action.bidAmount)]);
-  if (action.usTotal !== undefined) edits.push(["us", Number(action.usTotal)]);
-  if (action.demTotal !== undefined) edits.push(["dem", Number(action.demTotal)]);
+  // A total or bid that was not given stays as it is; it is not set to 0.
+  if (!VOICE_TOOLS.isBlankValue(action.bidAmount)) edits.push(["bid", readVoiceScoreNumber(action.bidAmount)]);
+  if (!VOICE_TOOLS.isBlankValue(action.usTotal)) edits.push(["us", readVoiceScoreNumber(action.usTotal)]);
+  if (!VOICE_TOOLS.isBlankValue(action.demTotal)) edits.push(["dem", readVoiceScoreNumber(action.demTotal)]);
   if (!edits.length || edits.some(([, value]) => !Number.isFinite(value))) {
     throw new Error("Say the bid or cumulative team total to change.");
   }
@@ -1166,7 +1229,7 @@ function applyVoiceScoreGameLibraryAction(action) {
     return "Sorted games.";
   }
 
-  const index = Number(action.index);
+  const index = readVoiceScoreNumber(action.index);
   const listSize = getLocalStorage(gameType === "freezer" ? "freezerGames" : "savedGames", []).length;
   if (!Number.isInteger(index) || index < 0 || index >= listSize) throw new Error("Say which game number to use.");
   if (gameAction === "view") {
@@ -1250,7 +1313,7 @@ function applyVoiceScoreBidPresets(action) {
 
 function applyVoiceScoreBidPresetsNow(action) {
   const presets = Array.isArray(action.presets)
-    ? action.presets.map(Number).filter(Number.isFinite)
+    ? action.presets.map(readVoiceScoreNumber).filter(Number.isFinite)
     : [];
   if (!presets.length) throw new Error("Say at least one bid preset.");
   setPresetBidsFromValues(presets);
@@ -1328,7 +1391,18 @@ async function applyVoiceScoreStatsControls(action) {
   return entitySelection ? `Showing statistics for ${entitySelection.name}.` : "Statistics updated.";
 }
 
-async function applyVoiceScoreRematch(action) {
+async function applyVoiceScoreRematch(action, { confirmed = false } = {}) {
+  // A finished game is saved by the rematch; one still being played is not.
+  if (!confirmed && confirmVoiceScoreGameReplacement(
+    () => startVoiceScoreRematch(action),
+    { title: "Start a rematch?", confirmLabel: "Start rematch", onlyUnfinished: true },
+  )) {
+    return VOICE_SCORE_REPLACE_GAME_PROMPT;
+  }
+  return startVoiceScoreRematch(action);
+}
+
+async function startVoiceScoreRematch(action) {
   if (rematchNeedsTeamChoice(state)) {
     openRematchDealerModal(); // asks for the teams first, then the first dealer
     return "Choose the teams for the rematch first.";
@@ -1467,6 +1541,9 @@ async function executeVoiceScorePlanActions(plan, options = {}) {
     }
     const message = await executeVoiceScoreAction(action, options);
     if (message) messages.push(message);
+    // The action is waiting for an answer on screen. Anything after it was
+    // meant for the game that does not exist yet, so it is not run on this one.
+    if (message === VOICE_SCORE_REPLACE_GAME_PROMPT) break;
   }
   return messages;
 }
@@ -1925,13 +2002,17 @@ async function applyVoiceScorePlan(plan, context = null) {
   const executePlan = async (confirmed = false) => {
     try {
       const messages = await executeVoiceScorePlanActions(normalizedPlan, { confirmed });
+      // A plan that stopped to ask before replacing a game has not done it yet,
+      // so the planner's "started" wording would be wrong: say the question.
+      const awaitingAnswer = messages.includes(VOICE_SCORE_REPLACE_GAME_PROMPT);
       // After a confirmation the plan's message is the question, so fall back
       // to the summary.
-      const successMessage = (confirmed ? "" : normalizedPlan.message)
+      const successMessage = (awaitingAnswer ? VOICE_SCORE_REPLACE_GAME_PROMPT : "")
+        || (confirmed ? "" : normalizedPlan.message)
         || normalizedPlan.summary
         || messages.find(Boolean)
         || "Done.";
-      reportVoiceScoreOutcome(successMessage, "success");
+      reportVoiceScoreOutcome(successMessage, awaitingAnswer ? "info" : "success");
       emitRookEvent("voice_score_command", getRookGameEventParams(state, { source: "voice_llm" }));
       recordVoiceImprovementSample(normalizedPlan, "success", improvementSnapshot);
       return true;
