@@ -343,71 +343,80 @@ function handleTeamSelectionCancel() {
     const menu = document.getElementById("menu");
     const overlay = document.getElementById("menuOverlay");
     const icon = document.getElementById("hamburgerIcon");
-    let startX = 0;
-    let currentX = 0;
-    let isDragging = false;
-    let isOpening = false;
-    // Measured when a drag starts: at script load the stylesheet has not applied yet and the
-    // unstyled drawer is as wide as the screen, which made the drag lag the finger and the
-    // open/close threshold far too long.
-    let menuWidth = 280;
+    if (!menu || !overlay) return;
+    const directionThreshold = 10;
+    let gesture = null;
+
+    resetMenuGesture = () => {
+        gesture = null;
+        menu.style.transition = "";
+        menu.style.transform = "";
+        overlay.style.opacity = "";
+    };
+
+    function cancelMenuGesture() {
+        if (gesture) setMenuOpenState(menu.classList.contains("show"));
+    }
 
     function onTouchStart(e) {
-        menuWidth = menu.offsetWidth || 280;
-        startX = e.touches[0].clientX;
-        currentX = startX;
+        cancelMenuGesture();
+        if (e.touches.length !== 1 || icon?.contains?.(e.target)) return;
+        const touch = e.touches[0];
         const menuOpen = menu.classList.contains("show");
         // A sheet or dialog owns the screen while it is open; edge swipes must not slide the menu under it.
         // Home and first-run onboarding cover the scoreboard, and the menu would open hidden beneath them.
         const modalOpen = document.body.classList.contains("modal-open") || Boolean(document.querySelector(".modal:not(.hidden)"))
             || isHomeScreenOpen() || document.body.classList.contains("onboarding-open");
-        if (!menuOpen && startX <= 20 && !modalOpen) {
-            isDragging = true;
-            isOpening = true;
-            menu.style.transition = "none";
-            overlay.classList.add("show");
-            overlay.style.opacity = "0";
-            document.body.classList.add("overflow-hidden");
-        } else if (menuOpen) {
-            isDragging = true;
-            isOpening = false;
-            menu.style.transition = "none";
-            overlay.classList.add("show");
-        }
+        if (modalOpen || (!menuOpen && touch.clientX > 20)) return;
+        // Arming a possible swipe changes no styles. Wait for horizontal intent
+        // so scrolling the menu or swiping to the app switcher cannot move it.
+        gesture = {
+            identifier: touch.identifier,
+            startX: touch.clientX,
+            startY: touch.clientY,
+            deltaX: 0,
+            isOpening: !menuOpen,
+            dragging: false,
+            // The full stylesheet may not have applied at script load.
+            width: menu.offsetWidth || 280,
+        };
     }
 
     function onTouchMove(e) {
-        if (!isDragging) return;
-        currentX = e.touches[0].clientX;
-        let deltaX = currentX - startX;
-        // The drawer is positioned with a transform so dragging (and the CSS
-        // slide) stays on the compositor instead of relayouting the page.
-        if (isOpening) {
-            const left = Math.min(0, -menuWidth + currentX);
-            menu.style.transform = `translateX(${left}px)`;
-            overlay.style.opacity = (menuWidth + left) / menuWidth;
-        } else {
-            const left = Math.min(0, deltaX);
-            menu.style.transform = `translateX(${left}px)`;
-            overlay.style.opacity = (menuWidth + left) / menuWidth;
+        if (!gesture) return;
+        if (e.touches.length !== 1 || e.touches[0].identifier !== gesture.identifier) {
+            cancelMenuGesture();
+            return;
         }
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - gesture.startX;
+        const deltaY = touch.clientY - gesture.startY;
+        if (!gesture.dragging) {
+            if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < directionThreshold) return;
+            if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+                cancelMenuGesture();
+                return;
+            }
+            gesture.dragging = true;
+            menu.style.transition = "none";
+            overlay.classList.add("show");
+            document.body.classList.add("overflow-hidden");
+        }
+        gesture.deltaX = deltaX;
+        const left = Math.max(-gesture.width, Math.min(0, (gesture.isOpening ? -gesture.width : 0) + deltaX));
+        menu.style.transform = `translateX(${left}px)`;
+        overlay.style.opacity = (gesture.width + left) / gesture.width;
     }
 
     function onTouchEnd() {
-        if (!isDragging) return;
-        isDragging = false;
-        const deltaX = currentX - startX;
-        const threshold = menuWidth / 3;
-        let shouldOpen;
-        if (isOpening) {
-            shouldOpen = deltaX > threshold;
-        } else {
-            shouldOpen = deltaX > -threshold;
+        if (!gesture) return;
+        if (!gesture.dragging) {
+            resetMenuGesture();
+            return;
         }
-        menu.style.transition = "";
+        const threshold = gesture.width / 3;
+        const shouldOpen = gesture.isOpening ? gesture.deltaX > threshold : gesture.deltaX > -threshold;
         setMenuOpenState(shouldOpen);
-        menu.style.transform = "";
-        overlay.style.opacity = "";
     }
 
     // These handlers never cancel native scrolling, so keep them off the
@@ -415,8 +424,15 @@ function handleTeamSelectionCancel() {
     document.addEventListener("touchstart", onTouchStart, { passive: true });
     document.addEventListener("touchmove", onTouchMove, { passive: true });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
-    // The system can cancel a touch (incoming call, gesture handoff); settle the drag instead of leaving it armed.
-    document.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    // Google sign-in and system gestures may cancel a touch or suspend the page
+    // without touchend. Roll back the drag; cancellation is never a completed swipe.
+    document.addEventListener("touchcancel", cancelMenuGesture, { passive: true });
+    window.addEventListener("blur", cancelMenuGesture);
+    window.addEventListener("pagehide", cancelMenuGesture);
+    window.addEventListener("pageshow", cancelMenuGesture);
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) cancelMenuGesture();
+    });
 })();
 
 // Expose integration hooks used by firebase-init.js, which runs as an ES module.

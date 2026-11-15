@@ -225,9 +225,13 @@ function setupDealerNameSuggestions() {
 
 // The one place that opens or closes the drawer, so its classes, the dim overlay, what Tab can
 // reach, and what a screen reader announces always agree (the swipe gesture uses it too).
+let resetMenuGesture = () => {};
 function setMenuOpenState(isOpen) {
   const menu = document.getElementById("menu");
   if (!menu) return false;
+  // A button, sign-in action, or lifecycle event supersedes any unfinished swipe.
+  // Its inline transform must never override the drawer's intended open state.
+  resetMenuGesture();
   const icon = document.getElementById("hamburgerIcon");
   menu.classList.toggle("show", isOpen);
   if ("inert" in menu) menu.inert = !isOpen;

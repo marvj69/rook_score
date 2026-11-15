@@ -622,6 +622,113 @@ for (const bundled of [false, true]) {
     assert.equal(app.document.body.classList.contains('overflow-hidden'), false);
   });
 
+  test(`${label}: canceled menu swipes restore the drawer instead of committing a system gesture`, () => {
+    const { app } = startedApp();
+    app.run('closeHomeScreen()');
+    const menu = app.elements.get('menu');
+    const overlay = app.elements.get('menuOverlay');
+    const touch = (name, x, y) => app.event('document', name, {
+      touches: name === 'touchcancel' ? [] : [{ identifier: 7, clientX: x, clientY: y }],
+      changedTouches: [{ identifier: 7, clientX: x, clientY: y }],
+    });
+
+    touch('touchstart', 5, 400);
+    touch('touchmove', 180, 405);
+    touch('touchcancel', 180, 405);
+    assert.equal(menu.classList.contains('show'), false, 'a canceled edge swipe cannot open the menu');
+    assert.equal(menu.inert, true);
+    assert.equal(overlay.classList.contains('show'), false);
+    assert.equal(app.document.body.classList.contains('overflow-hidden'), false);
+
+    app.run('setMenuOpenState(true)');
+    touch('touchstart', 220, 400);
+    touch('touchmove', 20, 405);
+    touch('touchcancel', 20, 405);
+    assert.equal(menu.classList.contains('show'), true, 'canceling a closing swipe keeps the menu open');
+    assert.equal(menu.inert, false);
+    assert.equal(menu.style.transform, '');
+    assert.equal(menu.style.transition, '');
+    assert.equal(overlay.style.opacity, '');
+  });
+
+  test(`${label}: vertical menu scrolling and app-switch swipes do not drag the drawer`, () => {
+    const { app } = startedApp();
+    app.run('closeHomeScreen()');
+    const menu = app.elements.get('menu');
+    for (const open of [false, true]) {
+      app.run(`setMenuOpenState(${open})`);
+      const startX = open ? 220 : 5;
+      const endX = open ? 100 : 125;
+      app.event('document', 'touchstart', { touches: [{ identifier: 7, clientX: startX, clientY: 650 }] });
+      app.event('document', 'touchmove', { touches: [{ identifier: 7, clientX: endX, clientY: 200 }] });
+      assert.equal(menu.style.transform || '', '', 'vertical movement never writes a horizontal transform');
+      app.event('document', 'touchend', { touches: [], changedTouches: [{ identifier: 7, clientX: endX, clientY: 200 }] });
+      assert.equal(menu.classList.contains('show'), open);
+    }
+  });
+
+  test(`${label}: backgrounding or losing focus clears an interrupted menu drag`, () => {
+    const { app } = startedApp();
+    app.run('closeHomeScreen()');
+    const menu = app.elements.get('menu');
+    for (const [target, name] of [['window', 'blur'], ['window', 'pagehide'], ['document', 'visibilitychange'], ['window', 'pageshow']]) {
+      app.run('setMenuOpenState(true)');
+      app.event('document', 'touchstart', { touches: [{ identifier: 7, clientX: 220, clientY: 400 }] });
+      app.event('document', 'touchmove', { touches: [{ identifier: 7, clientX: 20, clientY: 405 }] });
+      app.document.hidden = true;
+      app.document.visibilityState = 'hidden';
+      app.event(target, name);
+      assert.equal(menu.style.transform, '', `${name} clears the transform even when no touchend arrives`);
+      assert.equal(menu.style.transition, '');
+      assert.equal(app.elements.get('menuOverlay').style.opacity, '');
+      assert.equal(menu.classList.contains('show'), true, `${name} preserves the intended open state`);
+      app.event('document', 'touchend', { touches: [] });
+      assert.equal(menu.classList.contains('show'), true, 'a late touchend cannot change it');
+      app.document.hidden = false;
+      app.document.visibilityState = 'visible';
+    }
+  });
+
+  test(`${label}: a menu action during a swipe cannot be undone by the old touchend`, () => {
+    const { app } = startedApp();
+    app.run('closeHomeScreen(); setMenuOpenState(true)');
+    app.event('document', 'touchstart', { touches: [{ identifier: 7, clientX: 220, clientY: 400 }] });
+    app.event('document', 'touchmove', { touches: [{ identifier: 7, clientX: 190, clientY: 405 }] });
+    app.run('closeMenuOverlay()'); // Sign-in and other menu actions close the drawer themselves.
+    app.event('document', 'touchend', { touches: [] });
+    assert.equal(app.elements.get('menu').classList.contains('show'), false);
+    assert.equal(app.elements.get('menu').inert, true);
+    assert.equal(app.document.body.classList.contains('overflow-hidden'), false);
+  });
+
+  test(`${label}: horizontal menu swipes still work, with taps and extra fingers left alone`, () => {
+    const { app } = startedApp();
+    app.run('closeHomeScreen()');
+    const menu = app.elements.get('menu');
+    const point = (x, y, identifier = 7) => ({ identifier, clientX: x, clientY: y });
+    const move = (start, end) => {
+      app.event('document', 'touchstart', { touches: [start] });
+      app.event('document', 'touchmove', { touches: [end] });
+      app.event('document', 'touchend', { touches: [], changedTouches: [end] });
+    };
+    move(point(5, 400), point(200, 405));
+    assert.equal(menu.classList.contains('show'), true);
+    move(point(220, 400), point(30, 405));
+    assert.equal(menu.classList.contains('show'), false);
+    move(point(5, 400), point(50, 405));
+    assert.equal(menu.classList.contains('show'), false, 'a short opening swipe settles closed');
+
+    app.event('document', 'touchstart', { touches: [point(5, 400)] });
+    app.event('document', 'touchend', { touches: [], changedTouches: [point(5, 400)] });
+    assert.equal(menu.classList.contains('show'), false, 'a tap is not a swipe');
+    app.event('document', 'touchstart', { touches: [point(5, 400)] });
+    app.event('document', 'touchmove', { touches: [point(200, 405), point(210, 420, 8)] });
+    app.event('document', 'touchend', { touches: [] });
+    assert.equal(menu.classList.contains('show'), false, 'a second finger cancels the gesture');
+    assert.equal(menu.style.transform, '');
+    assert.equal(app.elements.get('menuOverlay').classList.contains('show'), false);
+  });
+
   test(`${label}: opening and closing panels keeps only the top one live and gives focus back`, () => {
     const { app } = startedApp();
     const el = id => app.elements.get(id);
@@ -948,7 +1055,7 @@ test('analytics replays early local-play events through its existing privacy fil
 
 test('production JavaScript stays within the download budgets', () => {
   for (const [file, bytes, gzipBytes] of [
-    ['js/app.bundle.js', 274000, 72500], // Home/onboarding, early initialization, Delete All Game Data, the UI audit fixes, and the bug-list fixes; statistics load on demand
+    ['js/app.bundle.js', 275000, 73000], // Includes menu gesture/lifecycle cleanup; statistics load on demand.
     ['js/voice-score.bundle.js', 60000, 17000],
     ['js/probability-explanation.bundle.js', 26000, 8800],
     ['css/probability-explanation.css', 12000, 2800],
