@@ -1191,3 +1191,108 @@ test('layout guards: nothing filters #app itself, and short or narrow screens ca
   assert.match(cssRuleBody(css, '.name-clip'), /text-overflow:\s*ellipsis/);
 });
 
+
+test('Undo and Redo follow the order of misdeals and hands without resetting played time', () => {
+  const app = createRuntime(true);
+  app.run("updateState({ dealers: ['Ann', 'Bo', 'Cam', 'Di'] }); handleMisdeal()");
+  app.advance(60000);
+  app.run("submitStructuredRound({ biddingTeam: 'us', bidAmount: 125, points: 130 }); handleMisdeal()");
+  assert.equal(app.run('getCurrentDealer(state)'), 'Di');
+  app.run('handleUndo()');
+  assert.equal(app.run('state.rounds.length'), 1);
+  app.run('handleUndo(); handleUndo()');
+  assert.equal(app.run('state.rounds.length + state.misdealCount'), 0);
+  assert.equal(app.run('getCurrentGameTime(state)'), 60000);
+  app.run('handleRedo(); handleRedo(); handleRedo()');
+  assert.equal(app.run('getCurrentDealer(state)'), 'Di');
+  assert.equal(app.run('state.rounds.length'), 1);
+  assert.equal(app.run('getCurrentGameTime(state)'), 60000);
+});
+
+test('New Game from Home clears redo-only state and the previous clock', () => {
+  const app = createRuntime(true);
+  app.run('homeStartNewGame()');
+  assert.equal(app.localStorage.getItem('activeGameState'), null, 'a fresh device can still restore a cloud game');
+  app.run('updateState({ undoneRounds: [{}], timerStarted: true, accumulatedTime: 65000 }); homeStartNewGame()');
+  assert.equal(app.run('state.undoneRounds.length'), 0);
+  assert.equal(app.run('hasStartedCurrentGameTimer(state)'), false);
+  assert.equal(app.run('getCurrentGameTime(state)'), 0);
+});
+
+test('a read-only device can open the scoreboard even if its previous save is unreadable', () => {
+  const app = createRuntime(true);
+  app.localStorage.removeItem = () => { throw new Error('Read only'); };
+  for (const unreadable of ['{', '[]']) {
+    app.localStorage.setItem('activeGameState', unreadable);
+    app.run('loadCurrentGameState()');
+    assert.equal(app.run('state.rounds.length'), 0);
+    assert.equal(app.run('state.gameOver'), false);
+  }
+});
+
+test('Fix Score reverses the winning history edit after reload and keeps pending Redo', () => {
+  const app = createRuntime(true);
+  app.run("submitStructuredRound({ biddingTeam: 'us', bidAmount: 125, points: 130 }); submitStructuredRound({ biddingTeam: 'dem', bidAmount: 125, points: 150 }); handleUndo()");
+  const original = app.run('JSON.stringify(state.rounds)');
+  app.run("updateState({ historyEdit: { idx: 0, field: 'us' } }); commitHistoryEdit(0, 'us', '550')");
+  assert.equal(app.run('state.gameOver'), true);
+  app.run('loadCurrentGameState(); handleGameOverFixClick()');
+  assert.equal(app.run('state.gameOver'), false);
+  assert.equal(app.run('JSON.stringify(state.rounds)'), original);
+  app.run('handleRedo()');
+  assert.equal(app.run('state.rounds.length'), 2);
+});
+
+test('resuming a game keeps both copies when the active snapshot cannot be stored', () => {
+  const app = createRuntime(true);
+  app.run(`updateState({ startingTotals: { us: 90, dem: 30 } }); saveCurrentGameState();
+    setLocalStorage('freezerGames', [{ id: 'ice', usName: 'Ann', demName: 'Jo', finalScore: {us: 10, dem: 20}, rounds: [] }]);`);
+  const before = app.localStorage.getItem('activeGameState');
+  const store = app.localStorage.setItem;
+  app.localStorage.setItem = (key, value) => {
+    if (key === 'activeGameState') throw new Error('Full device');
+    return store(key, value);
+  };
+  app.run("loadFreezerGame(0, { confirm: false })");
+  assert.equal(app.localStorage.getItem('activeGameState'), before);
+  assert.equal(app.run('state.startingTotals.us'), 90);
+  assert.equal(app.run("getLocalStorage('freezerGames').length"), 1);
+  assert.equal(app.localStorage.getItem('removedGames'), null);
+});
+
+test('account resets advance beyond the account clock and leave other accounts out', () => {
+  const app = createRuntime(true);
+  app.run(`firebaseAuth = { currentUser: { uid: 'ours' } };
+    setLocalStorage(GAME_DATA_RESET_MARKERS_KEY, { agreed: { ours: '2030-01-01T00:00:00.000Z', other: '2040-01-01T00:00:00.000Z' } });`);
+  assert.equal(app.run('nextGameDataResetMarker(100000)'), '2030-01-01T00:00:00.001Z');
+});
+
+test('voice actions require an explicit plan and the confirmation captured with the request', async () => {
+  const app = createRuntime(true);
+  app.loadVoice();
+  assert.equal(app.run("normalizeVoiceScorePlan({ actions: [{ type: 'newGame' }] }).actions.length"), 0);
+  const button = app.document.getElementById('confirmModalButton');
+  let clicks = 0;
+  button.click = () => { clicks++; };
+  const action = "{ type: 'confirmationAction', confirmationChoice: 'confirm' }";
+  await app.run(`executeVoiceScorePlanActions({ actions: [${action}] }, { confirmationButton: getVoiceScoreConfirmationButton() })`);
+  assert.equal(clicks, 1);
+  await assert.rejects(app.run(`executeVoiceScorePlanActions({ actions: [${action}] }, { confirmationButton: null })`), /answer the confirmation/);
+  await assert.rejects(app.run("executeVoiceScorePlanActions({ actions: [{ type: 'confirmationAction' }] }, { confirmationButton: getVoiceScoreConfirmationButton() })"), /yes or no/);
+  assert.equal(clicks, 1);
+});
+
+test('voice samples redact known library and historical team labels', () => {
+  const app = createRuntime(true);
+  app.loadVoice();
+  const redacted = app.run(`redactVoiceImprovementText("Show Barn Birds and the Winter Final", buildVoiceImprovementIdentityMap({
+    statistics: { teams: [{ name: "Barn Birds", players: ["Ann", "Bo"] }] }, library: { completed: [{ name: "Winter Final" }] }
+  }))`);
+  assert.equal(redacted, 'Show team-1 and the saved game');
+});
+
+test('legacy team migration creates independent own entries', () => {
+  const app = createRuntime(true);
+  assert.equal(app.run("Object.getPrototypeOf(normalizeTeamsStorage({ 'Ann & Bo': {wins: 1} }).data)"), null);
+  assert.equal(app.run("Object.hasOwn(normalizeTeamsStorage({ 'Ann & Bo': {wins: 1} }).data, 'ann||bo')"), true);
+});

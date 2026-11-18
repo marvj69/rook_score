@@ -36,7 +36,7 @@
     *   **Voice Scoring:** Understands spoken score phrases, infers team, bid, points, made/set status, misdeal, undo, and "fix the last hand" corrections, and asks for confirmation when the phrase is incomplete.
     *   **Voice Answers:** Ask about the game ("What's the score?", "Who deals next?", "How many do we need?") and hear the answer. Replies are read aloud unless Spoken voice replies is turned off.
     *   **Voice Follow-ups:** Remembers the original voice request and the LLM's clarification question or answer so short follow-ups ("Carol", "and theirs?") can complete the same request.
-    *   **Optional Improvement Sharing:** With Experimental Features enabled, users can separately opt in to share redacted command text, sanitized structured action targets, limited game context, and outcomes for future model improvement. Raw audio and real player/team names are never stored by Rook Score.
+    *   **Optional Improvement Sharing:** With Experimental Features enabled, users can separately opt in to share redacted command text, sanitized structured action targets, limited game context, and outcomes for future model improvement. Rook Score omits raw audio and replaces known names before saving a sample. Other details spoken in a command can remain in its text.
     *   **"Must Win By Making Bid" Rule:** Optional game rule setting.
     *   **Pro Mode:** Enables win probability display during active games.
     *   **0-Point Handling:** Smart popup to confirm 180 or 360-point bonus for the bidding team if the opposing team scores 0.
@@ -319,7 +319,7 @@ If you want to use your own Firebase backend:
     *   **Authentication:** Enable "Google" and "Anonymous" sign-in methods in the Firebase Authentication section.
     *   **Firestore:** Create a Firestore database in "Production mode".
         *   **Security Rules:** Deploy the checked-in `firestore.rules`, which covers both owner-only cloud sync and create-only voice-improvement samples. You can use the Firebase CLI command in the Firestore Rules section above or paste the file into the Firebase Console Rules tab.
-    *   **API key restriction:** Firebase web app API keys are visible to browsers at runtime. In Google Cloud Console, restrict the key to the required Firebase APIs and your approved HTTP referrers, then rotate any key that was previously committed or deployed publicly.
+    *   **API key restriction:** Firebase web app API keys are visible to browsers at runtime. In Google Cloud Console, restrict the key to the required Firebase APIs and your approved HTTP referrers, then rotate any key that was previously committed or deployed publicly. For the two production sites, allow `https://rook-score.vercel.app/*` and `https://marvj69.github.io/*`. Both hostnames also belong in Firebase Authentication's authorized domains. Cross-origin requests to Firebase send the origin, including when the app lives under the Pages `/rook_score/` path.
 
 ## Contributing
 

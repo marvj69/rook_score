@@ -60,15 +60,56 @@ function decodeFirestoreFields(fields) {
 // The app uploads finished games gzipped in "savedGamesPacked"
 // (["gzip-json-v1;<delete marker>", "<base64>", ...], see js/firebase-init.js).
 // Older app versions write the plain "savedGames" list; a document can hold both.
+function gameTime(game) {
+  return Math.max(0, ...[game.timestamp, game.frozenAt, game.timerLastActivityAt, game.timerLastSavedAt, game.startTime, game.restoredAt]
+    .map(value => typeof value === "number" ? value : Date.parse(value || ""))
+    .filter(Number.isFinite));
+}
+
 function readSavedGames(data) {
-  const plain = Array.isArray(data.savedGames) ? data.savedGames : [];
-  const pieces = Array.isArray(data.savedGamesPacked) ? data.savedGamesPacked : [];
-  if (pieces.length < 2 || !String(pieces[0]).startsWith("gzip-json-v1;")) return plain;
-  const packed = JSON.parse(gunzipSync(Buffer.from(pieces.slice(1).join(""), "base64")).toString("utf8"));
-  if (!Array.isArray(packed)) return plain;
-  const gameKey = game => game?.id || game?.timestamp || JSON.stringify(game);
-  const packedKeys = new Set(packed.map(gameKey));
-  return [...packed, ...plain.filter(game => !packedKeys.has(gameKey(game)))];
+  const pieces = data.savedGamesPacked;
+  let packed = [];
+  if (pieces != null) {
+    if (!Array.isArray(pieces) || pieces.length < 2 || !pieces.every(piece => typeof piece === "string")
+        || !/^gzip-json-v1;[^;]*$/.test(pieces[0])) throw new Error("Unreadable saved-game pack");
+    // Above the app's 15 MiB backup limit, while bounding memory per input.
+    const decoded = gunzipSync(Buffer.from(pieces.slice(1).join(""), "base64"), { maxOutputLength: 32 * 1024 * 1024 });
+    packed = JSON.parse(decoded.toString("utf8"));
+    if (!Array.isArray(packed)) throw new Error("Invalid saved-game list");
+    const packedReset = Date.parse(pieces[0].split(";")[1]) || 0;
+    const reset = Date.parse(data.gameDataResetAt) || 0;
+    if (packedReset < reset) packed = packed.filter(game => game && gameTime(game) > reset);
+  }
+  const removals = new Map();
+  for (const entry of Array.isArray(data.removedGames) ? data.removedGames : []) {
+    if (entry?.list === "savedGames" && typeof entry.key === "string" && Number.isFinite(entry.at)) {
+      removals.set(entry.key, Math.max(removals.get(entry.key) || 0, entry.at));
+    }
+  }
+  const games = new Map();
+  for (const game of [...packed, ...(Array.isArray(data.savedGames) ? data.savedGames : [])]) {
+    if (!game || typeof game !== "object" || Array.isArray(game)) continue;
+    const key = game.id || game.timestamp || JSON.stringify(game);
+    const removedAt = removals.get(String(key));
+    if (removedAt !== undefined && gameTime(game) <= removedAt) continue;
+    if (!games.has(key) || gameTime(game) > gameTime(games.get(key))) games.set(key, game);
+  }
+  return [...games.values()];
+}
+
+function collectTrainingSources(rows) {
+  const sources = [];
+  let unreadableLibraries = 0;
+  for (const { document } of rows) {
+    if (!document) continue;
+    try {
+      const games = readSavedGames(decodeFirestoreFields(document.fields || {}));
+      sources.push({ sourceKey: sourceKey(document.name), games });
+    } catch {
+      unreadableLibraries += 1;
+    }
+  }
+  return { sources, unreadableLibraries };
 }
 
 function sourceKey(documentName) {
@@ -126,16 +167,7 @@ async function queryRookData(projectId) {
   if (!response.ok) throw new Error(`Firestore read-only query failed (${response.status}).`);
 
   const rows = await response.json();
-  return rows
-    .map(row => row.document)
-    .filter(Boolean)
-    .map(document => {
-      const data = decodeFirestoreFields(document.fields || {});
-      return {
-        sourceKey: sourceKey(document.name),
-        games: readSavedGames(data),
-      };
-    });
+  return collectTrainingSources(rows);
 }
 
 async function writePrivateJson(filePath, value) {
@@ -152,11 +184,13 @@ async function main() {
 
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const outputDirectory = path.resolve(repoRoot, options.outputDirectory);
-  const sourceDocuments = await queryRookData(options.projectId);
+  const { sources: sourceDocuments, unreadableLibraries } = await queryRookData(options.projectId);
+  if (unreadableLibraries && !sourceDocuments.length) throw new Error("No readable game libraries were available for export.");
   const { dataset, audit } = normalizeTrainingSnapshot(sourceDocuments, {
     projectId: options.projectId,
   });
 
+  audit.unreadableLibraries = unreadableLibraries;
   await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
   await chmod(outputDirectory, 0o700);
   const datasetPath = path.join(outputDirectory, "games_normalized_v2.json");
@@ -167,6 +201,7 @@ async function main() {
   console.log(JSON.stringify({
     firebaseOperation: "read-only runQuery",
     firebaseMutated: false,
+    unreadableLibraries,
     datasetPath,
     auditPath,
     rawStoredGameCopies: audit.rawStoredGameCopies,
@@ -177,12 +212,16 @@ async function main() {
   }, null, 2));
 }
 
-main().catch(error => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
 
 export const __test = {
+  readSavedGames,
+  collectTrainingSources,
   decodeFirestoreValue,
   decodeFirestoreFields,
   sourceKey,

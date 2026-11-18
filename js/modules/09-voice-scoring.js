@@ -22,10 +22,6 @@ const VERCEL_VOICE_SCORE_COMMAND_URL = "https://rook-score.vercel.app/api/voice-
 const VOICE_SCORE_GITHUB_PAGES_HOSTNAMES = new Set(["marvj69.github.io"]);
 const VOICE_SCORE_ACTION_TYPES = new Set(Object.keys(VOICE_TOOLS.actions));
 const VOICE_SCORE_PLAN_STATUSES = new Set(VOICE_TOOLS.statuses);
-const VOICE_SCORE_TIMER_KEYS = [
-  "startTime", "timerStarted", "accumulatedTime", "timerLastSavedAt",
-  "timerLastActivityAt", "timerPaused", "timerSkippedMs",
-];
 let voiceScoreRecorder = null;
 let voiceScoreRecorderStream = null;
 let voiceScoreListening = false;
@@ -387,9 +383,7 @@ function normalizeVoiceScorePlan(plan) {
     : [];
   let status = VOICE_SCORE_PLAN_STATUSES.has(candidate.status)
     ? candidate.status
-    : actions.length
-      ? "execute"
-      : "clarify";
+    : "clarify";
   // Mirrors the server: only "execute" and "confirm" act, so a question or a
   // refusal never runs actions behind it, and "act" needs a runnable action.
   if (status === "answer" || status === "clarify" || status === "unsupported") actions = [];
@@ -466,6 +460,8 @@ function buildVoiceImprovementIdentityMap(context = getVoiceScoreAppContext(), a
     const names = getVoiceScoreStatisticsTeamPlayers(team);
     const players = names.map(addPlayer).filter(Boolean).slice(0, 2);
     const safeKey = `team-${index + 1}`;
+    const label = sanitizePlayerName(team?.name);
+    if (label) teamReplacements.push({ value: label, replacement: safeKey });
     if (names.length) {
       teamEntityKeys.set(buildTeamKey(names), safeKey);
       teamEntityKeys.set(names.map(name => sanitizePlayerName(name).toLowerCase()).join(TEAM_KEY_SEPARATOR), safeKey);
@@ -481,6 +477,13 @@ function buildVoiceImprovementIdentityMap(context = getVoiceScoreAppContext(), a
       action?.firstDealer,
     ].forEach(addPlayer);
   });
+
+  for (const game of [...(context.library?.completed || []), ...(context.library?.freezer || [])]) {
+    for (const [value, replacement] of [[game.us, "Us team"], [game.dem, "Dem team"], [game.name, "saved game"]]) {
+      const label = sanitizePlayerName(value);
+      if (label && !/^(us|dem)$/i.test(label)) teamReplacements.push({ value: label, replacement });
+    }
+  }
 
   [
     { value: context.teams?.us?.label, replacement: "Us team" },
@@ -939,21 +942,13 @@ function applyVoiceScoreReplaceLastRound(action) {
   const validationError = validateBid(String(hand.bidAmount)) || validatePoints(String(hand.points));
   if (validationError) throw new Error(validationError);
 
-  // Undoing the only hand resets the game timer, so keep the running clock.
-  const timerSnapshot = state.rounds.length === 1
-    ? Object.fromEntries(VOICE_SCORE_TIMER_KEYS.map(key => [key, state[key]]))
-    : null;
-  handleUndo();
+  handleUndo({ roundOnly: true });
   try {
     submitVoiceScoreHand(action);
   } catch (error) {
     updateState({ error: "" });
     handleRedo();
     throw error;
-  }
-  if (timerSnapshot) {
-    updateState(timerSnapshot);
-    saveCurrentGameState();
   }
   return "Last hand corrected.";
 }
@@ -1072,8 +1067,6 @@ function applyVoiceScoreStartPaperGame(action, { confirmed = false } = {}) {
     showWinProbability: Boolean(getLocalStorage(PRO_MODE_KEY, false)),
     usPlayers: ensurePlayersArray(action.usPlayers || state.usPlayers),
     demPlayers: ensurePlayersArray(action.demPlayers || state.demPlayers),
-    dealers: Array.isArray(state.dealers) ? state.dealers : [],
-    misdealCount: state.misdealCount || 0,
   };
   updates.usTeamName = deriveTeamDisplay(updates.usPlayers, state.usTeamName || "Us");
   updates.demTeamName = deriveTeamDisplay(updates.demPlayers, state.demTeamName || "Dem");
@@ -1147,18 +1140,7 @@ function applyVoiceScoreEditRound(action) {
     throw new Error("Say the bid or cumulative team total to change.");
   }
 
-  updateState({ error: "" });
-  for (const [field, value] of edits) {
-    // commitHistoryEdit only acts on a cell that is being edited, as when a finger opens it; without
-    // this the call returned quietly, the round never changed, and the reply still said "updated".
-    updateState({ historyEdit: { idx: roundNumber - 1, field }, error: "" });
-    commitHistoryEdit(roundNumber - 1, field, value);
-    if (state.error) throw new Error(state.error);
-    if (state.historyEdit) {
-      updateState({ historyEdit: null });
-      throw new Error(`Round ${roundNumber} was not changed.`);
-    }
-  }
+  if (!applyHistoryEdits(roundNumber - 1, edits)) throw new Error(state.error || "The round could not be updated.");
   return `Round ${roundNumber} updated.`;
 }
 
@@ -1187,7 +1169,8 @@ async function applyVoiceScoreAuthAction(action) {
 }
 
 function applyVoiceScoreConfirmationAction(action) {
-  const choice = action.confirmationChoice === "cancel" ? "cancel" : "confirm";
+  const choice = action.confirmationChoice;
+  if (choice !== "confirm" && choice !== "cancel") throw new Error("Say yes or no to the confirmation.");
   const modal = document.getElementById("confirmationModal");
   if (!modal || modal.classList.contains("hidden")) throw new Error("There is no confirmation open.");
   const buttonId = choice === "confirm" ? "confirmModalButton" : "noModalButton";
@@ -1423,18 +1406,20 @@ const VOICE_SCORE_ACTION_HANDLERS = {
   replaceLastRound: applyVoiceScoreReplaceLastRound,
   editRound: applyVoiceScoreEditRound,
   undo() {
-    if (!state.rounds.length) throw new Error("No hand to undo.");
+    if (!state.rounds.length && !state.misdealRoundIndexes.length) throw new Error("No hand to undo.");
+    const hands = state.rounds.length;
     handleUndo();
-    return "Undid last hand.";
+    return state.rounds.length === hands ? "Undid misdeal." : "Undid last hand.";
   },
   redo() {
-    if (!state.undoneRounds.length) throw new Error("No hand to redo.");
+    if (!state.undoneRounds.length && !state.undoneMisdeals.length) throw new Error("No hand to redo.");
+    const hands = state.rounds.length;
     handleRedo();
-    return "Redid last hand.";
+    return state.rounds.length === hands ? "Redid misdeal." : "Redid last hand.";
   },
   misdeal() {
     if (!Array.isArray(state.dealers) || state.dealers.length === 0) throw new Error("Enter a dealing order before using misdeal.");
-    handleMisdeal();
+    if (!handleMisdeal()) throw new Error("Record a misdeal before the next bid.");
     return "Moved to next dealer.";
   },
   newGame(_action, { confirmed }) {
@@ -1446,8 +1431,9 @@ const VOICE_SCORE_ACTION_HANDLERS = {
     return "Confirm the new game.";
   },
   async freezeGame(_action, { confirmed }) {
+    if (state.gameOver) throw new Error("This game is finished. Save it from the game-over screen.");
     if (confirmed && state.rounds.length && state.usTeamName && state.demTeamName) {
-      await freezeCurrentGame();
+      if (!await freezeCurrentGame()) throw new Error("The game could not be frozen.");
       return "Game frozen.";
     }
     handleFreezerGame();
@@ -1474,7 +1460,7 @@ const VOICE_SCORE_ACTION_HANDLERS = {
   },
   setDealerOrder(action) {
     const dealers = sanitizeVoiceScoreDealers(action.dealers);
-    updateState({ dealers, misdealCount: 0, misdealDealers: [] });
+    updateState({ dealers });
     saveCurrentGameState();
     return `Dealer order set: ${dealers.join(", ")}.`;
   },
@@ -1525,25 +1511,27 @@ function getVoiceScoreActionHandlerTypes() {
   return Object.keys(VOICE_SCORE_ACTION_HANDLERS);
 }
 
-function isVoiceScoreConfirmationOpen() {
+function getVoiceScoreConfirmationButton() {
   const modal = document.getElementById("confirmationModal");
-  return Boolean(modal) && !modal.classList.contains("hidden");
+  return modal && !modal.classList.contains("hidden") ? document.getElementById("confirmModalButton") : null;
 }
 
 async function executeVoiceScorePlanActions(plan, options = {}) {
   const messages = [];
   // A plan may answer a confirmation the user can already see, but never one
   // that an earlier action in the same plan opened (delete + "confirm").
-  const confirmationOpenBeforePlan = isVoiceScoreConfirmationOpen();
+  const buttonBeforePlan = getVoiceScoreConfirmationButton();
+  if (plan.actions.some(action => action.type === "confirmationAction")
+      && (plan.actions.length !== 1 || !buttonBeforePlan || buttonBeforePlan !== options.confirmationButton)) {
+    throw new Error("Please answer the confirmation on screen.");
+  }
   for (const action of plan.actions) {
-    if (action.type === "confirmationAction" && !confirmationOpenBeforePlan) {
-      throw new Error("Please answer the confirmation on screen.");
-    }
     const message = await executeVoiceScoreAction(action, options);
     if (message) messages.push(message);
     // The action is waiting for an answer on screen. Anything after it was
     // meant for the game that does not exist yet, so it is not run on this one.
-    if (message === VOICE_SCORE_REPLACE_GAME_PROMPT) break;
+    const buttonAfterAction = getVoiceScoreConfirmationButton();
+    if (message === VOICE_SCORE_REPLACE_GAME_PROMPT || (buttonAfterAction && buttonAfterAction !== buttonBeforePlan)) break;
   }
   return messages;
 }
@@ -1667,7 +1655,7 @@ function cancelVoiceScoreEntry() {
   refreshVoiceScoreControls();
 }
 
-async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOperationId, context = null) {
+async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOperationId, context = null, confirmationButton = getVoiceScoreConfirmationButton()) {
   if (!audioBlob || !audioBlob.size) {
     if (operationId === voiceScoreOperationId) {
       setVoiceScoreStatus("No voice audio was captured.", "error");
@@ -1692,7 +1680,7 @@ async function processVoiceScoreAudioBlob(audioBlob, operationId = voiceScoreOpe
       mimeType: audioBlob.type || "audio/webm",
     }, { context: planContext, signal: requestController?.signal });
     if (operationId !== voiceScoreOperationId) return false;
-    return await applyVoiceScorePlan(plan, planContext);
+    return await applyVoiceScorePlan(plan, planContext, confirmationButton);
   } catch (error) {
     if (operationId !== voiceScoreOperationId || (error?.name === "AbortError" && !timedOut)) return false;
     reportVoiceScoreOutcome(
@@ -1718,6 +1706,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
 
   if (voiceScoreMode) return false;
   const operationId = voiceScoreOperationId + 1;
+  const confirmationButton = getVoiceScoreConfirmationButton();
   voiceScoreOperationId = operationId;
   voiceScoreMode = "starting";
   voiceScoreListening = true;
@@ -1774,7 +1763,7 @@ async function startRecordedVoiceScoreEntry(fallbackMessage = "Voice recording i
       const preparedContext = voiceScorePreparedContext;
       voiceScorePreparedContext = null;
       refreshVoiceScoreControls();
-      processVoiceScoreAudioBlob(audioBlob, operationId, preparedContext).finally(() => {
+      processVoiceScoreAudioBlob(audioBlob, operationId, preparedContext, confirmationButton).finally(() => {
         if (operationId !== voiceScoreOperationId) return;
         voiceScoreMode = "";
         refreshVoiceScoreControls();
@@ -1978,7 +1967,7 @@ function initializeVoiceScoreControls() {
   return true;
 }
 
-async function applyVoiceScorePlan(plan, context = null) {
+async function applyVoiceScorePlan(plan, context = null, confirmationButton = getVoiceScoreConfirmationButton()) {
   const normalizedPlan = normalizeVoiceScorePlan(plan);
   const improvementSnapshot = createVoiceImprovementSnapshot(normalizedPlan, context || undefined);
   updateVoiceScoreConversation(normalizedPlan, normalizedPlan.heardText);
@@ -1999,15 +1988,22 @@ async function applyVoiceScorePlan(plan, context = null) {
     return false;
   }
 
+  if (normalizedPlan.requiresConfirmation && normalizedPlan.actions.some(action => action.type === "confirmationAction")) {
+    reportVoiceScoreOutcome("Please answer the confirmation on screen.", "info");
+    return false;
+  }
+
   const executePlan = async (confirmed = false) => {
     try {
-      const messages = await executeVoiceScorePlanActions(normalizedPlan, { confirmed });
+      const initialButton = getVoiceScoreConfirmationButton();
+      const messages = await executeVoiceScorePlanActions(normalizedPlan, { confirmed, confirmationButton });
       // A plan that stopped to ask before replacing a game has not done it yet,
       // so the planner's "started" wording would be wrong: say the question.
-      const awaitingAnswer = messages.includes(VOICE_SCORE_REPLACE_GAME_PROMPT);
+      const nextButton = getVoiceScoreConfirmationButton();
+      const awaitingAnswer = messages.includes(VOICE_SCORE_REPLACE_GAME_PROMPT) || (nextButton && nextButton !== initialButton);
       // After a confirmation the plan's message is the question, so fall back
       // to the summary.
-      const successMessage = (awaitingAnswer ? VOICE_SCORE_REPLACE_GAME_PROMPT : "")
+      const successMessage = (awaitingAnswer ? messages.at(-1) : "")
         || (confirmed ? "" : normalizedPlan.message)
         || normalizedPlan.summary
         || messages.find(Boolean)

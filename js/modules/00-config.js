@@ -37,7 +37,7 @@ const DEFAULT_STATE = {
   error: "", gameOver: false, winner: null, victoryMethod: null,
   savedScoreInputStates: { us: null, dem: null }, lastBidAmount: null,
   lastBidTeam: null,
-  historyEdit: null,
+  historyEdit: null, winningHistoryEdit: null,
   usTeamName: "", demTeamName: "",
   usPlayers: ["", ""], demPlayers: ["", ""],
   startTime: null,
@@ -52,7 +52,7 @@ const DEFAULT_STATE = {
   startingTotals: { us: 0, dem: 0 },
   dealers: [],
   misdealCount: 0,
-  misdealDealers: [],
+  misdealDealers: [], misdealRoundIndexes: [], undoneMisdeals: [],
 };
 
 function sanitizePlayerName(name) {

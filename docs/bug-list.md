@@ -4,15 +4,15 @@ From the app scan on 2026-11-13 (tests, a hands-on pass at phone size, and a cod
 
 **Status key:** ✅ fixed · 🔧 in progress · ⬜ open
 
-**Progress:** 10 of 20 fixed (last updated 2026-11-15)
+**Progress:** 20 of 20 fixed (last updated 2026-11-18)
 
 | Area | Fixed | Open |
 | --- | --- | --- |
 | Scoring | 2 | 0 |
-| Cloud sync | 5 | 1 |
-| Voice and photo (experimental) | 3 | 3 |
-| Game flow | 0 | 4 |
-| Other | 0 | 2 |
+| Cloud sync | 6 | 0 |
+| Voice and photo (experimental) | 6 | 0 |
+| Game flow | 4 | 0 |
+| Other | 2 | 0 |
 
 How each bug was confirmed is noted in its row: **browser** (reproduced by hand in the app), **simulator** (reproduced in Node against the real module with a fake Firestore or DOM), or **read** (traced in the code only).
 
@@ -32,7 +32,7 @@ How each bug was confirmed is noted in its row: **browser** (reproduced by hand 
 | 5 | ✅ | Medium | Default rule settings overwrite the cloud copy on a new device. Every launch writes the table-talk penalty type, and closing Settings writes the other rule toggles; at sign-in the local value wins. | browser (the writes), read (the merge) | `js/modules/13-settings-loading.js`, `js/modules/09-settings-validation-misc.js` |
 | 6 | ✅ | Medium | A save, delete, freeze or resume made while the startup merge is writing replaces the just-merged cloud lists with the local-only list. | simulator | `js/firebase-init.js` (changes-during-merge write) |
 | 7 | ✅ | Medium | All synced data lives in one Firestore document. Past 1 MiB (roughly 370–560 saved games) every sync write fails, and nothing tells the user. | read plus size arithmetic | `js/firebase-init.js` |
-| 8 | ⬜ | Low | Delete All Game Data is rejected, and the data comes back, when the account's existing delete marker is ahead of this device's clock. | simulator | `js/modules/13-delete-game-data.js` `nextGameDataResetMarker` |
+| 8 | ✅ | Low | Delete All Game Data is rejected, and the data comes back, when the account's existing delete marker is ahead of this device's clock. | simulator | `js/modules/13-delete-game-data.js` `nextGameDataResetMarker` |
 
 ## Voice and photo (experimental)
 
@@ -41,27 +41,35 @@ How each bug was confirmed is noted in its row: **browser** (reproduced by hand 
 | 9 | ✅ | High | A "clarify" or "unsupported" voice plan that carries actions is executed, so a hand can be recorded while the app is asking a question. | simulator | `api/voice-score-command.js` `normalizePlan`, `js/modules/09-voice-scoring.js` |
 | 10 | ✅ | Medium | `null` / `""` fields from the voice model are applied as 0: a round's totals are zeroed, a 0-point set is recorded, or the delete dialog opens for the first saved game. | simulator | `js/modules/09-voice-scoring.js` |
 | 11 | ✅ | Medium | Voice "start paper game" and "rematch, X deals first" wipe an in-progress game with no confirmation. | simulator | `js/modules/09-voice-scoring.js` |
-| 12 | ⬜ | Medium | Paper photo: unreadable (`null`) cells are imported as a score of 0. | simulator | `api/paper-game-photo.js`, `js/modules/07-paper-game-photo.js` |
-| 13 | ⬜ | Low | The photo button cannot choose an existing image on phones: `capture="environment"` opens the camera directly despite the "Choose Image" label. | read (not tried on a device) | `index.html` `#resumePaperPhotoInput` |
-| 14 | ⬜ | Low | Smaller voice gaps: "stats" plus a player name appends "show X's stats" to unrelated plans; voice can freeze a finished game; voice dealer order wipes recorded misdeals. | simulator | `api/voice-score-command.js`, `js/modules/09-voice-scoring.js` |
+| 12 | ✅ | Medium | Paper photo: unreadable (`null`) cells are imported as a score of 0. | simulator | `api/paper-game-photo.js`, `js/modules/07-paper-game-photo.js` |
+| 13 | ✅ | Low | The photo button cannot choose an existing image on phones: `capture="environment"` opens the camera directly despite the "Choose Image" label. | read (not tried on a device) | `index.html` `#resumePaperPhotoInput` |
+| 14 | ✅ | Low | Smaller voice gaps: "stats" plus a player name appends "show X's stats" to unrelated plans; voice can freeze a finished game; voice dealer order wipes recorded misdeals. | simulator | `api/voice-score-command.js`, `js/modules/09-voice-scoring.js` |
 
 ## Game flow
 
 | # | Status | Severity | Bug | Confirmed | Where |
 | --- | --- | --- | --- | --- | --- |
-| 15 | ⬜ | Low | Home's "New Game" skips the reset when only leftovers remain, so an old Redo stack or a running clock carries into the new game. | simulator | `js/modules/13-home-screen.js` `homeStartNewGame` |
-| 16 | ⬜ | Low | Undoing the only round zeroes the game clock, and Redo does not bring it back. | simulator | `js/modules/08-game-actions-logic.js` `handleUndo` |
-| 17 | ⬜ | Low | Misdeal has no confirmation, and Undo does not revert it. | simulator | `js/modules/08-game-actions-logic.js` |
-| 18 | ⬜ | Low | "Fix Score" after a typo in a History correction removes the last round instead of the typo, and correcting the cell then clears Redo. | simulator | `js/modules/08-game-actions-logic.js`, `js/modules/11-rendering.js` |
+| 15 | ✅ | Low | Home's "New Game" skips the reset when only leftovers remain, so an old Redo stack or a running clock carries into the new game. | simulator | `js/modules/13-home-screen.js` `homeStartNewGame` |
+| 16 | ✅ | Low | Undoing the only round zeroes the game clock, and Redo does not bring it back. | simulator | `js/modules/08-game-actions-logic.js` `handleUndo` |
+| 17 | ✅ | Low | Misdeal has no confirmation, and Undo does not revert it. | simulator | `js/modules/08-game-actions-logic.js` |
+| 18 | ✅ | Low | "Fix Score" after a typo in a History correction removes the last round instead of the typo, and correcting the cell then clears Redo. | simulator | `js/modules/08-game-actions-logic.js`, `js/modules/11-rendering.js` |
 
 ## Other
 
 | # | Status | Severity | Bug | Confirmed | Where |
 | --- | --- | --- | --- | --- | --- |
-| 19 | ⬜ | Low | After an update, an already-open page can load new Statistics / voice / probability code against the old core until the app is relaunched. | read | `service-worker.js`, lazy bundle loaders |
-| 20 | ⬜ | Low | Odds and ends: Pro Mode win % favours the trailing team when both totals are negative; startup throws and the loading veil never lifts when the browser blocks site storage; the probability timeline starts a paper game at 0–0. | simulator | `js/modules/02-win-prob-engine.js`, `js/modules/04-theme-ui-helpers.js`, `js/modules/10-probability-explanation.js` |
+| 19 | ✅ | Low | After an update, an already-open page can load new Statistics / voice / probability code against the old core until the app is relaunched. | read | `service-worker.js`, lazy bundle loaders |
+| 20 | ✅ | Low | Odds and ends: Pro Mode win % favours the trailing team when both totals are negative; startup throws and the loading veil never lifts when the browser blocks site storage; the probability timeline starts a paper game at 0–0. | simulator | `js/modules/02-win-prob-engine.js`, `js/modules/04-theme-ui-helpers.js`, `js/modules/10-probability-explanation.js` |
 
 ## Fix log
+
+### 2026-11-18
+
+- **#8 and concurrent cloud saves.** A full deletion advances past the account's last acknowledged reset even on a slow clock. Queued writes retain their original account. Saved games, frozen games and individual deletions are reconciled in a Firestore transaction. Verified simultaneous saves, a deletion during another save, recovery on a fresh device, and an account-specific reset with the Firestore emulator and the project's rules.
+- **#12–14, voice and photo.** An unreadable final score asks for another photo. An incomplete history imports only the readable final pair. A genuine zero remains a score, and the image picker accepts existing photos. Named statistics requests, dealer changes and freezing now respect the same game state as their manual controls. A spoken confirmation applies only to the dialog that was open when recording began.
+- **#15–18, game recovery.** Starting fresh clears the prior clock and redo history. Undo and Redo preserve elapsed time and reverse newly recorded misdeals in sequence with the hands. Fix Score reverses the History correction that ended the game, including after a reload. Resuming a frozen game keeps the frozen copy until the active scoreboard has been saved successfully.
+- **#19, offline updates.** Each release caches the scoreboard and its optional modules together. Tested in Chromium and WebKit with two successive releases. A tab kept its own Statistics module while an update waited, and the next release reopened the saved game with the origin offline.
+- **#20, odds and startup.** The probability timeline shows the actual paper starting totals and begins its estimates at the first tracked hand. Below the model's observed combined-score minimum of −300, the score interactions use that lower bound. The app can also open when the browser blocks site storage.
 
 ### 2026-11-15
 

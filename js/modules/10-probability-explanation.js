@@ -42,7 +42,8 @@ function generateProbabilityBreakdown() {
 // screen uses, so the last point always equals the number shown in the app.
 function buildProbabilityTimeline(games, context) {
   const rounds = Array.isArray(state.rounds) ? state.rounds : [];
-  const points = [{ hand: 0, us: 0, dem: 0, prob: 50 }];
+  const start = sanitizeTotals(state.startingTotals);
+  const points = [{ hand: 0, ...start, prob: start.us || start.dem ? null : 50 }];
   rounds.forEach((round, index) => {
     const totals = sanitizeTotals(round?.runningTotals);
     const prefix = { ...state, rounds: rounds.slice(0, index + 1) };
@@ -132,11 +133,11 @@ function probabilityTimelineChart(points, usName, demName, usShort, demShort) {
   const step = Math.max(1, Math.ceil((points.length - 1) / 6));
   const xLabels = points.map((point, index) => (
     index === 0 || index === points.length - 1 || index % step === 0
-      ? `<text class="probability-axis" x="${x(index).toFixed(1)}" y="${H - B + 14}" text-anchor="middle">${index === 0 ? "Start" : `#${index}`}</text>` : ""
+      ? `<text class="probability-axis" x="${x(index).toFixed(1)}" y="${H - B + 14}" text-anchor="middle">${point.hand === 0 ? "Start" : `#${point.hand}`}</text>` : ""
   )).join("");
   const radius = points.length > 16 ? 2.4 : 3.6;
   const dots = points.map((point, index) => (
-    index === 0 ? "" : `<circle class="probability-point probability-point--${point.prob >= 50 ? "us" : "dem"}" cx="${x(index).toFixed(1)}" cy="${y(point.prob).toFixed(1)}" r="${radius}"/>`
+    point.hand === 0 ? "" : `<circle class="probability-point probability-point--${point.prob >= 50 ? "us" : "dem"}" cx="${x(index).toFixed(1)}" cy="${y(point.prob).toFixed(1)}" r="${radius}"/>`
   )).join("");
   const data = points.map((point, index) => [x(index).toFixed(1), y(point.prob).toFixed(1), point.hand, point.us, point.dem, probabilityFixed(point.prob, 2)].join(",")).join(";");
   const lastIndex = points.length - 1;
@@ -180,8 +181,8 @@ function probabilitySwingChart(points, usName, demName) {
   const mid = H / 2;
   const slot = plotW / Math.max(1, points.length - 1);
   const barWidth = Math.min(18, Math.max(3, slot * 0.6));
-  const bars = deltas.map(item => {
-    const cx = L + (item.hand / Math.max(1, points.length - 1)) * plotW;
+  const bars = deltas.map((item, index) => {
+    const cx = L + ((index + 1) / Math.max(1, points.length - 1)) * plotW;
     const height = Math.max(1.5, (Math.abs(item.delta) / maxAbs) * (mid - 6));
     const top = item.delta >= 0 ? mid - height : mid;
     return `<rect class="probability-swing-bar probability-swing-bar--${item.delta >= 0 ? "us" : "dem"}" x="${(cx - barWidth / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${height.toFixed(1)}" rx="2"><title>Hand ${item.hand}: ${probabilitySigned(item.delta)} points</title></rect>`;
@@ -369,12 +370,14 @@ function generateComplexProbabilityBreakdown(scoreDiff, roundsPlayed, labelUs, l
   stages.push({ label: "Shown", prob: winProb.us / 100, final: true });
   const stageChart = stages.length > 2 ? probabilityStageChart(stages, usName) : "";
   const factorChart = features && modelContributes ? probabilityFactorChart(model, features, featureNames, usName, demName) : "";
+  const paperStart = timeline?.[0]?.prob === null ? timeline[0] : null;
+  const estimates = paperStart ? timeline.slice(1) : timeline;
   const timelineSection = Array.isArray(timeline) && timeline.length > 1 ? `
       <section class="probability-card probability-timeline" data-probability-section="timeline" aria-labelledby="probabilityTimelineTitle">
         <h3 id="probabilityTimelineTitle">How the odds moved</h3>
-        <p class="probability-note">Tap or drag across the chart to see any hand.</p>
-        ${probabilityTimelineChart(timeline, usName, demName, escapeHtmlValue(probabilityShortName(labelUs || "Us")), escapeHtmlValue(probabilityShortName(labelDem || "Dem")))}
-        ${probabilitySwingChart(timeline, usName, demName)}
+        <p class="probability-note">${paperStart ? `Paper score ${probabilityScore(paperStart.us)} – ${probabilityScore(paperStart.dem)}. Estimates begin with the first tracked hand. ` : ""}Tap or drag across the chart to see any hand.</p>
+        ${probabilityTimelineChart(estimates, usName, demName, escapeHtmlValue(probabilityShortName(labelUs || "Us")), escapeHtmlValue(probabilityShortName(labelDem || "Dem")))}
+        ${estimates.length > 1 ? probabilitySwingChart(estimates, usName, demName) : ""}
       </section>` : "";
 
   return `

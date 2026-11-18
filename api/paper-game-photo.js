@@ -226,7 +226,7 @@ function extractJsonObject(text) {
 }
 
 function normalizeScore(value) {
-  const score = Number(value);
+  const score = typeof value === "number" || (typeof value === "string" && value.trim()) ? Number(value) : NaN;
   if (
     !Number.isFinite(score)
     || !Number.isInteger(score)
@@ -239,8 +239,7 @@ function normalizeScore(value) {
 }
 
 function normalizeBid(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const bid = Number(value);
+  const bid = normalizeScore(value);
   return Number.isInteger(bid) && bid > 0 && bid <= 360 && bid % 5 === 0 ? bid : null;
 }
 

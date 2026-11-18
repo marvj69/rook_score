@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
+import { __test as exportReader } from "../scripts/export-live-rook-training-data.mjs";
 
 import {
   buildRepresentationWeights,
@@ -149,4 +151,30 @@ test("team representation weighting depends on frequency and never outcomes", ()
     minimumWeight: 0.4,
   });
   assert.deepEqual([...reversed.weights.values()], [...weighted.weights.values()]);
+});
+
+test("the training reader respects packed reset cutoffs, removals and later restores", () => {
+  const reset = "2026-11-03T00:00:00.000Z";
+  const removed = Date.parse("2026-11-05T00:00:00.000Z");
+  const old = { id: "old", timestamp: "2026-11-01T00:00:00.000Z" };
+  const keep = { id: "keep", timestamp: "2026-11-04T00:00:00.000Z" };
+  const deleted = { ...keep, id: "deleted" };
+  const restored = { ...keep, id: "restored" };
+  const data = {
+    gameDataResetAt: reset,
+    savedGamesPacked: ["gzip-json-v1;", gzipSync(JSON.stringify([old, keep, deleted, restored])).toString("base64")],
+    savedGames: [{ ...restored, restoredAt: "2026-11-06T00:00:00.000Z" }],
+    removedGames: [deleted, restored].map(game => ({ list: "savedGames", key: game.id, at: removed })),
+  };
+  assert.deepEqual(exportReader.readSavedGames(data).map(game => game.id), ["keep", "restored"]);
+});
+
+test("a damaged library is counted and the export continues with other accounts", () => {
+  const result = exportReader.collectTrainingSources([
+    { document: { name: "demo/broken", fields: { savedGamesPacked: { stringValue: "incomplete" } } } },
+    { document: { name: "demo/good", fields: { savedGames: { arrayValue: {} } } } },
+  ]);
+  assert.equal(result.unreadableLibraries, 1);
+  assert.equal(result.sources.length, 1);
+  assert.ok(result.sources[0].sourceKey.startsWith("source_"));
 });

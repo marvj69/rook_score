@@ -1,6 +1,6 @@
 // CACHE_NAME is stamped by scripts/stamp-service-worker.mjs from the contents
 // of the files below, so any runtime change ships a fresh cache automatically.
-const CACHE_NAME = "rook-cache-e8e850e502b16dde";
+const CACHE_NAME = "rook-cache-f76d5036d6def44c";
 const CACHE_NAME_PREFIX = "rook-cache-";
 const OFFLINE_URL = "index.html"; // Use relative path
 
@@ -14,21 +14,14 @@ const urlsToCache = [
   "./js/app.bundle.js",
   "./js/probability-explanation.bundle.js",
   "./js/stats.bundle.js",
+  "./js/voice-score.bundle.js",
   "./js/model_runtime_v2.json",
   "./js/firebase-init.js",
   "./manifest.json",
   "./icons/icon-192x192.png",
+  "./icons/icon-512x512.png",
   "./vendor/canvas-confetti.min.js"
 ];
-
-function isCacheableResponse(response) {
-  return Boolean(response) && response.status === 200 && response.type === "basic";
-}
-
-function isHtmlResponse(response) {
-  const contentType = response.headers.get("Content-Type") || "";
-  return contentType.toLowerCase().includes("text/html");
-}
 
 // The app shell lives at the scope root; any other same-origin navigation
 // (a direct hit on a script, style, or image) must never overwrite it.
@@ -48,59 +41,26 @@ async function getCachedOfflineShell() {
   return matchAppCache(OFFLINE_URL);
 }
 
-// Bypass the HTTP cache for background refreshes so a stale CDN copy (GitHub
-// Pages serves assets with a ten-minute max-age) can never repopulate the
-// cache after a deploy.
-function fetchAndCache(request, cacheRequest = request, { revalidate = false } = {}) {
-  const networkRequest = revalidate ? new Request(request, { cache: "no-cache" }) : request;
-  return fetch(networkRequest).then((networkResponse) => {
-    if (isCacheableResponse(networkResponse)) {
-      return caches.open(CACHE_NAME).then((cache) => {
-        cache.put(cacheRequest, networkResponse.clone());
-        return networkResponse;
-      });
-    }
-    return networkResponse;
-  });
-}
-
-async function staleWhileRevalidate(event) {
-  const { request } = event;
+// The shell and its lazy code form one release. Only installation populates
+// these URLs; background network refreshes could mix two releases in one tab.
+async function releaseAsset(request) {
   const cachedResponse = await matchAppCache(request);
-
-  if (cachedResponse) {
-    event.waitUntil(fetchAndCache(request, request, { revalidate: true }).catch(() => undefined));
-    return cachedResponse;
-  }
-
-  const networkResponse = await fetchAndCache(request).catch(() => null);
-  if (networkResponse) return networkResponse;
-  return new Response("", { status: 504, statusText: "Offline" });
+  return cachedResponse || Response.error();
 }
 
 async function navigationResponse(event) {
-  const requestUrl = new URL(event.request.url);
-  if (!isAppShellUrl(requestUrl)) {
-    return fetch(event.request);
-  }
-
   const cachedShell = await getCachedOfflineShell();
-  const networkPromise = fetch(new Request(event.request, { cache: "no-cache" }))
-    .then((networkResponse) => {
-      if (isCacheableResponse(networkResponse) && isHtmlResponse(networkResponse)) {
-        return caches.open(CACHE_NAME).then((cache) => {
-          cache.put(OFFLINE_URL, networkResponse.clone());
-          return networkResponse;
-        });
-      }
-      return networkResponse;
-    })
-    .catch(() => null);
-  event.waitUntil(networkPromise.then(() => undefined));
+  return cachedShell || fetch(event.request);
+}
 
-  if (cachedShell) return cachedShell;
-  const networkResponse = await networkPromise;
-  return networkResponse || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
+// iOS requests only the launch screen for this device. Keep that image offline.
+async function launchScreen(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const existing = await cache.match(request);
+  if (existing) return existing;
+  const response = await fetch(request);
+  if (response.ok && response.type === "basic") await cache.put(request, response.clone());
+  return response;
 }
 
 self.addEventListener("install", (event) => {
@@ -108,14 +68,7 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE_NAME)
       // Always install from the origin server, never from a stale HTTP cache.
       .then((cache) => cache.addAll(urlsToCache.map((url) => new Request(url, { cache: "reload" }))))
-      .then(() => self.skipWaiting())
   );
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
 });
 
 self.addEventListener("fetch", (event) => {
@@ -125,22 +78,17 @@ self.addEventListener("fetch", (event) => {
 
   if (requestUrl.origin !== self.location.origin) return;
 
-  if (requestUrl.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-
-  if (requestUrl.pathname.endsWith(".map")) {
-    // Source maps are not shipped; answer quietly instead of hitting the network.
-    event.respondWith(new Response(null, { status: 204 }));
-    return;
-  }
-
-  // Handle navigation requests
   if (event.request.mode === "navigate") {
-    event.respondWith(navigationResponse(event));
-  } else {
-    event.respondWith(staleWhileRevalidate(event));
+    if (isAppShellUrl(requestUrl)) event.respondWith(navigationResponse(event));
+    return;
+  }
+  // Leave other Pages projects and server routes to the browser.
+  const releaseUrl = new URL(requestUrl.pathname, self.location.origin);
+  if (urlsToCache.some(path => new URL(path, self.registration.scope).href === releaseUrl.href)) {
+    event.respondWith(releaseAsset(releaseUrl.href));
+  } else if (releaseUrl.href.startsWith(self.registration.scope)
+      && /^icons\/startup-\d+x\d+\.png$/.test(releaseUrl.href.slice(self.registration.scope.length))) {
+    event.respondWith(launchScreen(releaseUrl.href));
   }
 });
 

@@ -16,9 +16,10 @@ function setLocalStorage(key, value, { sync = true } = {}) {
     if (sync && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
       // Non-blocking sync
+      const owner = window.firebaseAuth.currentUser.uid;
       setTimeout(() => {
         // A newer save/reset may have superseded this deferred write.
-        if (localStorage.getItem(key) !== serialized) return;
+        if (window.firebaseAuth?.currentUser?.uid !== owner || localStorage.getItem(key) !== serialized) return;
         window.syncToFirestore(key, JSON.parse(serialized)).catch(err => console.warn(`Firestore sync failed for ${key}:`, err));
       }, 0);
     }
@@ -40,8 +41,9 @@ function removeLocalStorageKey(key, { sync = true } = {}) {
     }
     if (sync && !key.startsWith(LOCAL_ONLY_STORAGE_PREFIX)
         && window.syncToFirestore && window.firebaseReady && window.firebaseAuth?.currentUser) {
+      const owner = window.firebaseAuth.currentUser.uid;
       setTimeout(() => {
-        if (localStorage.getItem(key) !== null) return;
+        if (window.firebaseAuth?.currentUser?.uid !== owner || localStorage.getItem(key) !== null) return;
         window.syncToFirestore(key, null).catch(err => console.warn(`Firestore removal sync failed for ${key}:`, err));
       }, 0);
     }
@@ -69,8 +71,12 @@ function normalizeStoredCollection(key, value) {
   return value.every(isGame) ? value : value.filter(isGame);
 }
 
+function readLocalStorageItem(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
 function getLocalStorage(key, defaultValue = null) {
-  const raw = localStorage.getItem(key);
+  const raw = readLocalStorageItem(key);
   if (raw === null) {
     LOCAL_STORAGE_CACHE.delete(key);
     if (defaultValue !== null) return defaultValue;
@@ -423,7 +429,7 @@ async function synchronizeImportedGameData(previousEntries, importedEntries) {
     const value = importedValues.has(key)
       ? deserializeGameDataStorageValue(importedValues.get(key))
       : null;
-    return window.syncToFirestore(key, value);
+    return window.syncToFirestore(key, value, { replace: true });
   }));
   return results.every(result => result.status === "fulfilled" && result.value !== false);
 }

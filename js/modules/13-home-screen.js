@@ -249,6 +249,8 @@ function homeContinueGame() {
 
 function homeStartNewGame() {
   if (!hasActiveGame()) {
+    // A fresh device has no scoreboard to clear and may still be restoring one from the cloud.
+    if (state.undoneRounds.length || state.undoneMisdeals.length || state.misdealCount || hasStartedCurrentGameTimer(state)) resetGame();
     closeHomeScreen();
     emitRookEvent("home_new_game");
     return;

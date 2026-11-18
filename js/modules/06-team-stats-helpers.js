@@ -3,7 +3,7 @@
 // --- Team Stats Helpers ---
 function normalizeTeamsStorage(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { data: {}, changed: Boolean(raw && raw !== null) };
+    return { data: Object.create(null), changed: Boolean(raw && raw !== null) };
   }
 
   const working = { ...raw };
@@ -11,12 +11,12 @@ function normalizeTeamsStorage(raw) {
 
   const entries = Object.entries(working);
   if (!entries.length) {
-    return { data: {}, changed: raw.__storageVersion !== TEAM_STORAGE_VERSION };
+    return { data: Object.create(null), changed: raw.__storageVersion !== TEAM_STORAGE_VERSION };
   }
 
   const isAlreadyNew = entries.every(([, value]) => value && typeof value === 'object' && Array.isArray(value.players));
   if (raw.__storageVersion === TEAM_STORAGE_VERSION && isAlreadyNew) {
-    const cleaned = {};
+    const cleaned = Object.create(null);
     entries.forEach(([key, value]) => {
       cleaned[key] = {
         players: ensurePlayersArray(value.players),
@@ -29,7 +29,7 @@ function normalizeTeamsStorage(raw) {
     return { data: cleaned, changed: false };
   }
 
-  const converted = {};
+  const converted = Object.create(null);
   entries.forEach(([legacyName, payload]) => {
     let players = [];
     let stats = { wins: 0, losses: 0, gamesPlayed: 0 };
@@ -74,7 +74,7 @@ function getTeamsObject() {
 }
 
 function setTeamsObject(obj) {
-  const entries = {};
+  const entries = Object.create(null);
   Object.entries(obj || {}).forEach(([key, value]) => {
     if (!key || !value) return;
     entries[key] = {
@@ -92,14 +92,14 @@ function ensureTeamEntry(teamsObj, players, fallbackDisplay = '') {
   const normalizedPlayers = canonicalizePlayers(players);
   const key = buildTeamKey(normalizedPlayers);
   if (!key) return { teams: teamsObj, key: null };
-  if (!teamsObj[key]) {
-    teamsObj[key] = {
+  if (!Object.hasOwn(teamsObj, key)) {
+    Object.defineProperty(teamsObj, key, { enumerable: true, configurable: true, writable: true, value: {
       players: normalizedPlayers,
       displayName: deriveTeamDisplay(normalizedPlayers, fallbackDisplay || 'Unnamed Team'),
       wins: 0,
       losses: 0,
       gamesPlayed: 0,
-    };
+    } });
   } else {
     teamsObj[key].players = ensurePlayersArray(teamsObj[key].players);
     if (!teamsObj[key].displayName) {

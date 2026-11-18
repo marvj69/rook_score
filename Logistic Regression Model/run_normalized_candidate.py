@@ -215,7 +215,8 @@ def make_symmetric_features(
 ) -> np.ndarray:
     round_f = float(round_index)
     lead_sign = 1.0 if diff > 0 else (-1.0 if diff < 0 else 0.0)
-    score_sum = us_total + dem_total
+    # Match the browser's lower bound on the stage interactions of the v2 model.
+    score_sum = max(-300.0, us_total + dem_total)
     target_pressure_diff = max(0.0, us_total - 400.0) - max(0.0, dem_total - 400.0)
     return np.asarray(
         [

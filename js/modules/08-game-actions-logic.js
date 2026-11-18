@@ -133,30 +133,7 @@ function applyCheatPenaltyRound(flaggedTeam) {
   const updatedRounds = [...rounds, newRound];
 
   // Check for game over
-  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
-  let gameFinished = false, theWinner = null, victoryMethod = "Penalty: Lost Bid";
-  if (Math.abs(newTotals.us - newTotals.dem) >= 1000) {
-    gameFinished = true; theWinner = newTotals.us > newTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
-  } else if ((biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)) {
-    if (!mustWinByBid) { gameFinished = true; theWinner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (
-// bidder wins by making their bid and crossing 500
-(biddingTeam === "us" && newTotals.us >= 500 && usEarned >= numericBid) ||
-(biddingTeam === "dem" && newTotals.dem >= 500 && demEarned >= numericBid)
-    ) {
-gameFinished   = true;
-theWinner      = biddingTeam;
-victoryMethod  = "Won on Bid";
-    } else if (
-// non-bidding team wins by setting the bidder and crossing 500
-(biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) ||
-(biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)
-    ) {
-gameFinished   = true;
-theWinner      = biddingTeam === "us" ? "dem" : "us";
-victoryMethod  = "Set Other Team";
-    }
-    // no "auto-win at 500+" fallback any more
+  const { gameOver: gameFinished, winner: theWinner, victoryMethod } = computeGameOutcomeFromRounds(updatedRounds);
 
   const timerRunning = isStartTimestampActive(state.startTime);
   let finalAccumulated = clampDurationMs(state.accumulatedTime);
@@ -166,7 +143,7 @@ victoryMethod  = "Set Other Team";
 
   updateState({
     rounds: updatedRounds,
-    undoneRounds: [],
+    undoneRounds: [], undoneMisdeals: [], winningHistoryEdit: null,
     gameOver: gameFinished,
     winner: theWinner,
     victoryMethod: gameFinished ? victoryMethod : null,
@@ -439,30 +416,7 @@ function commitRoundScore({ biddingTeam, bidAmount, pointsVal, enterBidderPoints
   const newRound = { roundIndex: rounds.length, biddingTeam, bidAmount: numericBid, usPoints: usEarned, demPoints: demEarned, runningTotals: newTotals, usTeamNameOnRound: usTeamName || "Us", demTeamNameOnRound: demTeamName || "Dem" };
   const updatedRounds = [...rounds, newRound];
 
-  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
-  let gameFinished = false, theWinner = null, victoryMethod = "Won on Bid";
-
-  if (Math.abs(newTotals.us - newTotals.dem) >= 1000) {
-      gameFinished = true; theWinner = newTotals.us > newTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
-  } else if ((biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)) {
-      if (!mustWinByBid) { gameFinished = true; theWinner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-    } else if (
-// bidder wins by making their bid and crossing 500
-(biddingTeam === "us" && newTotals.us >= 500 && usEarned >= numericBid) ||
-(biddingTeam === "dem" && newTotals.dem >= 500 && demEarned >= numericBid)
-    ) {
-gameFinished   = true;
-theWinner      = biddingTeam;
-victoryMethod  = "Won on Bid";
-    } else if (
-// non-bidding team wins by setting the bidder and crossing 500
-(biddingTeam === "us" && usEarned < 0 && newTotals.dem >= 500) ||
-(biddingTeam === "dem" && demEarned < 0 && newTotals.us >= 500)
-    ) {
-gameFinished   = true;
-theWinner      = biddingTeam === "us" ? "dem" : "us";
-victoryMethod  = "Set Other Team";
-    }
+  const { gameOver: gameFinished, winner: theWinner, victoryMethod } = computeGameOutcomeFromRounds(updatedRounds);
 
   ephemeralCustomBid = ""; ephemeralPoints = "";
   closeScoreKeypad(true);
@@ -473,7 +427,7 @@ victoryMethod  = "Set Other Team";
   }
 
   updateState({
-      rounds: updatedRounds, undoneRounds: [], gameOver: gameFinished, winner: theWinner, victoryMethod: gameFinished ? victoryMethod : null,
+      rounds: updatedRounds, undoneRounds: [], undoneMisdeals: [], winningHistoryEdit: null, gameOver: gameFinished, winner: theWinner, victoryMethod: gameFinished ? victoryMethod : null,
       biddingTeam: "", bidAmount: "", showCustomBid: false, customBidValue: "", enterBidderPoints: false, error: "",
       savedScoreInputStates: { us: null, dem: null },
       accumulatedTime: finalAccumulated, startTime: gameFinished ? null : (timerRunning ? state.startTime : null), pendingPenalty: null,
@@ -578,21 +532,21 @@ function handleFormSubmit(e, skipZeroCheck = false) {
   e?.preventDefault?.();
   submitRoundFromCurrentInputs(skipZeroCheck);
 }
-function handleUndo() {
+function handleUndo(options) {
+  if (!options?.roundOnly && state.misdealRoundIndexes.at(-1) === state.rounds.length) {
+    const dealer = state.misdealDealers.at(-1);
+    updateState({
+      misdealCount: Math.max(0, state.misdealCount - 1), misdealDealers: state.misdealDealers.slice(0, -1),
+      misdealRoundIndexes: state.misdealRoundIndexes.slice(0, -1),
+      undoneMisdeals: [...state.undoneMisdeals, { hand: state.rounds.length, dealer }],
+    });
+    saveCurrentGameState();
+    return;
+  }
   if (!state.rounds.length) return;
   recordCurrentGameTimerActivity();
   const wasGameOver = state.gameOver;
   const priorWinner = state.winner;
-  // Same resolution as updateTeamsStatsOnGameEnd (including the dealer-pair
-  // fallback), so the win/loss recorded at game end is exactly what is reverted.
-  const usTeam = getTeamSnapshotForSide(state, "us");
-  const demTeam = getTeamSnapshotForSide(state, "dem");
-  const teamSnapshot = {
-    usPlayers: usTeam.players,
-    demPlayers: demTeam.players,
-    usDisplay: usTeam.display,
-    demDisplay: demTeam.display,
-  };
   const lastRound = state.rounds[state.rounds.length - 1];
   const newRounds = state.rounds.slice(0, -1);
   const newUndoneRounds = [...state.undoneRounds, lastRound];
@@ -601,16 +555,8 @@ function handleUndo() {
       newLastBid = String(newRounds[newRounds.length-1].bidAmount);
       newLastBidTeam = newRounds[newRounds.length-1].biddingTeam;
   }
-  const nextState = { rounds: newRounds, undoneRounds: newUndoneRounds, gameOver: false, winner: null, victoryMethod: null, lastBidAmount: newLastBid, lastBidTeam: newLastBidTeam, savedScoreInputStates: { us: null, dem: null } };
-  if (!newRounds.length) {
-      nextState.startTime = null;
-      nextState.timerStarted = false;
-      nextState.accumulatedTime = 0;
-      nextState.timerLastSavedAt = null;
-      nextState.timerLastActivityAt = null;
-      nextState.timerPaused = false;
-      nextState.timerSkippedMs = 0;
-  } else if (wasGameOver) {
+  const nextState = { rounds: newRounds, winningHistoryEdit: null, undoneRounds: newUndoneRounds, gameOver: false, winner: null, victoryMethod: null, lastBidAmount: newLastBid, lastBidTeam: newLastBidTeam, savedScoreInputStates: { us: null, dem: null } };
+  if (wasGameOver) {
       const resumedAt = Date.now();
       nextState.timerStarted = true;
       nextState.startTime = resumedAt;
@@ -618,42 +564,27 @@ function handleUndo() {
       nextState.timerLastActivityAt = resumedAt;
       nextState.timerPaused = false;
   }
-  if (wasGameOver && priorWinner) {
-    const teams = getTeamsObject();
-    const reverted = applyTeamResultDelta(teams, { ...teamSnapshot, winner: priorWinner }, -1);
-    if (reverted) setTeamsObject(teams);
-  }
+  if (wasGameOver && priorWinner) updateTeamsStatsOnGameEnd(priorWinner, -1);
   updateState(nextState);
   saveCurrentGameState();
 }
 function handleRedo() {
+  const misdeal = state.undoneMisdeals.at(-1);
+  if (misdeal && misdeal.hand === state.rounds.length) {
+    updateState({
+      misdealCount: state.misdealCount + 1, misdealDealers: [...state.misdealDealers, misdeal.dealer],
+      misdealRoundIndexes: [...state.misdealRoundIndexes, misdeal.hand], undoneMisdeals: state.undoneMisdeals.slice(0, -1),
+    });
+    saveCurrentGameState();
+    return;
+  }
   if (!state.undoneRounds.length) return;
   recordCurrentGameTimerActivity();
   const redoRound = state.undoneRounds[state.undoneRounds.length - 1];
   const newRounds = [...state.rounds, redoRound];
   const newUndoneRounds = state.undoneRounds.slice(0, -1);
 
-  // Re-check game over condition based on the new last round
-  const lastTotals = sanitizeTotals(newRounds[newRounds.length - 1].runningTotals);
-  let gameOver = false, winner = null, victoryMethod = null;
-  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
-
-  if (Math.abs(lastTotals.us - lastTotals.dem) >= 1000) {
-      gameOver = true; winner = lastTotals.us > lastTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
-  } else if ((redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) || 
-             (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500)) {
-      if (!mustWinByBid) { gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (
-      (redoRound.biddingTeam === "us" && lastTotals.us >= 500 && redoRound.usPoints >= redoRound.bidAmount) ||
-      (redoRound.biddingTeam === "dem" && lastTotals.dem >= 500 && redoRound.demPoints >= redoRound.bidAmount)
-  ) {
-      gameOver = true; winner = redoRound.biddingTeam; victoryMethod = "Won on Bid";
-  } else if (
-      (redoRound.biddingTeam === "us" && redoRound.usPoints < 0 && lastTotals.dem >= 500) ||
-      (redoRound.biddingTeam === "dem" && redoRound.demPoints < 0 && lastTotals.us >= 500)
-  ) {
-      gameOver = true; winner = redoRound.biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team";
-  }
+  const { gameOver, winner, victoryMethod } = computeGameOutcomeFromRounds(newRounds);
 
   const timerUpdates = {};
   if (gameOver) {
@@ -675,7 +606,7 @@ function handleRedo() {
 }
 function handleMisdeal() {
   const currentDealer = getCurrentDealer(state);
-  if (!currentDealer) return false;
+  if (!currentDealer || state.gameOver || state.biddingTeam) return false;
   ensureCurrentGameTimerStarted();
 
   // Attribute the misdeal before advancing to the next dealer.
@@ -685,7 +616,7 @@ function handleMisdeal() {
     : 0;
   const newMisdealCount = currentMisdealCount + 1;
   const misdealDealers = [...normalizeMisdealDealers(state.misdealDealers), currentDealer];
-  updateState({ misdealCount: newMisdealCount, misdealDealers });
+  updateState({ misdealCount: newMisdealCount, misdealDealers, misdealRoundIndexes: [...state.misdealRoundIndexes, state.rounds.length], undoneRounds: [], undoneMisdeals: [] });
   saveCurrentGameState();
   return true;
 }
@@ -915,7 +846,12 @@ function handleGameOverFixClick(e) {
       return;
   }
   hideGameOverOverlay();
-  handleUndo();
+  const edit = state.winningHistoryEdit;
+  if (state.gameOver && edit && state.rounds[edit.idx] && Array.isArray(edit.values) && edit.values.every(Array.isArray)) {
+    applyHistoryEdits(edit.idx, edit.values, edit);
+  } else {
+    handleUndo();
+  }
 }
 
 async function saveCompletedGameSnapshot({ resetAfterSave = false } = {}) {
@@ -1032,6 +968,7 @@ function confirmFreeze() {
   );
 }
 async function freezeCurrentGame() {
+  if (state.gameOver || !state.rounds.length) return false;
   const finalAccumulated = getCurrentGameTime(state);
   const finalScore = getCurrentTotals();
   const lastRound = state.rounds.length ? state.rounds[state.rounds.length-1] : {};
@@ -1076,7 +1013,8 @@ async function freezeCurrentGame() {
       enterBidderPoints: state.enterBidderPoints, lastBidAmount: state.lastBidAmount, lastBidTeam: state.lastBidTeam,
       dealers: state.dealers || [],
       misdealCount: state.misdealCount || 0,
-      misdealDealers: normalizeMisdealDealers(state.misdealDealers)
+      misdealDealers: normalizeMisdealDealers(state.misdealDealers),
+      misdealRoundIndexes: state.misdealRoundIndexes,
   };
   const freezerGames = getLocalStorage("freezerGames");
   freezerGames.unshift(frozenGame); // Add to beginning
@@ -1086,7 +1024,7 @@ async function freezeCurrentGame() {
       "This device's storage is full, so the game could not be frozen. Free up space (for example, delete old games from the library) and try again.",
       { title: "Game not frozen", tone: "danger", icon: "warning" },
     );
-    return;
+    return false;
   }
   emitRookEvent(
       "game_frozen",
@@ -1098,6 +1036,7 @@ async function freezeCurrentGame() {
   resetGame(); // Resets state and clears active game
   pendingGameAction = null;
   openHomeScreen();
+  return true;
 }
 // Where a game now sits in a freshly read list: the very same object first, then its id, then (only for
 // games saved without an id) its timestamp. Two games can share a timestamp, so that comes last.
@@ -1122,12 +1061,15 @@ function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
     const chosenDemPlayers = ensurePlayersArray(chosen.demPlayers || parseLegacyTeamName(chosen.demName));
     const chosenUsName = deriveTeamDisplay(chosenUsPlayers, chosen.usName || "Us") || "Us";
     const chosenDemName = deriveTeamDisplay(chosenDemPlayers, chosen.demName || "Dem") || "Dem";
+    const freezerGames = getLocalStorage("freezerGames");
+    const currentIndex = findStoredGameIndex(freezerGames, chosen);
+    if (currentIndex < 0) {
+      showWarningToast("This frozen game is no longer in the library.");
+      return;
+    }
     const resumedAt = Date.now();
-    // A different game is landing: nothing typed or remembered for the last one comes with it.
-    resetRenderAnimationState();
-    clearTransientScoreInputs();
-    // Restore all relevant game state aspects
-    updateState({
+    const resumedState = buildCurrentGameTimerCheckpoint({
+        ...DEFAULT_STATE,
         savedScoreInputStates: { us: null, dem: null },
         pendingPenalty: null,
         historyEdit: null,
@@ -1158,25 +1100,23 @@ function loadFreezerGame(index, { confirm = hasActiveGame() } = {}) {
         undoneRounds: [], // Clear any undone rounds from previous state
         dealers: chosen.dealers || [],
         misdealCount: chosen.misdealCount || 0,
+        misdealRoundIndexes: chosen.misdealRoundIndexes || [],
         misdealDealers: normalizeMisdealDealers(chosen.misdealDealers)
-    });
-    // Re-read at confirm time: a cloud merge may have replaced the list while the dialog was open.
-    const freezerGames = getLocalStorage("freezerGames");
-    const currentIndex = findStoredGameIndex(freezerGames, chosen);
-    if (currentIndex >= 0) {
-      const [resumedEntry] = freezerGames.splice(currentIndex, 1); // Remove from freezer
-      if (!setLocalStorage("freezerGames", freezerGames)) {
-        // The copy in the freezer survived (storage is full), so it would come back after a reload.
-        LOCAL_STORAGE_CACHE.delete("freezerGames");
-        showWarningToast("Not saved: storage full");
-      } else {
-        // Another device (or the cloud copy) still lists this frozen game; the record stops it coming back.
-        recordRemovedGame("freezerGames", resumedEntry);
-      }
+    }, resumedAt);
+    if (!setLocalStorage(ACTIVE_GAME_KEY, resumedState)) {
+      showWarningToast("Could not resume: storage full. The game is still in the freezer.");
+      return;
+    }
+    resetRenderAnimationState();
+    clearTransientScoreInputs();
+    updateState(resumedState);
+    if (setLocalStorage("freezerGames", freezerGames.filter((_, i) => i !== currentIndex))) {
+      recordRemovedGame("freezerGames", freezerGames[currentIndex]);
+    } else {
+      showWarningToast("Game resumed. A copy is still in the freezer.");
     }
     closeSavedGamesModal();
     closeHomeScreen();
-    saveCurrentGameState(); // Save the now active game
     emitRookEvent(
         "freezer_game_resumed",
         getRookGameEventParams(chosen, {

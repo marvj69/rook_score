@@ -68,13 +68,14 @@ function isGameDataDeletePhrase(value) {
 
 // Each delete is strictly later than the last one from this device, even if
 // the clock moved backwards, so the cloud always accepts it as the newest.
-function nextGameDataResetMarker(now = Date.now()) {
+function nextGameDataResetMarker(now = Date.now(), owner = window.firebaseAuth?.currentUser?.uid || getLocalStorage(GAME_DATA_RESET_MARKERS_KEY)?.lastUid) {
   const previous = Date.parse(getLocalStorage(GAME_DATA_RESET_DEVICE_KEY, {})?.at || "");
-  return new Date(Math.max(now, (Number.isFinite(previous) ? previous : 0) + 1)).toISOString();
+  const agreed = Date.parse(getLocalStorage(GAME_DATA_RESET_MARKERS_KEY)?.agreed?.[owner] || "");
+  return new Date(Math.max(now, (previous || 0) + 1, (agreed || 0) + 1)).toISOString();
 }
 
 function readGameDataRecovery(now = Date.now()) {
-  if (localStorage.getItem(DELETED_GAME_DATA_RECOVERY_KEY) === null) return null;
+  if (readLocalStorageItem(DELETED_GAME_DATA_RECOVERY_KEY) === null) return null;
   const record = getLocalStorage(DELETED_GAME_DATA_RECOVERY_KEY, null);
   if (!record || typeof record !== "object" || Array.isArray(record)
       || !record.entries || typeof record.entries !== "object"
@@ -87,7 +88,7 @@ function readGameDataRecovery(now = Date.now()) {
 }
 
 function pruneExpiredGameDataRecovery(now = Date.now()) {
-  if (localStorage.getItem(DELETED_GAME_DATA_RECOVERY_KEY) !== null && !readGameDataRecovery(now)) {
+  if (readLocalStorageItem(DELETED_GAME_DATA_RECOVERY_KEY) !== null && !readGameDataRecovery(now)) {
     removeLocalStorageKey(DELETED_GAME_DATA_RECOVERY_KEY);
   }
 }
@@ -115,7 +116,7 @@ function mergeGameDataLists(...lists) {
 // Later sets win. Win/loss totals are recounted from the games after a restore
 // (recalcTeamsStats), since the same games may arrive twice, e.g. via a backup.
 function mergeGameDataTeams(...teamSets) {
-  const merged = {};
+  const merged = Object.create(null);
   teamSets.forEach(teams => Object.assign(merged, normalizeTeamsStorage(teams).data));
   return merged;
 }
@@ -168,7 +169,8 @@ function restoreRawGameData(previousRaw) {
 // recovery copy cannot be stored.
 function deleteAllGameData({ keepRecoveryCopy = true, now = Date.now() } = {}) {
   const summary = getGameDataSummary();
-  const deletedAt = nextGameDataResetMarker(now);
+  const owner = window.firebaseAuth?.currentUser?.uid || getLocalStorage(GAME_DATA_RESET_MARKERS_KEY)?.lastUid || null;
+  const deletedAt = nextGameDataResetMarker(now, owner);
   const previousRaw = new Map(GAME_DATA_KEYS.map(key => [key, localStorage.getItem(key)]));
   const previousDeviceReset = localStorage.getItem(GAME_DATA_RESET_DEVICE_KEY);
   const deletedEntries = {};
@@ -179,7 +181,7 @@ function deleteAllGameData({ keepRecoveryCopy = true, now = Date.now() } = {}) {
 
   GAME_DATA_KEYS.forEach(key => removeLocalStorageKey(key, { sync: false }));
   // Recorded with the signed-in account so the delete never spreads to another.
-  const deviceReset = { at: deletedAt, uid: window.firebaseAuth?.currentUser?.uid || null };
+  const deviceReset = { at: deletedAt, uid: owner };
   if (!setLocalStorage(GAME_DATA_RESET_DEVICE_KEY, deviceReset)) {
     restoreRawGameData(previousRaw);
     throw new Error("This device's storage is full, so nothing was deleted. Free up space and try again.");
@@ -210,7 +212,7 @@ function deleteAllGameData({ keepRecoveryCopy = true, now = Date.now() } = {}) {
   resetGame(); // Clears the scoreboard and leaves the "no game" marker for sync.
   refreshGameDataCaches();
   if (typeof window.syncGameDataReset === "function") {
-    window.syncGameDataReset(deletedAt)
+    window.syncGameDataReset(deletedAt, owner)
       .catch(error => console.warn("The delete could not reach cloud sync yet; it will on the next sync.", error));
   }
   scheduleProbabilityPersonalizationRefresh([], { force: true });

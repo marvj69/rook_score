@@ -1283,7 +1283,7 @@ function clearStatisticsCache() {
 }
 
 function getStatsModel({ period = "all", now = Date.now() } = {}) {
-  const raw = localStorage.getItem("savedGames") || "";
+  const raw = readLocalStorageItem("savedGames") || "";
   if (STATS_MODEL_CACHE.raw !== raw) {
     STATS_MODEL_CACHE.raw = raw;
     STATS_MODEL_CACHE.models.clear();

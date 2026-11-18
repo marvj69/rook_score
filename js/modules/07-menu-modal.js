@@ -736,6 +736,8 @@ function handleResumeGameSubmit(event) {
   const updates = {
     rounds: importedRounds || [],
     undoneRounds: [],
+    undoneMisdeals: [],
+    winningHistoryEdit: null,
     startingTotals,
     gameOver: false,
     winner: null,
@@ -762,6 +764,7 @@ function handleResumeGameSubmit(event) {
     dealers: [],
     misdealCount: 0,
     misdealDealers: [],
+    misdealRoundIndexes: [],
   };
 
   updates.usPlayers = usPlayers;

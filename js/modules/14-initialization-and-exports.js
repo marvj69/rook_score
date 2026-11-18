@@ -290,29 +290,11 @@ if ('serviceWorker' in navigator) {
     reloadForUpdateWhileHidden();
   });
 
-  const activateUpdatedWorker = (worker) => {
-    if (!worker || !navigator.serviceWorker.controller) return;
-
-    if (worker.state === 'installed') {
-      worker.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-
-    worker.addEventListener('statechange', () => {
-      if (worker.state === 'installed') {
-        worker.postMessage({ type: 'SKIP_WAITING' });
-      }
-    });
-  };
-
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('./service-worker.js', { updateViaCache: 'none' })
       .then(registration => {
-        activateUpdatedWorker(registration.waiting);
-        registration.addEventListener('updatefound', () => {
-          activateUpdatedWorker(registration.installing);
-        });
+        // The new worker takes over once all tabs using the previous release close.
         registration.update().catch(error => console.error('Service Worker update check failed:', error));
       })
       .catch(error => console.error('Service Worker registration failed:', error));

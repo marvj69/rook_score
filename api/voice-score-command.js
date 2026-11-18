@@ -460,9 +460,7 @@ function normalizePlan(plan, fallbackHeardText = "") {
     : [];
   let status = PLAN_STATUSES.has(normalized.status)
     ? normalized.status
-    : actions.length
-      ? "execute"
-      : "clarify";
+    : "clarify";
   let message = typeof normalized.message === "string" ? normalized.message.slice(0, MAX_MESSAGE_LENGTH) : "";
 
   // Only "execute" and "confirm" act. An answer is read-only, and a plan that
@@ -614,9 +612,13 @@ function buildStatisticsControl(transcript, context = {}) {
 
 function groundStatisticsEntityPlan(plan, payload) {
   const normalizedPlan = normalizePlan(plan);
+  const requestText = payload?.transcript || normalizedPlan.heardText;
+  const showAnswer = normalizedPlan.status === "answer"
+    && /^(?:please )?(?:show|open|display|pull up)\b/.test(normalizeCommandText(requestText));
+  if (!showAnswer && normalizedPlan.status !== "execute" && normalizedPlan.status !== "confirm") return normalizedPlan;
   // Audio requests carry no transcript, so ground on what the planner heard.
   const statisticsControl = buildStatisticsControl(
-    payload?.transcript || normalizedPlan.heardText,
+    requestText,
     payload?.context,
   );
   if (!statisticsControl?.entity) return normalizedPlan;
@@ -637,19 +639,9 @@ function groundStatisticsEntityPlan(plan, payload) {
     actions[statsActionIndex] = { ...groundedAction, ...actions[statsActionIndex], ...entityFields };
   } else if (statisticsModalIndex >= 0) {
     actions[statisticsModalIndex] = groundedAction;
-  } else if (actions.length && actions.length < 5) {
-    actions.push(groundedAction);
-  } else if (!actions.length) {
-    const name = statisticsControl.entity.name;
-    return {
-      ...normalizedPlan,
-      status: "execute",
-      summary: `Show statistics for ${name}`,
-      message: `Showing statistics for ${name}.`,
-      requiresConfirmation: false,
-      actions: [groundedAction],
-    };
-  }
+  } else if (showAnswer) {
+    return { ...normalizedPlan, status: "execute", actions: [groundedAction] };
+  } else return normalizedPlan;
 
   return {
     ...normalizedPlan,

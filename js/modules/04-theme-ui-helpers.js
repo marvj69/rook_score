@@ -103,7 +103,7 @@ function enforceDarkMode() {
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) metaTheme.setAttribute("content", "#161b3d");
   // Remove legacy flag so we're not tempted to read it elsewhere.
-  localStorage.removeItem("darkModeEnabled");
+  if (readLocalStorageItem("darkModeEnabled") !== null) removeLocalStorageKey("darkModeEnabled", { sync: false });
 }
 function initializeTheme() {
   const body = document.getElementById("bodyRoot") || document.body;
@@ -285,7 +285,7 @@ function initializeCustomThemeColors() {
     if (body) body.style.setProperty('--primary-color', usColor);
     if (usPicker) usPicker.value = usColor;
   } else {
-    if (localStorage.getItem('customUsColor') !== null) { // Warn only when a value existed
+    if (readLocalStorageItem('customUsColor') !== null) { // Warn only when a value existed
       console.warn(`Invalid customUsColor ("${storedUsColor}") in localStorage. Using default.`);
       removeLocalStorageKey('customUsColor');
     }
@@ -299,7 +299,7 @@ function initializeCustomThemeColors() {
     if (body) body.style.setProperty('--accent-color', demColor);
     if (demPicker) demPicker.value = demColor;
   } else {
-    if (localStorage.getItem('customDemColor') !== null) {
+    if (readLocalStorageItem('customDemColor') !== null) {
       console.warn(`Invalid customDemColor ("${storedDemColor}") in localStorage. Using default.`);
       removeLocalStorageKey('customDemColor');
     }

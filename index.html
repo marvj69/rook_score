@@ -948,7 +948,7 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
               <p class="resume-photo__body">
                 Take or choose a photo laid out as <strong>Us | Bid | Dem</strong>. Every filled row comes in as round history, and the bottom row becomes the current score.
               </p>
-              <input type="file" id="resumePaperPhotoInput" accept="image/*" capture="environment" class="sr-only" onchange="handlePaperGamePhotoSelected(this)" />
+              <input type="file" id="resumePaperPhotoInput" accept="image/*" class="sr-only" onchange="handlePaperGamePhotoSelected(this)" />
               <button type="button" id="resumePaperPhotoButton" onclick="triggerPaperGamePhotoInput()" class="dialog-btn dialog-btn--primary resume-photo__button">
                 <svg class="ui-icon" aria-hidden="true"><use href="#ui-icon-camera"/></svg>
                 <span data-paper-photo-label>Take Photo / Choose Image</span>
@@ -1231,7 +1231,7 @@ body.home-open .voice-score-control{visibility:hidden;}html.home-boot .home-scre
             <input type="checkbox" id="voiceImprovementConsentCheckbox" />
             <span>
               <span class="dialog-option__title">Share redacted command text to improve future models</span>
-              <span class="dialog-option__body">Optional and off by default. If selected, known player and team names are replaced before the command text, structured action target, limited game state, and outcome are saved. Raw audio, real names, and unrelated game-library details are never stored.</span>
+              <span class="dialog-option__body">Optional and off by default. If selected, known player and team names are replaced before the command text, structured action target, limited game state, and outcome are saved. Raw audio is discarded. Avoid saying other private details you don’t want to share.</span>
             </span>
           </label>
           <p class="dialog-note">You can change this sharing choice later in Settings. Turning it off stops all future submissions.</p>

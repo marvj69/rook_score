@@ -26,7 +26,7 @@ function getPaperGamePhotoUrl() {
 function normalizePaperGamePhotoResult(result) {
   const candidate = result && typeof result === "object" ? result : {};
   const parseScore = (value) => {
-    const score = Number(value);
+    const score = typeof value === "number" || (typeof value === "string" && value.trim()) ? Number(value) : NaN;
     if (
       !Number.isFinite(score)
       || !Number.isInteger(score)
@@ -39,7 +39,7 @@ function normalizePaperGamePhotoResult(result) {
   };
 
   const parseBid = (value) => {
-    if (value === null || value === undefined || value === "") return null;
+    if (typeof value !== "number" && typeof value !== "string") return null;
     const bid = Number(value);
     return Number.isInteger(bid) && bid > 0 && bid <= 360 && bid % 5 === 0 ? bid : null;
   };

@@ -29,6 +29,7 @@ let signInAnonymously = null;
 let getFirestore = null;
 let doc = null;
 let setDoc = null;
+let runTransaction = null;
 let getDoc = null;
 const reportedSyncFailures = new Set();
 const firebaseMergePromises = new Map();
@@ -214,7 +215,7 @@ function readDeviceGameDataReset() {
     GAME_DATA_RESET_DEVICE_KEY,
     localStorage.getItem(GAME_DATA_RESET_DEVICE_KEY),
   );
-  if (!reset || typeof reset !== "object" || typeof reset.at !== "string") return null;
+  if (!reset || reset.localOnly || typeof reset !== "object" || typeof reset.at !== "string") return null;
   return { at: reset.at, uid: typeof reset.uid === "string" && reset.uid ? reset.uid : null };
 }
 
@@ -223,18 +224,23 @@ function readDeviceGameDataReset() {
 // this device last synced with), so signing in elsewhere never spreads it.
 function getLocalGameDataResetMarker(userId) {
   const agreed = getAgreedGameDataResetMarker(userId);
-  if (agreed === null) return null;
   const deviceReset = readDeviceGameDataReset();
   if (!deviceReset) return agreed;
-  const deleteAccount = deviceReset.uid || readGameDataResetMarkers()?.lastUid || userId;
+  const deleteAccount = deviceReset.uid || readGameDataResetMarkers()?.lastUid;
   return deleteAccount === userId ? laterGameDataResetMarker(agreed, deviceReset.at) : agreed;
 }
 
 function rememberGameDataResetMarker(userId, marker) {
   const markers = readGameDataResetMarkers() || { agreed: {}, lastUid: "" };
+  const previousUid = markers.lastUid;
   markers.agreed[userId] = typeof marker === "string" ? marker : "";
   markers.lastUid = userId;
   try {
+    // Bind old offline records before changing the remembered account.
+    const reset = readDeviceGameDataReset();
+    if (reset && !reset.uid) {
+      localStorage.setItem(GAME_DATA_RESET_DEVICE_KEY, JSON.stringify({ ...reset, uid: previousUid || null, localOnly: !previousUid }));
+    }
     localStorage.setItem(GAME_DATA_RESET_MARKERS_KEY, JSON.stringify(markers));
   } catch (error) {
     console.warn("Could not record the cloud delete marker on this device.", error);
@@ -323,13 +329,14 @@ function joinGameLists(first, second) {
   const uniqueMap = new Map();
   [...first, ...second].forEach(item => {
     // Prefer item.id or item.timestamp for uniqueness
+    if (!item || typeof item !== "object" || Array.isArray(item)) return;
     const uniqueKey = item.id || item.timestamp || JSON.stringify(item); // Fallback to stringify
     if (!uniqueMap.has(uniqueKey)) {
       uniqueMap.set(uniqueKey, item);
       return;
     }
     const existingItem = uniqueMap.get(uniqueKey);
-    if (item.timestamp && existingItem.timestamp && new Date(item.timestamp) > new Date(existingItem.timestamp)) {
+    if (getGameDataTime(item) > getGameDataTime(existingItem)) {
       uniqueMap.set(uniqueKey, item);
     }
   });
@@ -425,19 +432,80 @@ async function toCloudFields(fields, resetMarker) {
 // Every write of the cloud document goes through here. A refused write that
 // carried the pack switches packing off, and the caller tries once more with
 // the plain list. A list too large even when packed fails that retry as well.
-async function writeCloudFields(docRef, fields) {
+async function transactGameData(userId, prepare) {
+  let writingPack = false;
+  const docRef = doc(db, "rookData", userId);
   try {
-    await setDoc(docRef, fields, { merge: true });
+    return await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(docRef);
+      if (auth?.currentUser?.uid !== userId) return null;
+      const result = await prepare(snapshot.exists() ? snapshot.data() : {});
+      if (!result || auth?.currentUser?.uid !== userId) return null;
+      const { fields } = result;
+      if (Object.keys(fields).length) {
+        writingPack = Array.isArray(fields[SAVED_GAMES_PACKED_FIELD]);
+        transaction.set(docRef, { ...fields, timestamp: new Date().toISOString() }, { merge: true });
+      }
+      return result;
+    });
   } catch (error) {
-    if (error?.code === "invalid-argument" && Array.isArray(fields[SAVED_GAMES_PACKED_FIELD])) {
-      savedGamesPackingRefused = true;
-    }
+    if (error?.code === "invalid-argument" && writingPack) savedGamesPackingRefused = true;
     throw error;
   }
 }
 
-// Firestore refuses a document (or a single field) past 1 MiB with
-// "invalid-argument" and a message that names the size in bytes.
+async function readCloudLibrary(snapshot) {
+  const data = { ...snapshot };
+  const pack = canPackSavedGames() ? await unpackSavedGames(data[SAVED_GAMES_PACKED_FIELD]) : null;
+  delete data[SAVED_GAMES_PACKED_FIELD];
+  if (pack?.present) {
+    const reset = parseGameDataResetTime(data[GAME_DATA_RESET_FIELD]);
+    const packedGames = parseGameDataResetTime(pack.resetAt) < reset
+      ? pack.games.filter(game => getGameDataTime(game) > reset) : pack.games;
+    data.savedGames = joinGameLists(packedGames, Array.isArray(data.savedGames) ? data.savedGames : []);
+  }
+  return { data, pack };
+}
+
+// Reconcile at commit time. Another tab or device can add or remove games
+// after this session's startup merge. Firestore retries when the document changes.
+async function writeGameFields(userId, fields, resetMarker, { reset = false, replace = new Set() } = {}) {
+  const hasLibraryChanges = [...REMOVABLE_GAME_LISTS, REMOVED_GAMES_KEY].some(key => Object.hasOwn(fields, key));
+  const withMarker = { ...fields, [GAME_DATA_RESET_FIELD]: resetMarker };
+  if (reset || !hasLibraryChanges) {
+    if (auth?.currentUser?.uid !== userId) return false;
+    const payload = reset ? await toCloudFields(withMarker, resetMarker) : withMarker;
+    if (reset && Array.isArray(payload[SAVED_GAMES_PACKED_FIELD])) payload.savedGames = null;
+    if (reset && Array.isArray(payload.savedGames)) payload[SAVED_GAMES_PACKED_FIELD] = null;
+    if (auth?.currentUser?.uid !== userId) return false;
+    await setDoc(doc(db, "rookData", userId), { ...payload, timestamp: new Date().toISOString() }, { merge: true });
+    return true;
+  }
+  const committed = await transactGameData(userId, async snapshot => {
+    if (parseGameDataResetTime(snapshot[GAME_DATA_RESET_FIELD]) > parseGameDataResetTime(resetMarker)) {
+      throw Object.assign(new Error("A newer game reset requires a fresh merge."), { code: "permission-denied" });
+    }
+    const { data } = await readCloudLibrary(snapshot);
+    const result = { ...withMarker };
+    const removals = replace.has(REMOVED_GAMES_KEY) ? fields[REMOVED_GAMES_KEY] || []
+      : mergeRemovedGames(fields[REMOVED_GAMES_KEY], data[REMOVED_GAMES_KEY]);
+    if (Object.hasOwn(fields, REMOVED_GAMES_KEY) && !replace.has(REMOVED_GAMES_KEY)) result[REMOVED_GAMES_KEY] = removals;
+    for (const key of REMOVABLE_GAME_LISTS) {
+      if (Array.isArray(fields[key]) && !replace.has(key)) {
+        result[key] = dropRemovedGames(key, joinGameLists(fields[key], Array.isArray(data[key]) ? data[key] : []), removals);
+      } else if (!Object.hasOwn(fields, key) && fields[REMOVED_GAMES_KEY] && Array.isArray(data[key])) {
+        const kept = dropRemovedGames(key, data[key], removals);
+        if (kept.length < data[key].length) result[key] = kept;
+      }
+    }
+    const encoded = await toCloudFields(result, resetMarker);
+    if (Array.isArray(encoded[SAVED_GAMES_PACKED_FIELD]) && snapshot.savedGames?.length) encoded.savedGames = null;
+    if (replace.has(SAVED_GAMES_KEY) && Array.isArray(encoded.savedGames)) encoded[SAVED_GAMES_PACKED_FIELD] = null;
+    return { fields: encoded };
+  });
+  return Boolean(committed);
+}
+
 function isCloudDocumentFullError(error) {
   return error?.code === "invalid-argument"
     && /\bbytes\b|maximum (allowed )?size|too large|longer than|exceeds/i.test(String(error?.message || ""));
@@ -613,6 +681,7 @@ async function loadFirebaseLibraries() {
     getFirestore = firestoreModule.getFirestore;
     doc = firestoreModule.doc;
     setDoc = firestoreModule.setDoc;
+    runTransaction = firestoreModule.runTransaction;
     getDoc = firestoreModule.getDoc;
 
     window.firestoreDoc = doc;
@@ -626,26 +695,9 @@ async function loadFirebaseLibraries() {
   return firebaseLibraryPromise;
 }
 
-window.mergeLocalStorageWithFirestore = async function(user) {
-  if (!db) {
-    trackSyncFailure("other", "firebase_unavailable");
-    return false;
-  }
-
-  const userId = typeof user?.uid === "string" ? user.uid : "";
-  if (!userId) return false;
-  const interactionRevisionAtStart = Number(
-    window.getRookAppInteractionRevision?.() || 0,
-  );
-  const docRef = doc(db, "rookData", user.uid);
-  const docSnap = await getDoc(docRef);
-  if (auth?.currentUser?.uid !== userId) return false;
-  let firestoreData = docSnap.exists() ? docSnap.data() : {};
-  // The cloud keeps finished games packed (see SAVED_GAMES_PACKED_FIELD).
-  const packsSavedGames = canPackSavedGames();
-  const cloudPack = packsSavedGames ? await unpackSavedGames(firestoreData[SAVED_GAMES_PACKED_FIELD]) : null;
-  if (auth?.currentUser?.uid !== userId) return false;
-  delete firestoreData[SAVED_GAMES_PACKED_FIELD];
+async function prepareStartupMerge(cloudSnapshot, userId) {
+  const { data, pack: cloudPack } = await readCloudLibrary(cloudSnapshot);
+  let firestoreData = data;
   const localRawSnapshot = captureCloudSyncStorageSnapshot();
   let localData = {};
 
@@ -653,25 +705,14 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     localData[key] = deserializeLocalStorageValue(key, rawValue);
   });
 
+  // A previous account's cleared scoreboard cannot erase the new account's active game.
+  const priorOwner = readGameDataResetMarkers()?.lastUid;
+  if (priorOwner && priorOwner !== userId && localData.activeGameState === null) delete localData.activeGameState;
+
   // A side that missed a "Delete All Game Data" loses its game data from before it.
   const cloudResetMarker = typeof firestoreData[GAME_DATA_RESET_FIELD] === "string"
     ? firestoreData[GAME_DATA_RESET_FIELD]
     : "";
-  if (cloudPack) {
-    // An older app version clears the plain list on "Delete All Game Data" but
-    // does not know the pack, so a pack written before the cloud's latest
-    // delete only keeps the games stamped after it.
-    const cloudResetTimeForPack = parseGameDataResetTime(cloudResetMarker);
-    const packedGames = parseGameDataResetTime(cloudPack.resetAt) < cloudResetTimeForPack
-      ? cloudPack.games.filter(game => getGameDataTime(game) > cloudResetTimeForPack)
-      : cloudPack.games;
-    // The rest of the merge works on one plain list: the pack, plus whatever
-    // an older app version has uploaded to the plain field since.
-    const plainGames = Array.isArray(firestoreData[SAVED_GAMES_KEY]) ? firestoreData[SAVED_GAMES_KEY] : [];
-    if (packedGames.length || plainGames.length) {
-      firestoreData[SAVED_GAMES_KEY] = joinGameLists(packedGames, plainGames);
-    }
-  }
   const localResetMarker = getLocalGameDataResetMarker(userId);
   // null: this device has never synced with this account.
   const firstMergeWithAccount = localResetMarker === null;
@@ -746,7 +787,6 @@ window.mergeLocalStorageWithFirestore = async function(user) {
   // Only send what differs from the cloud copy: an unchanged startup merge
   // costs no document write. The original cloud values are compared so data
   // dropped for predating a delete is cleared there as well.
-  const cloudSnapshot = docSnap.exists() ? docSnap.data() : {};
   const payload = {};
   const mergedSavedGames = mergedData[SAVED_GAMES_KEY];
   const packMergedSavedGames = Boolean(cloudPack) && Array.isArray(mergedSavedGames);
@@ -764,15 +804,24 @@ window.mergeLocalStorageWithFirestore = async function(user) {
     }
   }
   if (resetMarker !== cloudResetMarker) payload[GAME_DATA_RESET_FIELD] = resetMarker;
-  if (auth?.currentUser?.uid !== userId) return false;
-  if (Object.keys(payload).length) {
-    await writeCloudFields(docRef, {
-      ...payload,
-      [GAME_DATA_RESET_FIELD]: resetMarker,
-      timestamp: new Date().toISOString(),
-    });
+  if (Object.keys(payload).length) payload[GAME_DATA_RESET_FIELD] = resetMarker;
+  return { fields: payload, localRawSnapshot, mergedData, resetMarker, localWasStale, cloudResetMarker, removedGamesSynced };
+}
+
+window.mergeLocalStorageWithFirestore = async function(user) {
+  if (!db) {
+    trackSyncFailure("other", "firebase_unavailable");
+    return false;
   }
-  if (auth?.currentUser?.uid !== userId) return false;
+
+  const userId = typeof user?.uid === "string" ? user.uid : "";
+  if (!userId) return false;
+  const interactionRevisionAtStart = Number(
+    window.getRookAppInteractionRevision?.() || 0,
+  );
+  const result = await transactGameData(userId, snapshot => prepareStartupMerge(snapshot, userId));
+  if (!result || auth?.currentUser?.uid !== userId) return false;
+  const { localRawSnapshot, mergedData, resetMarker, localWasStale, cloudResetMarker, removedGamesSynced } = result;
   rememberGameDataResetMarker(userId, resetMarker);
   const localChangesDuringMerge = getCloudSyncStorageChanges(localRawSnapshot);
 
@@ -856,7 +905,7 @@ window.mergeLocalStorageWithFirestore = async function(user) {
       }
     });
     Object.assign(latestLocalData, changedLocalData);
-    await writeCloudFields(docRef, await toCloudFields(latestLocalData, resetMarker));
+    if (!await writeGameFields(userId, latestLocalData, resetMarker)) return false;
     if (auth?.currentUser?.uid !== userId) return false;
   }
 
@@ -977,13 +1026,11 @@ async function ensureUserSession() {
 // so saving settings or finishing a game costs one document write instead of
 // one per storage key.
 const SYNC_FLUSH_DELAY_MS = 250;
-let pendingSyncValues = new Map();
-let pendingSyncFlush = null;
+let pendingSync = null;
+const syncByOwner = new Map();
 
-async function flushPendingSync() {
-  const values = pendingSyncValues;
-  pendingSyncValues = new Map();
-  pendingSyncFlush = null;
+async function flushPendingSync(batch) {
+  const { values, owner, replace } = batch;
   const keys = [...values.keys()];
 
   if (!auth || !db) {
@@ -992,12 +1039,8 @@ async function flushPendingSync() {
     return false;
   }
 
-  const user = await ensureUserSession();
-  if (!user) {
-    console.log("Unable to establish user session. Not syncing to Firestore.");
-    keys.forEach(key => trackSyncFailure(key, "auth_unavailable"));
-    return false;
-  }
+  const user = auth.currentUser;
+  if (!owner || user?.uid !== owner) return false;
 
   // Each write replaces a whole value. Until this session has merged with the
   // cloud copy, the local game lists may be missing games another device saved,
@@ -1005,7 +1048,7 @@ async function flushPendingSync() {
   // first (again, if the one at startup failed); while it cannot run, nothing
   // is written and the next save tries again. "Delete All Game Data" is the
   // exception: it clears the lists on purpose and carries its own marker.
-  if (lastMergedAuthUid !== user.uid && !values.has(GAME_DATA_RESET_FIELD)) {
+  if (lastMergedAuthUid !== user.uid && !values.has(GAME_DATA_RESET_FIELD) && !replace.size) {
     const merged = await mergeUserDataForCurrentUser(user);
     if (!merged || auth?.currentUser?.uid !== user.uid) {
       console.warn("Cloud sync is waiting for a first merge with the cloud copy; nothing was uploaded.");
@@ -1023,7 +1066,7 @@ async function flushPendingSync() {
   // copy would take those games back out of the cloud.
   if (!values.has(GAME_DATA_RESET_FIELD)) {
     [...REMOVABLE_GAME_LISTS, REMOVED_GAMES_KEY].forEach(key => {
-      if (!values.has(key)) return;
+      if (!values.has(key) || replace.has(key)) return;
       const raw = localStorage.getItem(key);
       if (raw !== null) values.set(key, deserializeLocalStorageValue(key, raw));
     });
@@ -1036,22 +1079,17 @@ async function flushPendingSync() {
   const resetMarker = values.has(GAME_DATA_RESET_FIELD)
     ? values.get(GAME_DATA_RESET_FIELD)
     : agreedResetMarker ?? "";
-  values.delete(GAME_DATA_RESET_FIELD);
+  const reset = values.delete(GAME_DATA_RESET_FIELD);
   try {
-    const docRef = doc(db, "rookData", user.uid);
-    const buildFields = async () => ({
-      ...(await toCloudFields(Object.fromEntries(values), resetMarker)),
-      [GAME_DATA_RESET_FIELD]: resetMarker,
-      timestamp: new Date().toISOString(),
-    });
+    const write = () => writeGameFields(owner, Object.fromEntries(values), resetMarker, { reset, replace });
     const packedThisWrite = canPackSavedGames();
     try {
-      await writeCloudFields(docRef, await buildFields());
+      if (!await write()) return false;
     } catch (error) {
-      // The packed write was refused just now: send the plain list instead.
       if (!packedThisWrite || canPackSavedGames()) throw error;
-      await writeCloudFields(docRef, await buildFields());
+      if (!await write()) return false;
     }
+    if (auth?.currentUser?.uid !== owner) return false;
     const nextAgreedResetMarker = laterGameDataResetMarker(agreedResetMarker ?? "", resetMarker);
     if (nextAgreedResetMarker !== agreedResetMarker
         || readGameDataResetMarkers()?.lastUid !== user.uid) {
@@ -1077,34 +1115,40 @@ function isStaleGameDataWrite(error) {
   return error?.code === "permission-denied";
 }
 
-function schedulePendingSyncFlush() {
-  if (!pendingSyncFlush) {
-    pendingSyncFlush = new Promise(resolve => {
-      setTimeout(() => resolve(flushPendingSync()), SYNC_FLUSH_DELAY_MS);
-    });
-  }
-  return pendingSyncFlush;
+function getPendingSyncBatch(owner) {
+  if (pendingSync && pendingSync.owner === owner) return pendingSync;
+  const batch = { owner, values: new Map(), replace: new Set() };
+  batch.promise = new Promise(resolve => {
+    setTimeout(() => {
+      if (pendingSync === batch) pendingSync = null;
+      // Finish older writes before newer saves, even when compression is slow.
+      const previous = syncByOwner.get(owner) || Promise.resolve();
+      const current = previous.catch(() => false).then(() => flushPendingSync(batch)).finally(() => {
+        if (syncByOwner.get(owner) === current) syncByOwner.delete(owner);
+      });
+      syncByOwner.set(owner, current);
+      resolve(current);
+    }, SYNC_FLUSH_DELAY_MS);
+  });
+  pendingSync = batch;
+  return batch;
 }
 
-// Clears every game-data key in the cloud and records the delete in the same
-// write. Queued writes of those keys are replaced, so a save made just before
-// the delete cannot land after it.
-window.syncGameDataReset = function(resetMarker) {
-  if (typeof resetMarker !== "string" || !parseGameDataResetTime(resetMarker)) {
-    return Promise.resolve(false);
-  }
-  GAME_DATA_KEYS.forEach(key => pendingSyncValues.set(key, null));
-  pendingSyncValues.set(GAME_DATA_RESET_FIELD, laterGameDataResetMarker(
-    pendingSyncValues.get(GAME_DATA_RESET_FIELD),
-    resetMarker,
-  ));
-  return schedulePendingSyncFlush();
+window.syncGameDataReset = function(resetMarker, owner = auth?.currentUser?.uid) {
+  if (!owner || auth?.currentUser?.uid !== owner || !parseGameDataResetTime(resetMarker)) return Promise.resolve(false);
+  const batch = getPendingSyncBatch(owner);
+  GAME_DATA_KEYS.forEach(key => batch.values.set(key, null));
+  batch.values.set(GAME_DATA_RESET_FIELD, laterGameDataResetMarker(batch.values.get(GAME_DATA_RESET_FIELD), resetMarker));
+  return batch.promise;
 };
 
-window.syncToFirestore = function(key, value) {
-  if (!isCloudSyncStorageKey(key)) return Promise.resolve(false);
-  pendingSyncValues.set(key, value);
-  return schedulePendingSyncFlush();
+window.syncToFirestore = function(key, value, { replace = false } = {}) {
+  const owner = auth?.currentUser?.uid;
+  if (!owner || !isCloudSyncStorageKey(key)) return Promise.resolve(false);
+  const batch = getPendingSyncBatch(owner);
+  batch.values.set(key, value);
+  if (replace) batch.replace.add(key);
+  return batch.promise;
 };
 
 function isVoiceImprovementConsentEnabled() {

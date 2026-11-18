@@ -184,7 +184,7 @@ const PLAYER_SUGGESTION_CACHE = { key: null, suggestions: [], datalistHtml: null
 function getPlayerSuggestionCacheKey() {
   let stored = "";
   try {
-    stored = `${localStorage.getItem("savedGames") || ""}\u0000${localStorage.getItem("freezerGames") || ""}\u0000${localStorage.getItem("teams") || ""}`;
+    stored = `${readLocalStorageItem("savedGames") || ""}\u0000${readLocalStorageItem("freezerGames") || ""}\u0000${readLocalStorageItem("teams") || ""}`;
   } catch {
     stored = "";
   }
@@ -403,7 +403,7 @@ function getBugReportDiagnostics() {
     displayMode,
     online: navigator.onLine !== false,
     theme: document.documentElement.classList.contains("dark") ? "dark" : "light",
-    proMode: localStorage.getItem(PRO_MODE_KEY) === "true",
+    proMode: readLocalStorageItem(PRO_MODE_KEY) === "true",
     firebase: {
       status: window.firebaseReady ? "ready" : "not-ready-or-offline",
       signedIn: Boolean(firebaseUser),

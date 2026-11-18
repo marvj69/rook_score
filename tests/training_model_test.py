@@ -72,6 +72,14 @@ class TrainingModelTests(unittest.TestCase):
         )
         np.testing.assert_allclose(swapped, -original)
 
+    def test_combined_scores_below_training_range_use_its_lower_bound(self):
+        def interactions(us, dem):
+            return MODULE.make_symmetric_features(1, us, dem, us - dem, 0, 0, 0, 0)[11:13]
+
+        np.testing.assert_array_equal(interactions(-900, -1000), [-30000, -300])
+        np.testing.assert_array_equal(interactions(-1000, -900), [30000, 300])
+        np.testing.assert_array_equal(interactions(-50, -100), [-7500, -150])
+
     def test_terminal_round_is_excluded(self):
         game = {
             "winner": "us",

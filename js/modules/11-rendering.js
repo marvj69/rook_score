@@ -334,15 +334,15 @@ function renderInAppNumericKeypad(target, label) {
 function renderRoundCorrectionControls(focusRingColor = "focus:ring-blue-500 dark:focus:ring-blue-400") {
   const { rounds, undoneRounds } = state;
   const buttonClass = `flex items-center border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 transition disabled:opacity-50 focus:outline-none focus:ring-2 ${focusRingColor} dark:border-gray-600 dark:text-white threed`;
-  return `<button id="roundUndoBtn" type="button" class="${buttonClass}" onclick="handleUndo(event)" ${!rounds.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
-    <button id="roundRedoBtn" type="button" class="${buttonClass}" onclick="handleRedo(event)" ${!undoneRounds.length ? "disabled" : ""}>${Icons.Redo}Redo</button>`;
+  return `<button id="roundUndoBtn" type="button" class="${buttonClass}" onclick="handleUndo(event)" ${!rounds.length && !state.misdealRoundIndexes.length ? "disabled" : ""}>${Icons.Undo}Undo</button>
+    <button id="roundRedoBtn" type="button" class="${buttonClass}" onclick="handleRedo(event)" ${!undoneRounds.length && !state.undoneMisdeals.length ? "disabled" : ""}>${Icons.Redo}Redo</button>`;
 }
 
 function renderScoreInputCard() {
   const { biddingTeam, bidAmount, showCustomBid, customBidValue, rounds, gameOver, undoneRounds, pendingPenalty } = state;
   if (gameOver || !biddingTeam) {
     getScoreCardAnimation("");
-    return !gameOver && (rounds.length || undoneRounds.length)
+    return !gameOver && (rounds.length || undoneRounds.length || state.misdealRoundIndexes.length || state.undoneMisdeals.length)
       ? `<div class="flex justify-end gap-2" role="group" aria-label="Round corrections">${renderRoundCorrectionControls()}</div>`
       : "";
   }
@@ -486,103 +486,81 @@ function recalcRunningTotals(rounds, startingTotals) {
   });
 }
 function computeGameOutcomeFromRounds(rounds) {
-  if (!rounds.length) return { gameOver: false, winner: null, victoryMethod: null };
-  const lastRound = rounds[rounds.length - 1];
-  const lastTotals = sanitizeTotals(lastRound?.runningTotals);
-  const biddingTeam = lastRound?.biddingTeam;
-  const bidAmount = Number(lastRound?.bidAmount) || 0;
-  const usEarned = Number(lastRound?.usPoints) || 0;
-  const demEarned = Number(lastRound?.demPoints) || 0;
-  const mustWinByBid = getLocalStorage(MUST_WIN_BY_BID_KEY, false);
-  let gameOver = false, winner = null, victoryMethod = null;
-
-  if (Math.abs(lastTotals.us - lastTotals.dem) >= 1000) {
-    gameOver = true; winner = lastTotals.us > lastTotals.dem ? "us" : "dem"; victoryMethod = "1000 Point Spread";
-  } else if ((biddingTeam === "us" && usEarned < 0 && lastTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && lastTotals.us >= 500)) {
-    if (!mustWinByBid) { gameOver = true; winner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team"; }
-  } else if (
-    (biddingTeam === "us" && lastTotals.us >= 500 && usEarned >= bidAmount) ||
-    (biddingTeam === "dem" && lastTotals.dem >= 500 && demEarned >= bidAmount)
-  ) {
-    gameOver = true; winner = biddingTeam; victoryMethod = "Won on Bid";
-  } else if ((biddingTeam === "us" && usEarned < 0 && lastTotals.dem >= 500) || (biddingTeam === "dem" && demEarned < 0 && lastTotals.us >= 500)) {
-    gameOver = true; winner = biddingTeam === "us" ? "dem" : "us"; victoryMethod = "Set Other Team";
+  const last = rounds.at(-1);
+  const totals = sanitizeTotals(last?.runningTotals);
+  if (Math.abs(totals.us - totals.dem) >= 1000) {
+    return { gameOver: true, winner: totals.us > totals.dem ? "us" : "dem", victoryMethod: "1000 Point Spread" };
   }
-
-  return { gameOver, winner, victoryMethod };
+  const bidder = last?.biddingTeam;
+  if (bidder === "us" || bidder === "dem") {
+    const other = bidder === "us" ? "dem" : "us";
+    const points = Number(last[bidder + "Points"]) || 0;
+    if (totals[bidder] >= 500 && points >= (Number(last.bidAmount) || 0)) {
+      return { gameOver: true, winner: bidder, victoryMethod: "Won on Bid" };
+    }
+    if (points < 0 && totals[other] >= 500 && !getLocalStorage(MUST_WIN_BY_BID_KEY, false)) {
+      return { gameOver: true, winner: other, victoryMethod: "Set Other Team" };
+    }
+  }
+  return { gameOver: false, winner: null, victoryMethod: null };
 }
 function commitHistoryEdit(idx, field, rawValue) {
-  // A cancelled or already-committed edit re-enters here through the input's
-  // blur when the re-render removes it; there is nothing left to commit.
+  // Blur can fire a second time when the editor is removed.
   if (!isHistoryCellEditing(idx, field)) return;
-  const rounds = Array.isArray(state.rounds) ? state.rounds : [];
-  if (!rounds.length || !rounds[idx]) {
-    cancelHistoryEdit();
-    return;
-  }
-  if (String(rawValue ?? "").trim() === "") {
-    cancelHistoryEdit();
-    return;
-  }
+  if (!String(rawValue ?? "").trim()) return cancelHistoryEdit();
+  applyHistoryEdits(idx, [[field, Number(rawValue)]]);
+}
 
-  // The alert sits at the top of the page, which can be far above the History row being edited.
-  const refuse = (message) => {
-    updateState({ historyEdit: null, error: message });
-    if (typeof showWarningToast === "function") showWarningToast(message);
-  };
-  const numericValue = Number(rawValue);
-  if (!Number.isFinite(numericValue)) {
-    refuse("Enter a valid number.");
-    return;
-  }
-  // Opening a cell and leaving it as it was is not an edit (it used to wipe Redo and rewrite the rounds).
-  if (numericValue === getHistoryCellValue(rounds[idx], field)) {
-    cancelHistoryEdit();
-    return;
-  }
-  if (field === "bid") {
-    // Unlike the keypad, nothing here is a bid still being typed: only validateBid's rules apply.
-    const bidError = validateBid(String(numericValue));
-    if (bidError) {
-      refuse(bidError);
-      return;
-    }
-  } else if (!Number.isInteger(numericValue) || numericValue % 5 !== 0) {
-    // Every hand scores in fives, so a total that is not a multiple of 5 is a typo.
-    refuse("Scores must be multiples of 5.");
-    return;
-  } else if (Math.abs(numericValue) > HISTORY_EDIT_MAX_SCORE) {
-    refuse(`Scores stay between -${HISTORY_EDIT_MAX_SCORE} and ${HISTORY_EDIT_MAX_SCORE}.`);
-    return;
-  }
-
-  recordCurrentGameTimerActivity();
-  const updatedRounds = rounds.map((round) => ({ ...round }));
+function applyHistoryEdits(idx, edits, revertedEdit = null) {
+  const rounds = state.rounds;
+  if (!rounds[idx]) return cancelHistoryEdit();
+  const updated = { ...rounds[idx] };
   const baseTotals = getBaseTotals();
-  if (field === "bid") {
-    updatedRounds[idx].bidAmount = numericValue;
-  } else {
-    const prevTotals = idx === 0 ? baseTotals : sanitizeTotals(updatedRounds[idx - 1].runningTotals);
-    if (field === "us") {
-      updatedRounds[idx].usPoints = numericValue - prevTotals.us;
-    } else if (field === "dem") {
-      updatedRounds[idx].demPoints = numericValue - prevTotals.dem;
+  const previous = idx === 0 ? baseTotals : sanitizeTotals(rounds[idx - 1]?.runningTotals);
+  const originals = [];
+  for (const [field, value] of edits) {
+    const before = getHistoryCellValue(rounds[idx], field);
+    if (before === value) continue;
+    let error = "";
+    if (!Number.isFinite(value)) error = "Enter a valid number.";
+    else if (field === "bid") error = validateBid(String(value));
+    else if (field !== "us" && field !== "dem") error = "Choose a score to edit.";
+    else if (!Number.isInteger(value) || value % 5 !== 0) error = "Scores must be multiples of 5.";
+    else if (Math.abs(value) > HISTORY_EDIT_MAX_SCORE) error = `Scores stay between -${HISTORY_EDIT_MAX_SCORE} and ${HISTORY_EDIT_MAX_SCORE}.`;
+    if (error) {
+      updateState({ historyEdit: null, error });
+      showWarningToast(error);
+      return false;
     }
+    originals.push([field, before]);
+    if (field === "bid") updated.bidAmount = value;
+    else updated[field + "Points"] = value - previous[field];
   }
-
+  if (!originals.length) {
+    cancelHistoryEdit();
+    return true;
+  }
+  recordCurrentGameTimerActivity();
+  const updatedRounds = rounds.slice();
+  updatedRounds[idx] = updated;
   const recalculatedRounds = recalcRunningTotals(updatedRounds, baseTotals);
   const outcome = computeGameOutcomeFromRounds(recalculatedRounds);
   const lastRound = recalculatedRounds[recalculatedRounds.length - 1];
   const nextState = {
     rounds: recalculatedRounds,
-    undoneRounds: [],
+    undoneRounds: Array.isArray(revertedEdit?.undoneRounds) ? revertedEdit.undoneRounds : [],
+    undoneMisdeals: revertedEdit?.undoneMisdeals || [],
+    winningHistoryEdit: outcome.gameOver && !state.gameOver ? {
+      idx, values: originals,
+      undoneRounds: state.undoneRounds, undoneMisdeals: state.undoneMisdeals,
+    } : null,
     gameOver: outcome.gameOver,
     winner: outcome.winner,
     victoryMethod: outcome.victoryMethod,
     historyEdit: null,
     error: "",
   };
-  if (field === "bid" && idx === recalculatedRounds.length - 1) {
+  if (updated.bidAmount !== rounds[idx].bidAmount && idx === recalculatedRounds.length - 1) {
     nextState.lastBidAmount = String(lastRound.bidAmount);
     nextState.lastBidTeam = lastRound.biddingTeam;
   }
@@ -603,23 +581,11 @@ function commitHistoryEdit(idx, field, rawValue) {
 
   const priorWinner = state.winner;
   const priorGameOver = state.gameOver;
-  // Same identity resolution as updateTeamsStatsOnGameEnd (dealer-pair fallback included).
-  const usTeam = getTeamSnapshotForSide(state, "us");
-  const demTeam = getTeamSnapshotForSide(state, "dem");
-  const teamIdentity = { usPlayers: usTeam.players, demPlayers: demTeam.players, usDisplay: usTeam.display, demDisplay: demTeam.display };
-  if (priorGameOver && priorWinner && (!outcome.gameOver || outcome.winner !== priorWinner)) {
-    const teams = getTeamsObject();
-    const reverted = applyTeamResultDelta(teams, { ...teamIdentity, winner: priorWinner }, -1);
-    if (reverted) setTeamsObject(teams);
-  }
-  if (outcome.gameOver && outcome.winner && (!priorGameOver || outcome.winner !== priorWinner)) {
-    const teams = getTeamsObject();
-    const applied = applyTeamResultDelta(teams, { ...teamIdentity, winner: outcome.winner }, 1);
-    if (applied) setTeamsObject(teams);
-  }
-
+  if (priorGameOver && priorWinner && priorWinner !== outcome.winner) updateTeamsStatsOnGameEnd(priorWinner, -1);
+  if (outcome.gameOver && outcome.winner && outcome.winner !== priorWinner) updateTeamsStatsOnGameEnd(outcome.winner);
   updateState(nextState);
   saveCurrentGameState();
+  return true;
 }
 function getHistoryRoundsForDisplay(rounds) {
   return rounds.map((round, idx) => ({ round, idx })).reverse();

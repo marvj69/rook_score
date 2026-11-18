@@ -277,6 +277,14 @@ function updateState(newState) {
     nextState.misdealDealers = normalizeMisdealDealers(nextState.misdealDealers);
   }
 
+  if (has(nextState, "misdealRoundIndexes")) {
+    nextState.misdealRoundIndexes = Array.isArray(nextState.misdealRoundIndexes)
+      ? nextState.misdealRoundIndexes.filter(hand => Number.isInteger(hand) && hand >= 0) : [];
+  }
+  if (has(nextState, "undoneMisdeals")) {
+    nextState.undoneMisdeals = Array.isArray(nextState.undoneMisdeals)
+      ? nextState.undoneMisdeals.filter(entry => Number.isInteger(entry?.hand) && typeof entry.dealer === "string") : [];
+  }
   state = { ...state, ...nextState };
   syncCurrentGameTimerInterval();
   scheduleRender();
@@ -300,19 +308,19 @@ function resetGame() {
 function loadCurrentGameState() {
   let loadedState = null; // Initialize to null
   try {
-    const storedStateString = localStorage.getItem(ACTIVE_GAME_KEY);
+    const storedStateString = readLocalStorageItem(ACTIVE_GAME_KEY);
     if (storedStateString) {
-loadedState = JSON.parse(storedStateString);
+      loadedState = JSON.parse(storedStateString);
     }
   } catch (e) {
     console.error("Error parsing activeGameState from localStorage. Will reset to default state.", e);
-    localStorage.removeItem(ACTIVE_GAME_KEY); // Critical: remove the corrupted state
+    removeLocalStorageKey(ACTIVE_GAME_KEY, { sync: false });
     // loadedState remains null, so it will fall through to using DEFAULT_STATE
   }
   // Whatever lands here (an import, a cloud merge, or no game at all) is not the game that something was typed for.
   clearTransientScoreInputs();
 
-  if (loadedState && typeof loadedState === 'object' && loadedState !== null) {
+  if (loadedState && typeof loadedState === 'object' && !Array.isArray(loadedState)) {
     // Ensure all DEFAULT_STATE keys are present, preferring loaded values
     const completeLoadedState = { ...DEFAULT_STATE, ...loadedState };
     const isRound = round => round && typeof round === "object" && !Array.isArray(round);
@@ -337,7 +345,7 @@ loadedState = JSON.parse(storedStateString);
     updateState(completeLoadedState);
   } else {
     if (loadedState) {
-      localStorage.removeItem(ACTIVE_GAME_KEY); // Remove invalid structure
+      removeLocalStorageKey(ACTIVE_GAME_KEY, { sync: false });
     }
     // Fallback to default state
     updateState({

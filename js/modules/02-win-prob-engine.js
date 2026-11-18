@@ -361,7 +361,9 @@ function buildModelFeatureVector({
     ? parseFiniteNumber(demTotal, 0)
     : Math.max(0, -safeDiff);
   const leadSign = safeDiff > 0 ? 1 : safeDiff < 0 ? -1 : 0;
-  const scoreSum = safeUsTotal + safeDemTotal;
+  // The v2 model's 2,777 training positions bottomed out at -300 combined.
+  // Extrapolating its stage interactions below that can reverse the effect of a lead.
+  const scoreSum = Math.max(-300, safeUsTotal + safeDemTotal);
 
   return {
     diff: safeDiff,

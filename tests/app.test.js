@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { existsSync, readFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
+const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const vm = require('node:vm');
 
@@ -2108,6 +2109,16 @@ test('paper game photo results enforce valid Rook score totals', () => {
   );
 });
 
+test('photo scores distinguish unreadable cells from a written zero', () => {
+  for (const value of [null, "", "  ", false, [], {}]) {
+    assert.throws(() => normalizePaperGamePhotoResult({ usScore: value, demScore: 10 }), /invalid score/);
+    assert.deepEqual(normalizePaperGamePhotoResult({
+      usScore: 0, demScore: 10, rows: [{ us: value, dem: 10, bid: 125 }],
+    }).rows, []);
+  }
+  assert.equal(normalizePaperGamePhotoResult({ usScore: "0", demScore: 10 }).usScore, 0);
+});
+
 test('paper game photo history drops rows that do not end on the current score', () => {
   const rows = [
     { us: 0, bid: null, dem: 0 },
@@ -3182,9 +3193,28 @@ test('experimental voice scoring is excluded from the startup bundle', () => {
   assert.doesNotMatch(appBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
   assert.match(voiceBundle, /VOICE_SCORE_STATUS_TIMEOUT_MS/);
   assert.ok(appBundle.length < 380000, `core startup bundle is unexpectedly large: ${appBundle.length}`);
-  assert.doesNotMatch(serviceWorker, /voice-score\.bundle\.js/);
+  assert.match(serviceWorker, /voice-score\.bundle\.js/, "offline install includes the lazy module for this release");
   assert.match(pagesWorkflow, /node scripts\/stage-static-site\.mjs _pages/);
   assert.ok(require('../scripts/static-site-files.cjs').includes('js/voice-score.bundle.js'));
+});
+
+test('static staging accepts its own output and preserves unrelated files', () => {
+  const scratch = mkdtempSync(path.join(repoRoot, 'stage-test-'));
+  const output = path.join(path.basename(scratch), 'site');
+  const stage = name => spawnSync(process.execPath, ['scripts/stage-static-site.mjs', name], { cwd: repoRoot, encoding: 'utf8' });
+  try {
+    for (let build = 0; build < 2; build++) {
+      const result = stage(output);
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok(existsSync(path.join(repoRoot, output, 'index.html')));
+    }
+    const note = path.join(repoRoot, output, 'notes.txt');
+    writeFileSync(note, 'my notes');
+    assert.notEqual(stage(output).status, 0);
+    assert.equal(readFileSync(note, 'utf8'), 'my notes');
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test('experimental features are disabled by default and gate voice controls', () => {
@@ -3446,6 +3476,7 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
     Buffer.from([0xff, 0xd9]),
   ]);
   let openRouterBody = null;
+  let scanOverrides = {};
 
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   process.env.OPENROUTER_MODEL = 'google/gemini-3.1-flash-lite';
@@ -3472,6 +3503,7 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
                 { us: 245, bid: 130, dem: 190 },
               ],
               message: 'Bottom completed row is clear.',
+              ...scanOverrides,
             }),
           },
         }],
@@ -3492,6 +3524,23 @@ test('paper game photo endpoint uses the configured voice LLM for the bottom sco
 
   try {
     await paperGamePhotoHandler(request, response);
+    const scanAgain = async overrides => {
+      scanOverrides = overrides;
+      const next = createMockResponse();
+      await paperGamePhotoHandler(createMockRequest({
+        body: multipartBody, contentType: `multipart/form-data; boundary=${boundary}`,
+      }), next);
+      return next;
+    };
+    for (const unreadable of [null, '', false]) {
+      assert.equal((await scanAgain({ usScore: unreadable })).statusCode, 422);
+    }
+    const partial = await scanAgain({ usScore: 0, rows: [
+      { us: null, dem: 110 }, { us: 0, dem: 190 },
+    ] });
+    assert.equal(partial.statusCode, 200);
+    assert.equal(partial.body.scan.usScore, 0);
+    assert.deepEqual(partial.body.scan.rows, []);
   } finally {
     if (originalApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalApiKey;
@@ -4507,7 +4556,7 @@ test('probability timeline replays each hand through the live calculator', () =>
     { biddingTeam: 'us', bidAmount: 120, usPoints: 140, demPoints: 40, runningTotals: { us: 140, dem: 40 } },
     { biddingTeam: 'dem', bidAmount: 130, usPoints: 40, demPoints: 140, runningTotals: { us: 180, dem: 180 } },
   ];
-  updateState({ rounds, showWinProbability: true, gameOver: false, usPlayers: [], demPlayers: [] });
+  updateState({ rounds, startingTotals: { us: 0, dem: 0 }, showWinProbability: true, gameOver: false, usPlayers: [], demPlayers: [] });
   const context = getProbabilityContext([]);
   const points = buildProbabilityTimeline([], context);
   assert.deepEqual(points.map(point => point.hand), [0, 1, 2]);
@@ -4516,6 +4565,38 @@ test('probability timeline replays each hand through the live calculator', () =>
   assert.match(generateProbabilityBreakdown(), /data-probability-chart="timeline"/);
   updateState({ rounds: [] });
   assert.equal(generateProbabilityBreakdown(), '');
+});
+
+test('a paper score has no opening estimate and the chart starts with the first tracked hand', () => {
+  resetGame();
+  updateState({ startingTotals: { us: 225, dem: 175 }, showWinProbability: true });
+  try {
+    assert.equal(submitStructuredRound({ biddingTeam: 'us', bidAmount: 125, points: 130 }), true);
+    const points = buildProbabilityTimeline([], getProbabilityContext([]));
+    assert.deepEqual(points[0], { hand: 0, us: 225, dem: 175, prob: null });
+    assert.equal(points[1].us, 355);
+    assert.equal(points[1].dem, 225);
+    assert.ok(Number.isFinite(points[1].prob));
+    const html = generateProbabilityBreakdown();
+    assert.match(html, /Paper score 225 – 175\. Estimates begin with the first tracked hand/);
+    assert.equal(html.match(/data-points="([^"]+)"/)[1].split(';').length, 1);
+    assert.doesNotMatch(html, /data-probability-chart="swings"|NaN/);
+  } finally {
+    resetGame();
+  }
+});
+
+test('very negative scores preserve the effect of the lead and team symmetry', () => {
+  const position = (us, dem) => buildModelFeatureVector({ diff: us - dem, usTotal: us, demTotal: dem, roundIdx: 1 });
+  const ahead = position(-900, -1000);
+  const behind = position(-1000, -900);
+  assert.equal(ahead.diff_x_score_sum, -30000);
+  assert.equal(ahead.lead_sign_x_score_sum, -300);
+  assert.equal(behind.diff_x_score_sum, -ahead.diff_x_score_sum);
+  assert.equal(position(-50, -100).diff_x_score_sum, -7500);
+  const chance = predictBaseModelProbabilityFromFeatures(ahead);
+  assert.ok(chance > 0.5);
+  assert.ok(Math.abs(chance + predictBaseModelProbabilityFromFeatures(behind) - 1) < 1e-10);
 });
 
 test('model feature set includes all expected runtime features', () => {
@@ -5547,17 +5628,14 @@ test('escapeAttribute escapes non-string values through the value helper', () =>
   assert.equal(escapeAttribute('" onclick="alert(1)'), '&quot; onclick=&quot;alert(1)');
 });
 
-test('service worker update flow activates without a user prompt', () => {
+test('service worker checks for updates without replacing a running release', () => {
   const source = readFileSync(
     path.join(repoRoot, 'js/modules/14-initialization-and-exports.js'),
     'utf8',
   );
 
   assert.doesNotMatch(source, /confirm\s*\(/);
-  assert.match(source, /activateUpdatedWorker/);
-  assert.match(source, /registration\.waiting/);
-  assert.match(source, /registration\.addEventListener\('updatefound'/);
-  assert.match(source, /SKIP_WAITING/);
+  assert.doesNotMatch(source, /SKIP_WAITING/);
   assert.match(source, /updateViaCache:\s*'none'/);
   assert.match(source, /registration\.update\(\)/);
   assert.match(source, /reload deferred until the next launch/);
@@ -5644,13 +5722,13 @@ test('current game timer is visible, starts with play, and keeps counting across
   assert.match(cssSource, /font-variant-numeric:\s*tabular-nums/);
 });
 
-test('service worker cache bump skips waiting after precache', () => {
+test('service worker keeps installed assets together until clients close', () => {
   const source = readFileSync(path.join(repoRoot, 'service-worker.js'), 'utf8');
 
   assert.match(source, /const CACHE_NAME = "rook-cache-[0-9a-f]{16}";/);
   assert.match(source, /"\.\/js\/model_runtime_v2\.json"/);
   assert.match(source, /cache\.addAll\(urlsToCache\.map\(\(url\) => new Request\(url, \{ cache: "reload" \}\)\)\)/);
-  assert.match(source, /self\.skipWaiting\(\)/);
+  assert.doesNotMatch(source, /self\.skipWaiting\(\)/);
   assert.match(source, /self\.clients\.claim\(\)/);
 });
 
@@ -5834,6 +5912,21 @@ test('firebase cloud sync does not block the initial app shell render', () => {
   );
 });
 
+// Minimal single-document transaction with optimistic retries for the two-device tests.
+function fakeGameTransactions(context, version = () => 0) {
+  return async (_db, operation) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const startVersion = version();
+      let write;
+      const result = await operation({ get: context.__getDoc, set: (...args) => { write = args; } });
+      if (version() !== startVersion) continue;
+      if (write) await context.__setDoc(...write);
+      return result;
+    }
+    throw new Error("Test transaction exhausted its retries.");
+  };
+}
+
 test('firebase startup merge is single-flight and preserves interaction-time local changes', async () => {
   const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
   const storageValues = new Map([
@@ -5934,6 +6027,7 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
       }
     },
   };
+  context.__runTransaction = fakeGameTransactions(context, context.__version);
   windowForFirebase.window = windowForFirebase;
   const instrumentedSource = firebaseSource
     .replace(
@@ -5944,6 +6038,7 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
         "doc = (_db, _collection, uid) => ({ uid });",
         "getDoc = globalThis.__getDoc;",
         "setDoc = globalThis.__setDoc;",
+        "runTransaction = globalThis.__runTransaction;",
         "const reportedSyncFailures = new Set();",
       ].join("\n"),
     )
@@ -5987,7 +6082,7 @@ test('firebase startup merge is single-flight and preserves interaction-time loc
   assert.equal(renderCount, 0);
 });
 
-function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {}, exposeMerge = false, failReads = null, contextExtras = {}, anonymous = false } = {}) {
+function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras = {}, exposeMerge = false, failReads = null, contextExtras = {}, anonymous = false, persistWrites = false } = {}) {
   const firebaseSource = readFileSync(path.join(repoRoot, 'js/firebase-init.js'), 'utf8');
   const storage = {
     getItem: key => (storageValues.has(key) ? storageValues.get(key) : null),
@@ -6024,10 +6119,12 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
       const writeError = windowForFirebase.__writeError?.(payload);
       if (writeError) throw writeError;
       writePayloads.push(structuredClone(payload));
+      if (persistWrites) Object.assign(cloudData, structuredClone(payload));
       windowForFirebase.__afterWrite?.(payload);
     },
     ...contextExtras,
   };
+  context.__runTransaction = fakeGameTransactions(context, context.__version);
   windowForFirebase.window = windowForFirebase;
   const instrumentedSource = firebaseSource
     .replace(
@@ -6038,6 +6135,7 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
         "doc = (_db, _collection, uid) => ({ uid });",
         "getDoc = globalThis.__getDoc;",
         "setDoc = globalThis.__setDoc;",
+        "runTransaction = globalThis.__runTransaction;",
         "const reportedSyncFailures = new Set();",
       ].join("\n"),
     )
@@ -6045,7 +6143,7 @@ function loadFirebaseInitForTests({ storageValues, cloudData = {}, windowExtras 
       "scheduleFirebaseInitialization();",
       exposeMerge ? "window.__mergeUserDataForCurrentUser = mergeUserDataForCurrentUser;" : "",
     );
-  vm.runInNewContext(instrumentedSource, context, { filename: 'firebase-init.test.js' });
+  vm.runInNewContext(instrumentedSource + "\nwindow.firebaseAuth = auth;", context, { filename: 'firebase-init.test.js' });
   return { windowForFirebase, storage, storageValues, writePayloads };
 }
 
@@ -6196,6 +6294,7 @@ test('starting a paper game clears the old dealers and misdeals, but cancelling 
     for (const imported of [false, true]) {
       resetGame();
       updateState({ dealers: ['Alice', 'Bob', 'Carol', 'Dave'], misdealCount: 2, misdealDealers: ['Alice', 'Bob'] });
+      updateState({ misdealRoundIndexes: [0, 0] });
       submitStructuredRound({ biddingTeam: 'us', bidAmount: 120, points: 150 });
       live.get('resumeUsScore').value = '300';
       live.get('resumeDemScore').value = '250';
@@ -6213,6 +6312,7 @@ test('starting a paper game clears the old dealers and misdeals, but cancelling 
       assert.deepEqual(getStateForTests().dealers, ['Alice', 'Bob', 'Carol', 'Dave']);
       assert.equal(getStateForTests().misdealCount, 2);
       assert.deepEqual(getStateForTests().misdealDealers, ['Alice', 'Bob']);
+      assert.deepEqual(getStateForTests().misdealRoundIndexes, [0, 0]);
 
       handleResumeGameSubmit({ preventDefault() {} });
       getPendingConfirmationForTests().confirm();
@@ -6220,6 +6320,8 @@ test('starting a paper game clears the old dealers and misdeals, but cancelling 
       assert.deepEqual(started.dealers, []);
       assert.equal(started.misdealCount, 0);
       assert.deepEqual(started.misdealDealers, []);
+      assert.deepEqual(started.misdealRoundIndexes, []);
+      assert.deepEqual(started.undoneMisdeals, []);
       assert.equal(getCurrentDealer(started), '');
       assert.deepEqual(started.usPlayers, ['Erin', 'Grace']);
       assert.deepEqual(started.demPlayers, ['Frank', 'Henry']);
@@ -6365,7 +6467,8 @@ test('experimental paper game photo import is camera-ready and gated by the shar
   const settingsSource = readFileSync(path.join(repoRoot, 'js/modules/09-settings-validation-misc.js'), 'utf8');
 
   assert.match(htmlSource, /id="resumePaperPhotoContainer" class="hidden /);
-  assert.match(htmlSource, /id="resumePaperPhotoInput" accept="image\/\*" capture="environment"/);
+  assert.match(htmlSource, /id="resumePaperPhotoInput" accept="image\/\*"/);
+  assert.doesNotMatch(htmlSource, /id="resumePaperPhotoInput"[^>]*\bcapture=/);
   assert.match(htmlSource, /Us \| Bid \| Dem/);
   assert.match(htmlSource, /Every filled row comes in as round history, and the bottom row becomes the current score/);
   assert.match(htmlSource, /id="resumeUsScore"[^>]*oninput="handleResumeScoreEdited\(\)"/);
@@ -6406,7 +6509,8 @@ test('voice improvement Firestore rules are create-only and reject unexpected pa
   assert.match(firebaseSource, /schemaVersion: 2/);
   assert.doesNotMatch(firebaseSource, /sample\.audio|audioBase64/);
   assert.match(htmlSource, /Optional and off by default/);
-  assert.match(htmlSource, /Raw audio, real names, and unrelated game-library details are never stored/);
+  assert.match(htmlSource, /known player and team names are replaced/);
+  assert.match(htmlSource, /Avoid saying other private details/);
 });
 
 test('liquid glass cards do not globally replay entrance animations', () => {
@@ -8020,7 +8124,7 @@ test('an unchanged packed list costs no write, and removals and mid-merge saves 
       ['savedGames', JSON.stringify([kept])],
       ['removedGames', JSON.stringify([{ list: 'savedGames', key: removed.timestamp, at: Date.now() }])],
     ]),
-    cloudData,
+    cloudData, persistWrites: true,
     contextExtras: SAVED_GAMES_PACKING_GLOBALS,
   });
   let saved = false;
@@ -8195,6 +8299,9 @@ test('a voice round edit changes only the totals that were given', async () => {
     const state = getStateForTests;
     await voiceActForTests([{ type: 'scoreRound', biddingTeam: 'us', bidAmount: 130, points: 140 }]);
     const before = structuredClone(state().rounds[0]);
+
+    assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: 1, usTotal: 250, demTotal: 103 }]), false);
+    assert.deepEqual(state().rounds[0], before, 'an invalid second total keeps the entire original hand');
 
     assert.equal(await voiceActForTests([{ type: 'editRound', roundNumber: 1, bidAmount: null, usTotal: null, demTotal: '' }]), false);
     assert.deepEqual(state().rounds[0], before, 'nothing given, nothing changed');
@@ -8392,4 +8499,68 @@ test('a list too large even when packed is reported once, after the plain retry 
   assert.deepEqual(attempts, ['packed', 'plain']);
   assert.equal(loaded.writePayloads.length, 0);
   assert.deepEqual(toasts, ['Cloud sync is full. New games stay on this device.']);
+});
+
+test('two open devices preserve independent games, concurrent saves and later removals', async () => {
+  const cloudData = {};
+  let version = 0;
+  const device = () => {
+    const client = loadFirebaseInitForTests({
+      storageValues: new Map(), cloudData, persistWrites: true, exposeMerge: true,
+      contextExtras: { ...SAVED_GAMES_PACKING_GLOBALS, __version: () => version },
+    });
+    client.windowForFirebase.__afterWrite = () => { version += 1; };
+    return client;
+  };
+  const a = device();
+  const b = device();
+  const owner = { uid: 'test-user' };
+  await Promise.all([a, b].map(client => client.windowForFirebase.__mergeUserDataForCurrentUser(owner)));
+  const save = (client, key, data) => {
+    client.storage.setItem(key, JSON.stringify(data));
+    return client.windowForFirebase.syncToFirestore(key, data);
+  };
+  assert.deepEqual(await Promise.all([
+    save(a, 'savedGames', [{ id: 'a' }]), save(b, 'savedGames', [{ id: 'b' }]),
+  ]), [true, true]);
+  assert.deepEqual(unpackSavedGamesForTests(cloudData.savedGamesPacked).games.map(g => g.id).sort(), ['a', 'b']);
+  await Promise.all([
+    save(a, 'removedGames', [{ list: 'savedGames', key: 'a', at: Date.now() }]),
+    save(a, 'savedGames', []),
+    save(b, 'savedGames', [{ id: 'b' }, { id: 'c' }]),
+  ]);
+  const fresh = device();
+  await fresh.windowForFirebase.__mergeUserDataForCurrentUser(owner);
+  assert.deepEqual(JSON.parse(fresh.storage.getItem('savedGames')).map(g => g.id).sort(), ['b', 'c']);
+  assert.deepEqual(cloudData.removedGames.map(entry => entry.key), ['a']);
+  await fresh.windowForFirebase.syncToFirestore('savedGames', [{ id: 'import' }], { replace: true });
+  assert.deepEqual(unpackSavedGamesForTests(cloudData.savedGamesPacked).games, [{ id: 'import' }]);
+});
+
+test('queued cloud work stays bound to the account that requested it', async () => {
+  const { windowForFirebase: client, writePayloads } = loadFirebaseInitForTests({ storageValues: new Map() });
+  const pending = client.syncGameDataReset(new Date().toISOString(), client.firebaseAuth.currentUser.uid);
+  client.firebaseAuth.currentUser = { uid: 'second-user' };
+  assert.equal(await pending, false);
+  assert.equal(writePayloads.length, 0);
+  assert.equal(await client.syncToFirestore('proModeEnabled', true), true);
+  assert.equal(writePayloads.length, 1);
+  assert.equal(writePayloads[0].proModeEnabled, true);
+  assert.ok(!('savedGames' in writePayloads[0]));
+});
+
+test('legacy offline deletes keep their owner across multiple sign-ins', async () => {
+  const marker = new Date().toISOString();
+  const storageValues = new Map([
+    ['localOnly:gameDataResetAt', JSON.stringify({ at: marker, uid: null })],
+    ['localOnly:gameDataResetMarkers', JSON.stringify({ lastUid: 'old-user', agreed: { 'old-user': '' } })],
+  ]);
+  const cloudData = { savedGames: [{ id: 'kept', timestamp: '2025-01-01' }] };
+  for (let i = 0; i < 2; i++) {
+    const { windowForFirebase: client } = loadFirebaseInitForTests({ storageValues, cloudData, persistWrites: true });
+    assert.equal(await client.mergeLocalStorageWithFirestore(client.firebaseAuth.currentUser), true);
+  }
+  assert.equal(JSON.parse(storageValues.get('localOnly:gameDataResetAt')).uid, 'old-user');
+  assert.deepEqual(cloudData.savedGames.map(game => game.id), ['kept']);
+  assert.notEqual(cloudData.gameDataResetAt, marker);
 });
