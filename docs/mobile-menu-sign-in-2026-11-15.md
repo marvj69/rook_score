@@ -34,3 +34,7 @@ The existing authorized Gmail/Firebase CLI session was used to read the account'
 These tests reproduce the gesture defects and exercise the installed iPhone app's lifecycle. They do not establish that every step of the original physical-phone incident has been reproduced, and they do not complete real Google OAuth on either simulator.
 
 A separate live configuration problem was observed: Firebase's project-config request returns HTTP 403 for the Vercel referrer (`rook-score.vercel.app`), while the GitHub Pages referrer is accepted. The Vercel browser also reports `auth/requests-from-referer-https://rook-score.vercel.app-are-blocked`. This is outside the drawer fix; no Firebase API-key restrictions were changed.
+
+## Production sign-in follow-up, 2026-11-18
+
+Added `https://rook-score.vercel.app/*` to the Firebase browser key's allowed referrers. Firebase then returned HTTP 200 for the project configuration from both Vercel and GitHub Pages. The Home screen's sign-in button on each live site opened Google's account sign-in form. Verification stopped before account selection.
